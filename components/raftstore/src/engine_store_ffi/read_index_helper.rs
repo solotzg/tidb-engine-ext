@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use tikv_util::future::paired_future_callback;
 use txn_types::Key;
 
+use std::borrow::{Borrow, BorrowMut};
+use std::future::Future;
 use tikv_util::{debug, error};
 
 pub trait ReadIndex: Sync + Send {
@@ -76,6 +78,8 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
             }
         }
 
+        let mut ignore_not_ready = std::rc::Rc::new(false);
+        let ignore_not_ready_ref = ignore_not_ready.clone();
         let mut read_index_res = Vec::with_capacity(req_vec.len());
         {
             let read_index_res = &mut read_index_res;
@@ -84,10 +88,25 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
                     let mut resp = ReadIndexResponse::default();
                     let res = match cb {
                         None => None,
-                        Some(cb) => match cb.await {
-                            Err(_) => None,
-                            Ok(e) => Some(e),
-                        },
+                        Some(cb) => {
+                            if *ignore_not_ready_ref.borrow() {
+                                let waker = futures::task::noop_waker();
+                                let cx = &mut std::task::Context::from_waker(&waker);
+                                futures::pin_mut!(cb);
+                                match cb.poll(cx) {
+                                    std::task::Poll::Pending => None,
+                                    std::task::Poll::Ready(e) => match e {
+                                        Err(_) => None,
+                                        Ok(e) => Some(e),
+                                    },
+                                }
+                            } else {
+                                match cb.await {
+                                    Err(_) => None,
+                                    Ok(e) => Some(e),
+                                }
+                            }
+                        }
                     };
                     if res.is_none() {
                         resp.set_region_error(Default::default());
@@ -129,20 +148,13 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
             let ret = futures::future::select(read_index_fut, delay);
             match block_on(ret) {
                 futures::future::Either::Left(_) => {}
-                futures::future::Either::Right(_) => {}
+                futures::future::Either::Right((_, reset_read_index_fut)) => {
+                    *ignore_not_ready.borrow_mut() = std::rc::Rc::from(true);
+                    block_on(reset_read_index_fut);
+                }
             }
         }
-        {
-            // fill rest result with region error and let upper layer retry.
-            let mut idx = read_index_res.len();
-            while idx < req_vec.len() {
-                let mut resp = ReadIndexResponse::default();
-                resp.set_region_error(Default::default());
-                read_index_res.push((resp, req_vec[idx].get_context().get_region_id()));
-                idx += 1;
-            }
-        }
-
+        assert_eq!(req_vec.len(), read_index_res.len());
         debug!("batch_read_index success"; "response"=>?read_index_res);
         read_index_res
     }
