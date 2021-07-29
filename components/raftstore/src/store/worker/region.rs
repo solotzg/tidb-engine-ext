@@ -6,7 +6,7 @@ use std::fmt::{self, Display, Formatter};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{mpsc, Arc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::u64;
 
 use engine_traits::{DeleteStrategy, Range, CF_LOCK, CF_RAFT};
@@ -14,6 +14,7 @@ use engine_traits::{KvEngine, Mutable, WriteBatch};
 use fail::fail_point;
 use kvproto::raft_serverpb::{PeerState, RaftApplyState, RegionLocalState};
 use raft::eraftpb::Snapshot as RaftSnapshot;
+use tikv_util::time::Instant;
 use tikv_util::{box_err, box_try, defer, error, info, thd_name, warn};
 
 use crate::coprocessor::CoprocessorHost;
@@ -23,9 +24,7 @@ use crate::store::peer_storage::{
 };
 use crate::store::snap::{plain_file_used, Error, PreHandledSnapshot, Result, SNAPSHOT_CFS};
 use crate::store::transport::CasualRouter;
-use crate::store::{
-    self, check_abort, CasualMessage, GenericSnapshot, SnapEntry, SnapKey, SnapManager,
-};
+use crate::store::{self, check_abort, CasualMessage, SnapEntry, SnapKey, SnapManager};
 use yatp::pool::{Builder, ThreadPool};
 use yatp::task::future::TaskCell;
 
@@ -294,7 +293,7 @@ where
             return;
         }
 
-        let start = tikv_util::time::Instant::now();
+        let start = Instant::now();
         let _io_type_guard = WithIOType::new(if for_balance {
             IOType::LoadBalance
         } else {
@@ -314,7 +313,9 @@ where
         }
 
         SNAP_COUNTER.generate.success.inc();
-        SNAP_HISTOGRAM.generate.observe(start.elapsed_secs());
+        SNAP_HISTOGRAM
+            .generate
+            .observe(start.saturating_elapsed_secs());
     }
 
     fn pre_handle_snapshot(
@@ -331,7 +332,7 @@ where
         let term = apply_state.get_truncated_state().get_term();
         let idx = apply_state.get_truncated_state().get_index();
         let snap_key = SnapKey::new(region_id, term, idx);
-        let s = box_try!(self.mgr.get_concrete_snapshot_for_applying(&snap_key));
+        let s = box_try!(self.mgr.get_snapshot_for_applying(&snap_key));
         if !s.exists() {
             return Err(box_err!("missing snapshot file {}", s.path()));
         }
@@ -343,7 +344,7 @@ where
             "region_id" => region_id,
             "peer_id" => peer_id,
             "state" => ?apply_state,
-            "time_takes" => ?timer.elapsed(),
+            "time_takes" => ?timer.saturating_elapsed(),
         );
 
         Ok(res)
@@ -422,7 +423,7 @@ where
                 "apply data to engine-store";
                 "region_id" => region_id,
             );
-            let s = box_try!(self.mgr.get_concrete_snapshot_for_applying(&snap_key));
+            let s = box_try!(self.mgr.get_snapshot_for_applying(&snap_key));
             if !s.exists() {
                 return Err(box_err!("missing snapshot file {}", s.path()));
             }
@@ -442,7 +443,7 @@ where
         info!(
             "apply new data";
             "region_id" => region_id,
-            "time_takes" => ?timer.elapsed(),
+            "time_takes" => ?timer.saturating_elapsed(),
         );
         Ok(())
     }
@@ -460,7 +461,7 @@ where
         SNAP_COUNTER.apply.all.inc();
         // let apply_histogram = SNAP_HISTOGRAM.with_label_values(&["apply"]);
         // let timer = apply_histogram.start_coarse_timer();
-        let start = tikv_util::time::Instant::now();
+        let start = Instant::now();
 
         match self.apply_snap(task) {
             Ok(()) => {
@@ -482,7 +483,9 @@ where
             }
         }
 
-        SNAP_HISTOGRAM.apply.observe(start.elapsed_secs());
+        SNAP_HISTOGRAM
+            .apply
+            .observe(start.saturating_elapsed_secs());
     }
 
     /// Cleans up the data within the range.
