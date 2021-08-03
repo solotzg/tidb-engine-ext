@@ -128,7 +128,7 @@ pub unsafe fn run_tikv(config: TiKvConfig) {
                 key_manager: tikv.encryption_key_manager.clone(),
                 read_index_client: Box::new(ReadIndexClient::new(
                     tikv.router.clone(),
-                    SysQuota::cpu_cores_quota() as usize * 2,
+                    SysQuota::new().cpu_cores_quota() as usize * 2,
                 )),
             };
 
