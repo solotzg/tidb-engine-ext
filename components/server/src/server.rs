@@ -104,6 +104,9 @@ use raftstore::engine_store_ffi::{
     RaftStoreProxyFFIHelper, ReadIndexClient,
 };
 use std::sync::atomic::{AtomicBool, AtomicU8};
+use crate::util::ffi_server_info;
+
+
 
 /// Run a TiKV server. Returns when the server is shutdown by the user, in which
 /// case the server will be properly stopped.
@@ -147,11 +150,13 @@ pub unsafe fn run_tikv(config: TiKvConfig) {
                 )),
             };
 
-            let proxy_helper = RaftStoreProxyFFIHelper::new(&proxy);
+            let mut proxy_helper = RaftStoreProxyFFIHelper::new(&proxy);
 
             info!("set raft-store proxy helper");
 
             get_engine_store_server_helper().handle_set_proxy(&proxy_helper);
+
+            proxy_helper.fn_server_info = Some(ffi_server_info);
 
             info!("wait for engine-store server to start");
             while get_engine_store_server_helper().handle_get_engine_store_server_status()
