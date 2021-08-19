@@ -122,7 +122,7 @@ pub extern "C" fn ffi_batch_read_index(
         let mut req_vec = Vec::with_capacity(view.len as usize);
         for i in 0..view.len as usize {
             let mut req = kvrpcpb::ReadIndexRequest::default();
-            let p = &(*view.view.offset(i as isize));
+            let p = &(*view.view.add(i));
             assert_ne!(p.data, std::ptr::null());
             assert_ne!(p.len, 0);
             req.merge_from_bytes(p.to_slice()).unwrap();
@@ -202,7 +202,7 @@ pub extern "C" fn ffi_handle_get_file(
                             ),
                         )
                     },
-                    |f| FileEncryptionInfoRaw::from(f),
+                    FileEncryptionInfoRaw::from,
                 )
             },
         )
@@ -227,7 +227,7 @@ pub extern "C" fn ffi_handle_new_file(
                             ),
                         )
                     },
-                    |f| FileEncryptionInfoRaw::from(f),
+                    FileEncryptionInfoRaw::from,
                 )
             },
         )
@@ -463,12 +463,12 @@ impl WriteCmds {
     pub fn push(&mut self, key: &[u8], val: &[u8], cmd_type: WriteCmdType, cf: ColumnFamilyType) {
         self.keys.push(key.into());
         self.vals.push(val.into());
-        self.cmd_type.push(cmd_type.into());
-        self.cf.push(cf.into());
+        self.cmd_type.push(cmd_type);
+        self.cf.push(cf);
     }
 
     pub fn len(&self) -> usize {
-        return self.cmd_type.len();
+        self.cmd_type.len()
     }
 
     fn gen_view(&self) -> WriteCmdsView {
@@ -543,7 +543,7 @@ impl Drop for RawCppPtr {
 static mut ENGINE_STORE_SERVER_HELPER_PTR: u64 = 0;
 
 pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
-    return unsafe { &(*(ENGINE_STORE_SERVER_HELPER_PTR as *const EngineStoreServerHelper)) };
+    unsafe { &(*(ENGINE_STORE_SERVER_HELPER_PTR as *const EngineStoreServerHelper)) }
 }
 
 pub unsafe fn init_engine_store_server_helper(engine_store_server_helper: *const u8) {
@@ -587,15 +587,11 @@ impl EngineStoreServerHelper {
         cmds: &WriteCmds,
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
-        unsafe {
-            let res =
-                (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header);
-            res.into()
-        }
+        unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
-        unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner).into() }
+        unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
     pub fn handle_set_proxy(&self, proxy: *const RaftStoreProxyFFIHelper) {
@@ -636,7 +632,7 @@ impl EngineStoreServerHelper {
                 Pin::new(&resp).into(),
                 header,
             );
-            res.into()
+            res
         }
     }
 
@@ -675,9 +671,7 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         let snaps_view = into_sst_views(snaps);
         unsafe {
-            let res =
-                (self.fn_handle_ingest_sst.into_inner())(self.inner, (&snaps_view).into(), header);
-            res.into()
+            (self.fn_handle_ingest_sst.into_inner())(self.inner, (&snaps_view).into(), header)
         }
     }
 

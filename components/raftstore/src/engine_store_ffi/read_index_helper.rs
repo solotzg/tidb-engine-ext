@@ -39,10 +39,7 @@ fn into_read_index_response<S: engine_traits::Snapshot>(
     res: Option<ReadResponse<S>>,
 ) -> kvproto::kvrpcpb::ReadIndexResponse {
     let mut resp = ReadIndexResponse::default();
-    if res.is_none() {
-        resp.set_region_error(Default::default());
-    } else {
-        let mut res = res.unwrap();
+    if let Some(mut res) = res {
         if res.response.get_header().has_error() {
             resp.set_region_error(res.response.mut_header().take_error());
         } else {
@@ -65,6 +62,8 @@ fn into_read_index_response<S: engine_traits::Snapshot>(
                 }
             }
         }
+    } else {
+        resp.set_region_error(Default::default());
     }
     resp
 }
