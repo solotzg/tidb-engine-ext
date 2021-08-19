@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 pub use read_index_helper::ReadIndexClient;
-use std::borrow::Borrow;
 
 pub use crate::engine_store_ffi::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
@@ -30,6 +29,7 @@ use crate::engine_store_ffi::interfaces::root::DB::{
     RAFT_STORE_PROXY_VERSION,
 };
 use crate::store::LockCFFileReader;
+use std::pin::Pin;
 use std::time::Duration;
 
 impl From<&[u8]> for BaseBuffView {
@@ -138,7 +138,7 @@ pub extern "C" fn ffi_batch_read_index(
             let r = ProtoMsgBaseBuff::new(r);
             get_engine_store_server_helper().insert_batch_read_index_resp(
                 res,
-                r.borrow().into(),
+                Pin::new(&r).into(),
                 *region_id,
             );
         }
@@ -510,11 +510,11 @@ impl ProtoMsgBaseBuff {
     }
 }
 
-impl From<&ProtoMsgBaseBuff> for BaseBuffView {
-    fn from(p: &ProtoMsgBaseBuff) -> Self {
+impl From<Pin<&ProtoMsgBaseBuff>> for BaseBuffView {
+    fn from(p: Pin<&ProtoMsgBaseBuff>) -> Self {
         Self {
-            data: p.data.as_ptr() as *const _,
-            len: p.data.len() as u64,
+            data: (*p).data.as_ptr() as *const _,
+            len: (*p).data.len() as u64,
         }
     }
 }
@@ -632,8 +632,8 @@ impl EngineStoreServerHelper {
 
             let res = (self.fn_handle_admin_raft_cmd.into_inner())(
                 self.inner,
-                req.borrow().into(),
-                resp.borrow().into(),
+                Pin::new(&req).into(),
+                Pin::new(&resp).into(),
                 header,
             );
             res.into()
@@ -653,7 +653,7 @@ impl EngineStoreServerHelper {
             let region = ProtoMsgBaseBuff::new(region);
             (self.fn_pre_handle_snapshot.into_inner())(
                 self.inner,
-                region.borrow().into(),
+                Pin::new(&region).into(),
                 peer_id,
                 (&snaps_view).into(),
                 index,
