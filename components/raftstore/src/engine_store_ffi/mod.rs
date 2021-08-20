@@ -135,12 +135,7 @@ pub extern "C" fn ffi_batch_read_index(
         let res = get_engine_store_server_helper().gen_batch_read_index_res(resp.len() as u64);
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
-            let r = ProtoMsgBaseBuff::new(r);
-            get_engine_store_server_helper().insert_batch_read_index_resp(
-                res,
-                Pin::new(&r).into(),
-                *region_id,
-            );
+            get_engine_store_server_helper().insert_batch_read_index_resp(res, r, *region_id);
         }
         res
     }
@@ -513,8 +508,8 @@ impl ProtoMsgBaseBuff {
 impl From<Pin<&ProtoMsgBaseBuff>> for BaseBuffView {
     fn from(p: Pin<&ProtoMsgBaseBuff>) -> Self {
         Self {
-            data: (*p).data.as_ptr() as *const _,
-            len: (*p).data.len() as u64,
+            data: p.data.as_ptr() as *const _,
+            len: p.data.len() as u64,
         }
     }
 }
@@ -562,8 +557,8 @@ fn into_sst_views(snaps: Vec<(&[u8], ColumnFamilyType)>) -> Vec<SSTView> {
     snaps_view
 }
 
-impl From<&Vec<SSTView>> for SSTViewVec {
-    fn from(snaps_view: &Vec<SSTView>) -> Self {
+impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
+    fn from(snaps_view: Pin<&Vec<SSTView>>) -> Self {
         Self {
             views: snaps_view.as_ptr(),
             len: snaps_view.len() as u64,
@@ -651,7 +646,7 @@ impl EngineStoreServerHelper {
                 self.inner,
                 Pin::new(&region).into(),
                 peer_id,
-                (&snaps_view).into(),
+                Pin::new(&snaps_view).into(),
                 index,
                 term,
             )
@@ -671,7 +666,11 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         let snaps_view = into_sst_views(snaps);
         unsafe {
-            (self.fn_handle_ingest_sst.into_inner())(self.inner, (&snaps_view).into(), header)
+            (self.fn_handle_ingest_sst.into_inner())(
+                self.inner,
+                Pin::new(&snaps_view).into(),
+                header,
+            )
         }
     }
 
@@ -693,8 +692,20 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
     }
 
-    fn insert_batch_read_index_resp(&self, data: RawVoidPtr, buf: BaseBuffView, region_id: u64) {
-        unsafe { (self.fn_insert_batch_read_index_resp.into_inner())(data, buf, region_id) }
+    fn insert_batch_read_index_resp(
+        &self,
+        data: RawVoidPtr,
+        r: &kvrpcpb::ReadIndexResponse,
+        region_id: u64,
+    ) {
+        let r = ProtoMsgBaseBuff::new(r);
+        unsafe {
+            (self.fn_insert_batch_read_index_resp.into_inner())(
+                data,
+                Pin::new(&r).into(),
+                region_id,
+            )
+        }
     }
 
     pub fn handle_http_request(&self, path: &str) -> HttpRequestRes {
