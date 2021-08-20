@@ -513,8 +513,8 @@ impl ProtoMsgBaseBuff {
 impl From<Pin<&ProtoMsgBaseBuff>> for BaseBuffView {
     fn from(p: Pin<&ProtoMsgBaseBuff>) -> Self {
         Self {
-            data: (*p).data.as_ptr() as *const _,
-            len: (*p).data.len() as u64,
+            data: p.data.as_ptr() as *const _,
+            len: p.data.len() as u64,
         }
     }
 }
@@ -562,8 +562,8 @@ fn into_sst_views(snaps: Vec<(&[u8], ColumnFamilyType)>) -> Vec<SSTView> {
     snaps_view
 }
 
-impl From<&Vec<SSTView>> for SSTViewVec {
-    fn from(snaps_view: &Vec<SSTView>) -> Self {
+impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
+    fn from(snaps_view: Pin<&Vec<SSTView>>) -> Self {
         Self {
             views: snaps_view.as_ptr(),
             len: snaps_view.len() as u64,
@@ -651,7 +651,7 @@ impl EngineStoreServerHelper {
                 self.inner,
                 Pin::new(&region).into(),
                 peer_id,
-                (&snaps_view).into(),
+                Pin::new(&snaps_view).into(),
                 index,
                 term,
             )
@@ -671,7 +671,11 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         let snaps_view = into_sst_views(snaps);
         unsafe {
-            (self.fn_handle_ingest_sst.into_inner())(self.inner, (&snaps_view).into(), header)
+            (self.fn_handle_ingest_sst.into_inner())(
+                self.inner,
+                Pin::new(&snaps_view).into(),
+                header,
+            )
         }
     }
 
