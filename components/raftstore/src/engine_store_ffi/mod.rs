@@ -465,6 +465,9 @@ impl WriteCmds {
     pub fn len(&self) -> usize {
         self.cmd_type.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     fn gen_view(&self) -> WriteCmdsView {
         WriteCmdsView {
@@ -541,6 +544,8 @@ pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     unsafe { &(*(ENGINE_STORE_SERVER_HELPER_PTR as *const EngineStoreServerHelper)) }
 }
 
+/// # Safety
+/// The lifetime of `engine_store_server_helper` is definitely longer than `ENGINE_STORE_SERVER_HELPER_PTR`.
 pub unsafe fn init_engine_store_server_helper(engine_store_server_helper: *const u8) {
     let ptr = &ENGINE_STORE_SERVER_HELPER_PTR as *const _ as *mut _;
     *ptr = engine_store_server_helper;
