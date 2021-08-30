@@ -55,3 +55,4 @@ jobs:
           # make test
           # make debug
           cargo check
+          cargo test --package tests --test failpoints -- cases::test_bootstrap::test_bootstrap_half_way_failure_after_bootstrap_store --exact --nocapture
