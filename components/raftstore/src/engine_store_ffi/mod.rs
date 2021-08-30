@@ -541,6 +541,7 @@ impl Drop for RawCppPtr {
 static mut ENGINE_STORE_SERVER_HELPER_PTR: u64 = 0;
 
 pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
+    debug_assert!(unsafe { ENGINE_STORE_SERVER_HELPER_PTR } != 0);
     unsafe { &(*(ENGINE_STORE_SERVER_HELPER_PTR as *const EngineStoreServerHelper)) }
 }
 
@@ -573,12 +574,14 @@ impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
 
 impl EngineStoreServerHelper {
     fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
+        debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
             (self.fn_gc_raw_cpp_ptr.into_inner())(self.inner, ptr, tp);
         }
     }
 
     pub fn handle_compute_store_stats(&self) -> StoreStats {
+        debug_assert!(self.fn_handle_compute_store_stats.is_some());
         unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
     }
 
@@ -587,14 +590,18 @@ impl EngineStoreServerHelper {
         cmds: &WriteCmds,
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
+        debug_assert!(self.fn_handle_write_raft_cmd.is_some());
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
+        debug_assert!(self.fn_handle_get_engine_store_server_status.is_some());
+
         unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
     pub fn handle_set_proxy(&self, proxy: *const RaftStoreProxyFFIHelper) {
+        debug_assert!(self.fn_atomic_update_proxy.is_some());
         unsafe { (self.fn_atomic_update_proxy.into_inner())(self.inner, proxy as *mut _) }
     }
 
@@ -622,6 +629,8 @@ impl EngineStoreServerHelper {
         resp: &raft_cmdpb::AdminResponse,
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
+        debug_assert!(self.fn_handle_admin_raft_cmd.is_some());
+
         unsafe {
             let req = ProtoMsgBaseBuff::new(req);
             let resp = ProtoMsgBaseBuff::new(resp);
@@ -644,6 +653,8 @@ impl EngineStoreServerHelper {
         index: u64,
         term: u64,
     ) -> RawCppPtr {
+        debug_assert!(self.fn_pre_handle_snapshot.is_some());
+
         let snaps_view = into_sst_views(snaps);
         unsafe {
             let region = ProtoMsgBaseBuff::new(region);
@@ -659,6 +670,8 @@ impl EngineStoreServerHelper {
     }
 
     pub fn apply_pre_handled_snapshot(&self, snap: RawCppPtr) {
+        debug_assert!(self.fn_apply_pre_handled_snapshot.is_some());
+
         unsafe {
             (self.fn_apply_pre_handled_snapshot.into_inner())(self.inner, snap.ptr, snap.type_)
         }
@@ -669,6 +682,8 @@ impl EngineStoreServerHelper {
         snaps: Vec<(&[u8], ColumnFamilyType)>,
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
+        debug_assert!(self.fn_handle_ingest_sst.is_some());
+
         let snaps_view = into_sst_views(snaps);
         unsafe {
             (self.fn_handle_ingest_sst.into_inner())(
@@ -680,20 +695,28 @@ impl EngineStoreServerHelper {
     }
 
     pub fn handle_destroy(&self, region_id: u64) {
+        debug_assert!(self.fn_handle_destroy.is_some());
+
         unsafe {
             (self.fn_handle_destroy.into_inner())(self.inner, region_id);
         }
     }
 
     pub fn handle_check_terminated(&self) -> bool {
+        debug_assert!(self.fn_handle_check_terminated.is_some());
+
         unsafe { (self.fn_handle_check_terminated.into_inner())(self.inner) != 0 }
     }
 
     fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
+        debug_assert!(self.fn_gen_cpp_string.is_some());
+
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
     }
 
     fn gen_batch_read_index_res(&self, cap: u64) -> RawVoidPtr {
+        debug_assert!(self.fn_gen_batch_read_index_res.is_some());
+
         unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
     }
 
@@ -703,6 +726,8 @@ impl EngineStoreServerHelper {
         r: &kvrpcpb::ReadIndexResponse,
         region_id: u64,
     ) {
+        debug_assert!(self.fn_insert_batch_read_index_resp.is_some());
+
         let r = ProtoMsgBaseBuff::new(r);
         unsafe {
             (self.fn_insert_batch_read_index_resp.into_inner())(
@@ -714,14 +739,20 @@ impl EngineStoreServerHelper {
     }
 
     pub fn handle_http_request(&self, path: &str) -> HttpRequestRes {
+        debug_assert!(self.fn_handle_http_request.is_some());
+
         unsafe { (self.fn_handle_http_request.into_inner())(self.inner, path.as_bytes().into()) }
     }
 
     pub fn check_http_uri_available(&self, path: &str) -> bool {
+        debug_assert!(self.fn_check_http_uri_available.is_some());
+
         unsafe { (self.fn_check_http_uri_available.into_inner())(path.as_bytes().into()) != 0 }
     }
 
     pub fn set_server_info_resp(&self, res: BaseBuffView, ptr: RawVoidPtr) {
+        debug_assert!(self.fn_set_server_info_resp.is_some());
+
         unsafe { (self.fn_set_server_info_resp.into_inner())(res, ptr) }
     }
 }
