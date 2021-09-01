@@ -1,5 +1,6 @@
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
+use engine_store_ffi::RaftStoreProxyFFIHelper;
 use protobuf::Message;
 use raftstore::engine_store_ffi;
 use std::collections::BTreeMap;
@@ -33,12 +34,17 @@ impl EngineStoreServer {
 
 pub struct EngineStoreServerWrap<'a> {
     engine_store_server: &'a mut EngineStoreServer,
+    maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
 }
 
 impl<'a> EngineStoreServerWrap<'a> {
-    pub fn new(engine_store_server: &'a mut EngineStoreServer) -> Self {
+    pub fn new(
+        engine_store_server: &'a mut EngineStoreServer,
+        maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
+    ) -> Self {
         Self {
             engine_store_server,
+            maybe_proxy_helper,
         }
     }
 
@@ -119,8 +125,8 @@ pub fn gen_engine_store_server_helper<'a>(
         fn_gen_cpp_string: Some(ffi_gen_cpp_string),
         fn_handle_write_raft_cmd: Some(ffi_handle_write_raft_cmd),
         fn_handle_admin_raft_cmd: Some(ffi_handle_admin_raft_cmd),
-        fn_atomic_update_proxy: None,
-        fn_handle_destroy: None,
+        fn_atomic_update_proxy: Some(ffi_atomic_update_proxy),
+        fn_handle_destroy: Some(ffi_handle_destroy),
         fn_handle_ingest_sst: None,
         fn_handle_check_terminated: None,
         fn_handle_compute_store_stats: None,
@@ -220,4 +226,20 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unreachable!(),
         RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
     }
+}
+
+unsafe extern "C" fn ffi_atomic_update_proxy(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    arg2: *mut ffi_interfaces::RaftStoreProxyFFIHelper,
+) {
+    let store = into_engine_store_server_wrap(arg1);
+    store.maybe_proxy_helper = Some(&mut *(arg2 as *mut RaftStoreProxyFFIHelper));
+}
+
+unsafe extern "C" fn ffi_handle_destroy(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    arg2: u64,
+) {
+    let store = into_engine_store_server_wrap(arg1);
+    store.engine_store_server.kvstore.remove(&arg2);
 }

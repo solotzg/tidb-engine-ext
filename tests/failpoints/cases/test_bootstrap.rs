@@ -18,7 +18,7 @@ fn test_bootstrap_half_way_failure(fp: &str) {
 
     let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
     let engine_store_server_wrap =
-        mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server);
+        mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, None);
     let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
         &engine_store_server_wrap,
     ));
