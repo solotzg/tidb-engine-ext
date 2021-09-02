@@ -243,3 +243,94 @@ unsafe extern "C" fn ffi_handle_destroy(
     let store = into_engine_store_server_wrap(arg1);
     store.engine_store_server.kvstore.remove(&arg2);
 }
+
+type TiFlashRaftProxyHelper = RaftStoreProxyFFIHelper;
+
+trait UnwrapExternCFunc<T> {
+    unsafe fn into_inner(&self) -> &T;
+}
+
+impl<T> UnwrapExternCFunc<T> for std::option::Option<T> {
+    unsafe fn into_inner(&self) -> &T {
+        std::mem::transmute::<&Self, &T>(self)
+    }
+}
+
+pub struct SSTReader<'a> {
+    proxy_helper: &'a TiFlashRaftProxyHelper,
+    inner: ffi_interfaces::SSTReaderPtr,
+    type_: ffi_interfaces::ColumnFamilyType,
+}
+
+impl<'a> SSTReader<'a> {
+    pub fn new(
+        proxy_helper: &'a TiFlashRaftProxyHelper,
+        view: &mut ffi_interfaces::SSTView,
+    ) -> Self {
+        SSTReader {
+            proxy_helper,
+            inner: (proxy_helper
+                .sst_reader_interfaces
+                .fn_get_sst_reader
+                .into_inner())(view.clone(), proxy_helper.proxy_ptr),
+            type_: view.type_,
+        }
+    }
+
+    pub fn drop(&mut self) {
+        (self.proxy_helper.sst_reader_interfaces.fn_gc.into_inner())(self.inner, self.type_);
+    }
+
+    pub fn remained(&mut self) -> bool {
+        (self
+            .proxy_helper
+            .sst_reader_interfaces
+            .fn_remained
+            .into_inner())(self.inner, self.type_) as bool
+    }
+
+    pub fn key(&mut self) -> ffi_interfaces::BaseBuffView {
+        (self.proxy_helper.sst_reader_interfaces.fn_key.into_inner())(self.inner, self.type_)
+    }
+
+    pub fn value(&mut self) -> ffi_interfaces::BaseBuffView {
+        (self
+            .proxy_helper
+            .sst_reader_interfaces
+            .fn_value
+            .into_inner())(self.inner, self.type_)
+    }
+
+    pub fn next(&mut self) {
+        (self.proxy_helper.sst_reader_interfaces.fn_next.into_inner())(self.inner, self.type_)
+    }
+}
+
+unsafe extern "C" fn ffi_pre_handle_snapshot(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    region_buff: ffi_interfaces::BaseBuffView,
+    peer_id: u64,
+    snaps: ffi_interfaces::SSTViewVec,
+    index: u64,
+    term: u64,
+) -> ffi_interfaces::RawCppPtr {
+    let store = into_engine_store_server_wrap(arg1);
+    let proxy_helper = store.maybe_proxy_helper.unwrap();
+
+    let mut req = kvproto::metapb::Region::default();
+    assert_ne!(region_buff.data, std::ptr::null());
+    assert_ne!(region_buff.len, 0);
+    req.merge_from_bytes(region_buff.to_slice()).unwrap();
+
+    for i in 0..snaps.len {
+        let mut snapshot = snaps.views[i];
+        let sst_reader = SSTReader::new(proxy_helper, snapshot);
+
+        while sst_reader.remained() {
+            let key = sst_reader.key();
+            let value = sst_reader.value();
+            // new_region->insert(snaps.views[i].type, TiKVKey(key.data, key.len), TiKVValue(value.data, value.len));
+            sst_reader.next();
+        }
+    }
+}
