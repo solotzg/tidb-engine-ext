@@ -265,7 +265,7 @@ pub struct SSTReader<'a> {
 impl<'a> SSTReader<'a> {
     pub fn new(
         proxy_helper: &'a TiFlashRaftProxyHelper,
-        view: &mut ffi_interfaces::SSTView,
+        view: ffi_interfaces::SSTView,
     ) -> Self {
         SSTReader {
             proxy_helper,

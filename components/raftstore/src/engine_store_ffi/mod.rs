@@ -756,3 +756,50 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_set_server_info_resp.into_inner())(res, ptr) }
     }
 }
+
+impl Clone for SSTReaderPtr {
+    fn clone(&self) -> SSTReaderPtr {
+        return SSTReaderPtr {
+            inner: self.inner.clone(),
+        };
+    }
+}
+
+impl Clone for BaseBuffView {
+    fn clone(&self) -> BaseBuffView {
+        return BaseBuffView {
+            data: self.data.clone(),
+            len: self.len.clone(),
+        };
+    }
+}
+
+impl Clone for SSTView {
+    fn clone(&self) -> SSTView {
+        return SSTView {
+            type_: self.type_.clone(),
+            path: self.path.clone(),
+        };
+    }
+}
+
+impl Clone for SSTReaderInterfaces {
+    fn clone(&self) -> SSTReaderInterfaces {
+        return SSTReaderInterfaces {
+            fn_get_sst_reader: self.fn_get_sst_reader.clone(),
+            fn_remained: self.fn_remained.clone(),
+            fn_key: self.fn_key.clone(),
+            fn_value: self.fn_value.clone(),
+            fn_next: self.fn_next.clone(),
+            fn_gc: self.fn_gc.clone(),
+        };
+    }
+}
+
+impl Clone for RaftStoreProxyPtr {
+    fn clone(&self) -> RaftStoreProxyPtr {
+        return RaftStoreProxyPtr {
+            inner: self.inner.clone(),
+        };
+    }
+}
