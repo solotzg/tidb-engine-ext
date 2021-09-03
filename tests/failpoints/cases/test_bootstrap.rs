@@ -17,12 +17,9 @@ fn test_bootstrap_half_way_failure(fp: &str) {
     fail::cfg(fp, "return").unwrap();
     cluster.start().unwrap_err();
 
-    let proxy = &mut cluster.proxy[0];
-    let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
-    let maybe_proxy_helper = Some(&mut proxy_helper);
     let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
     let engine_store_server_wrap =
-        mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, maybe_proxy_helper);
+        mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, None);
     let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
         &engine_store_server_wrap,
     ));
