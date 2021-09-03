@@ -38,6 +38,8 @@ use tikv_util::thread_group::GroupProperties;
 use tikv_util::HandyRwLock;
 
 use super::*;
+use std::sync::atomic::{AtomicBool, AtomicU8};
+use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
 
 // We simulate 3 or 5 nodes, each has a store.
@@ -142,6 +144,7 @@ pub struct Cluster<T: Simulator> {
 
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
+    pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
 }
 
 impl<T: Simulator> Cluster<T> {
@@ -168,6 +171,7 @@ impl<T: Simulator> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
+            proxy: vec![],
         }
     }
 
@@ -239,6 +243,15 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
+            self.proxy
+                .push(raftstore::engine_store_ffi::RaftStoreProxy {
+                    status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
+                    key_manager: key_mgr.clone(),
+                    read_index_client: Box::new(raftstore::engine_store_ffi::ReadIndexClient::new(
+                        router.clone(),
+                        SysQuota::cpu_cores_quota() as usize * 2,
+                    )),
+                });
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(
                 0,

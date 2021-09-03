@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use tikv_util::{debug, error, info, warn};
 
-
 // use kvproto::raft_serverpb::{
 //     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
 // };
