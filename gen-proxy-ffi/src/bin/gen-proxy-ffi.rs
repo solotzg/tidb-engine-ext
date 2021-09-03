@@ -5,12 +5,26 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use walkdir::WalkDir;
+use std::borrow::Borrow;
 
 fn read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
-    let mut file = fs::File::open(path).expect("Couldn't open headers");
+    let msg = &format!("{} {}", "Couldn't open headers", path.as_ref().to_str().unwrap());
+    let mut file = fs::File::open(path).expect(msg);
     let mut buff = String::new();
     file.read_to_string(&mut buff).expect(expect);
     buff
+}
+
+fn maybe_read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
+    let mut file = fs::File::open(path);
+    let mut buff = String::new();
+    match file.as_mut() {
+        Ok(v) => {
+            v.read_to_string(&mut buff).expect(expect);
+            buff
+        } ,
+        Err(e) => buff,
+    }
 }
 
 fn scan_ffi_src_head(dir: &str) -> (Vec<String>, String) {
@@ -126,7 +140,7 @@ fn gen_ffi_code() {
     let bindings = builder.generate().unwrap();
 
     let buff = bindings.to_string();
-    let ori_buff = read_file_to_string(tar_file, "Couldn't open rust ffi code file");
+    let ori_buff = maybe_read_file_to_string(tar_file, "Couldn't open rust ffi code file");
     if ori_buff == buff {
         println!("There is no need to overwrite rust ffi code file");
     } else {
