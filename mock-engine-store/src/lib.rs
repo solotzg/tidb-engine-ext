@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::pin::Pin;
 use tikv_util::{debug, error, info, warn};
+
+
 // use kvproto::raft_serverpb::{
 //     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
 // };
@@ -131,7 +133,7 @@ pub fn gen_engine_store_server_helper<'a>(
         fn_handle_check_terminated: None,
         fn_handle_compute_store_stats: None,
         fn_handle_get_engine_store_server_status: None,
-        fn_pre_handle_snapshot: None,
+        fn_pre_handle_snapshot: Some(ffi_pre_handle_snapshot),
         fn_apply_pre_handled_snapshot: None,
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
@@ -263,46 +265,56 @@ pub struct SSTReader<'a> {
 }
 
 impl<'a> SSTReader<'a> {
-    pub fn new(
+    pub unsafe fn new(
         proxy_helper: &'a TiFlashRaftProxyHelper,
-        view: ffi_interfaces::SSTView,
+        view: &'a ffi_interfaces::SSTView,
     ) -> Self {
         SSTReader {
             proxy_helper,
             inner: (proxy_helper
                 .sst_reader_interfaces
                 .fn_get_sst_reader
-                .into_inner())(view.clone(), proxy_helper.proxy_ptr),
+                .into_inner())(view.clone(), proxy_helper.proxy_ptr.clone()),
             type_: view.type_,
         }
     }
 
-    pub fn drop(&mut self) {
-        (self.proxy_helper.sst_reader_interfaces.fn_gc.into_inner())(self.inner, self.type_);
+    pub unsafe fn drop(&mut self) {
+        (self.proxy_helper.sst_reader_interfaces.fn_gc.into_inner())(
+            self.inner.clone(),
+            self.type_,
+        );
     }
 
-    pub fn remained(&mut self) -> bool {
+    pub unsafe fn remained(&mut self) -> bool {
         (self
             .proxy_helper
             .sst_reader_interfaces
             .fn_remained
-            .into_inner())(self.inner, self.type_) as bool
+            .into_inner())(self.inner.clone(), self.type_)
+            != 0
     }
 
-    pub fn key(&mut self) -> ffi_interfaces::BaseBuffView {
-        (self.proxy_helper.sst_reader_interfaces.fn_key.into_inner())(self.inner, self.type_)
+    pub unsafe fn key(&mut self) -> ffi_interfaces::BaseBuffView {
+        (self.proxy_helper.sst_reader_interfaces.fn_key.into_inner())(
+            self.inner.clone(),
+            self.type_,
+        )
     }
 
-    pub fn value(&mut self) -> ffi_interfaces::BaseBuffView {
+    pub unsafe fn value(&mut self) -> ffi_interfaces::BaseBuffView {
         (self
             .proxy_helper
             .sst_reader_interfaces
             .fn_value
-            .into_inner())(self.inner, self.type_)
+            .into_inner())(self.inner.clone(), self.type_)
     }
 
-    pub fn next(&mut self) {
-        (self.proxy_helper.sst_reader_interfaces.fn_next.into_inner())(self.inner, self.type_)
+    pub unsafe fn next(&mut self) {
+        (self.proxy_helper.sst_reader_interfaces.fn_next.into_inner())(
+            self.inner.clone(),
+            self.type_,
+        )
     }
 }
 
@@ -315,22 +327,57 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     term: u64,
 ) -> ffi_interfaces::RawCppPtr {
     let store = into_engine_store_server_wrap(arg1);
-    let proxy_helper = store.maybe_proxy_helper.unwrap();
+    let proxy_helper = store.maybe_proxy_helper.as_ref().unwrap();
+    let kvstore = &mut store.engine_store_server.kvstore;
 
     let mut req = kvproto::metapb::Region::default();
     assert_ne!(region_buff.data, std::ptr::null());
     assert_ne!(region_buff.len, 0);
     req.merge_from_bytes(region_buff.to_slice()).unwrap();
 
+    // kvstore.insert(req.id, Default::default());
+    // let &mut region = kvstore.get_mut(&req.id).unwrap();
+    // region.region = req;
+
+    let req_id = req.id;
+    kvstore.insert(
+        req.id,
+        Region {
+            region: req,
+            peer: Default::default(),
+            data: Default::default(),
+            apply_state: Default::default(),
+        },
+    );
+
+    let region = &mut kvstore.get_mut(&req_id).unwrap();
+
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views[i];
-        let sst_reader = SSTReader::new(proxy_helper, snapshot);
+        let mut snapshot = snaps.views.add(i as usize);
+        let mut sst_reader =
+            SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
+
+        {
+            region.apply_state.set_applied_index(index);
+            region.apply_state.mut_truncated_state().set_index(index);
+            region.apply_state.mut_truncated_state().set_term(term);
+        }
 
         while sst_reader.remained() {
             let key = sst_reader.key();
             let value = sst_reader.value();
             // new_region->insert(snaps.views[i].type, TiKVKey(key.data, key.len), TiKVValue(value.data, value.len));
+
+            let cf_index = (*snapshot).type_ as u8;
+            let data = &mut region.data[cf_index as usize];
+            let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
+
             sst_reader.next();
         }
+    }
+
+    ffi_interfaces::RawCppPtr {
+        ptr: std::ptr::null_mut(),
+        type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
 }

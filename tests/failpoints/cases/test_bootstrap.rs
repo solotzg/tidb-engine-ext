@@ -6,6 +6,7 @@ use engine_traits::Peekable;
 use kvproto::{metapb, raft_serverpb};
 use mock_engine_store;
 use test_raftstore::*;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 
 fn test_bootstrap_half_way_failure(fp: &str) {
     let pd_client = Arc::new(TestPdClient::new(0, false));
@@ -16,6 +17,7 @@ fn test_bootstrap_half_way_failure(fp: &str) {
     fail::cfg(fp, "return").unwrap();
     cluster.start().unwrap_err();
 
+
     let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
     let engine_store_server_wrap =
         mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, None);
@@ -23,9 +25,10 @@ fn test_bootstrap_half_way_failure(fp: &str) {
         &engine_store_server_wrap,
     ));
     unsafe {
-        raftstore::engine_store_ffi::init_engine_store_server_helper(
-            &helper as *const _ as *const u8,
-        );
+        server::run_proxy(0, std::ptr::null_mut(), &helper as *const _ as *const u8);
+        // raftstore::engine_store_ffi::init_engine_store_server_helper(
+        //     &helper as *const _ as *const u8,
+        // );
     }
     let engines = cluster.dbs[0].clone();
     let ident = engines
