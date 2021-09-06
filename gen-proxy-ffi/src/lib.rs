@@ -98,7 +98,7 @@ pub fn gen_ffi_code() {
 
     let (ori_md5_sum, ori_version) = read_version_file(version_cpp_file.as_str());
     println!("\nFFI src dir path is {}", src_dir);
-    println!("Original version is {}", ori_version);
+    println!("Original version is {} md5_sum is {}", ori_version, ori_md5_sum);
     let new_version = match matches.value_of(OVERWRITE_VERSION) {
         Some(overwritten_version) => {
             println!("Overwrite version to {}", overwritten_version);
@@ -154,6 +154,3 @@ pub fn gen_ffi_code() {
     }
 }
 
-// fn main() {
-//     gen_ffi_code();
-// }
