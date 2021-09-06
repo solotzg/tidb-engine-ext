@@ -81,7 +81,6 @@ fn make_version_file(md5_sum: String, version: u32, tar_version_head_path: &str)
 }
 
 pub fn gen_ffi_code() {
-    println!("Current Dir {}", std::env::current_dir().unwrap().into_os_string().into_string().unwrap());
     const OVERWRITE_VERSION: &str = "overwrite-version";
     let matches = App::new("RaftStore Proxy FFI Generator")
         .author("tongzhigao@pingcap.com")
@@ -93,8 +92,14 @@ pub fn gen_ffi_code() {
         )
         .get_matches();
 
-    let src_dir = "../../raftstore-proxy/ffi/src/RaftStoreProxyFFI";
-    let tar_file = "../../components/raftstore/src/engine_store_ffi/interfaces.rs";
+    let src_dir = &format!(
+        "{}/../raftstore-proxy/ffi/src/RaftStoreProxyFFI",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let tar_file = &format!(
+        "{}/../components/raftstore/src/engine_store_ffi/interfaces.rs",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let version_cpp_file = format!("{}/@version", src_dir);
 
     let (ori_md5_sum, ori_version) = read_version_file(version_cpp_file.as_str());
