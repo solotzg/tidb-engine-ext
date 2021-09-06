@@ -10,7 +10,6 @@ repository = "https://github.com/tikv/tikv/"
 readme = "README.md"
 edition = "2018"
 publish = false
-build = "components/raftstore/build.rs"
 
 [features]
 default = ["protobuf-codec", "test-engines-rocksdb", "cloud-aws", "cloud-gcp"]
@@ -295,6 +294,7 @@ members = [
   "components/resource_metering",
 
   "raftstore-proxy",
+  "gen-proxy-ffi",
 ]
 default-members = ["raftstore-proxy"]
 

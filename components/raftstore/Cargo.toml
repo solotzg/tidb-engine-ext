@@ -124,4 +124,4 @@ test_sst_importer = { path = "../test_sst_importer", default-features = false }
 engine_panic = { path = "../engine_panic", default-features = false }
 
 [build-dependencies]
-gen_proxy_ffi = { path = "../../gen-proxy-ffi", default-features = false, package = "gen-proxy-ffi" }
+gen-proxy-ffi = { path = "../../gen-proxy-ffi", default-features = false }

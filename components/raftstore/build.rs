@@ -1,6 +1,4 @@
 
-extern crate gen_proxy_ffi;
-
 fn main() {
     println!(
     "cargo:rerun-if-changed={}",
