@@ -267,6 +267,7 @@ unset-override:
 	@if rustup override list | grep `pwd` > /dev/null; then rustup override unset; fi
 
 pre-format: unset-override
+	@cargo check
 	@rustup component add rustfmt
 
 format: pre-format

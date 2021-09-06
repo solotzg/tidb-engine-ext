@@ -1,6 +1,5 @@
 use bindgen::EnumVariation;
 use clap::{App, Arg};
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -27,7 +26,7 @@ fn maybe_read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
             v.read_to_string(&mut buff).expect(expect);
             buff
         }
-        Err(e) => buff,
+        Err(_) => buff,
     }
 }
 
