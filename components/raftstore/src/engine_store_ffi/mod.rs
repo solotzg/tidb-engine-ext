@@ -587,7 +587,7 @@ pub fn set_server_info_resp(res: BaseBuffView, ptr: RawVoidPtr) {
 impl EngineStoreServerHelper {
     fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         unsafe {
-            (self.fn_gc_raw_cpp_ptr.into_inner())(self.inner, ptr, tp);
+            (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
         }
     }
 
