@@ -91,7 +91,6 @@ pub fn gen_ffi_code() {
                 .help("overwrite version forcibly"),
         )
         .get_matches();
-
     let src_dir = &format!(
         "{}/../raftstore-proxy/ffi/src/RaftStoreProxyFFI",
         env!("CARGO_MANIFEST_DIR")

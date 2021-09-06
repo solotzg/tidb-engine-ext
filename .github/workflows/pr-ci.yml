@@ -25,9 +25,9 @@ jobs:
             ~/.cargo/git/
             # ~/.cache/sccache
             target/
-          key: ${{ runner.os }}-cargo1-${{ hashFiles('**/rust-toolchain') }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo2-${{ hashFiles('**/rust-toolchain') }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo1-${{ hashFiles('**/rust-toolchain') }}-
+            ${{ runner.os }}-cargo2-${{ hashFiles('**/rust-toolchain') }}-
       - name: install rust
         if: steps.cache-cargo.outputs.cache-hit != 'true'
         run: |
