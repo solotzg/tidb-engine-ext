@@ -169,7 +169,7 @@ struct EngineStoreServerHelper {
   HttpRequestRes (*fn_handle_http_request)(EngineStoreServerWrap *,
                                            BaseBuffView);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
-  void (*fn_gc_raw_cpp_ptr)(EngineStoreServerWrap *, RawVoidPtr, RawCppPtrType);
+  void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
   RawVoidPtr (*fn_gen_batch_read_index_res)(uint64_t);
   void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView, uint64_t);
   void (*fn_set_server_info_resp)(BaseBuffView, RawVoidPtr);

@@ -804,11 +804,7 @@ pub mod root {
             pub fn_check_http_uri_available:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::BaseBuffView) -> u8>,
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *mut root::DB::EngineStoreServerWrap,
-                    arg2: root::DB::RawVoidPtr,
-                    arg3: root::DB::RawCppPtrType,
-                ),
+                unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
             pub fn_gen_batch_read_index_res:
                 ::std::option::Option<unsafe extern "C" fn(arg1: u64) -> root::DB::RawVoidPtr>,
@@ -823,7 +819,7 @@ pub mod root {
                 unsafe extern "C" fn(arg1: root::DB::BaseBuffView, arg2: root::DB::RawVoidPtr),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u32 = 501001;
+        pub const RAFT_STORE_PROXY_VERSION: u32 = 501002;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
