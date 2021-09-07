@@ -10,6 +10,8 @@ use std::hash::{Hash, Hasher};
 
 type VersionType = u64;
 
+const RAFT_STORE_PROXY_VERSION_PREFIX: &str = "RAFT_STORE_PROXY_VERSION";
+
 fn read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
     let msg = &format!(
         "{} {}",
@@ -64,18 +66,18 @@ fn scan_ffi_src_head(dir: &str) -> (Vec<String>, VersionType) {
 
 fn read_version_file(version_cpp_file: &str) -> VersionType {
     let buff = read_file_to_string(version_cpp_file, "Couldn't open version file");
-    let data: Vec<_> = buff.split("/**/").collect();
-    let data = data[1];
-    let len = data.len();
-    let num = &data[1..(len - 3 - 1)];
-    let version = num.parse::<VersionType>().unwrap();
+    let begin = buff.find(RAFT_STORE_PROXY_VERSION_PREFIX).unwrap();
+    let buff = &buff[(begin + RAFT_STORE_PROXY_VERSION_PREFIX.len() + 3)..buff.len()];
+    let end = buff.find("ull").unwrap();
+    let buff = &buff[..end];
+    let version = buff.parse::<VersionType>().unwrap();
     version
 }
 
 fn make_version_file(version: VersionType, tar_version_head_path: &str) {
     let buff = format!(
-        "#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t RAFT_STORE_PROXY_VERSION = {}ull; }}",
-        version
+        "#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t {} = {}ull; }}",
+        RAFT_STORE_PROXY_VERSION_PREFIX, version
     );
     let tmp_path = format!("{}.tmp", tar_version_head_path);
     let mut file = fs::File::create(&tmp_path).expect("Couldn't create tmp cpp version head file");
