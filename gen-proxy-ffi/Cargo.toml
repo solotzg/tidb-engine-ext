@@ -15,7 +15,6 @@ path = "bin.rs"
 [dependencies.bindgen]
 version = ""
 default-features = false
-features = ["which-rustfmt"]
 
 [dependencies]
 walkdir = "2"
