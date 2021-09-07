@@ -57,8 +57,8 @@ fn read_version_file(version_cpp_file: &str) -> VersionType {
 
 fn make_version_file(version: VersionType, tar_version_head_path: &str) {
     let buff = format!(
-        "//{}//\n#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t RAFT_STORE_PROXY_VERSION = {}ull; }}",
-        version, version
+        "#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t RAFT_STORE_PROXY_VERSION = {}ull; }}",
+        version
     );
     let tmp_path = format!("{}.tmp", tar_version_head_path);
     let mut file = fs::File::create(&tmp_path).expect("Couldn't create tmp cpp version head file");
