@@ -137,7 +137,6 @@ pub fn gen_engine_store_server_helper<'a>(
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
-        fn_gen_batch_read_index_res: None,
         fn_insert_batch_read_index_resp: None,
         fn_set_server_info_resp: None,
     }
@@ -214,11 +213,9 @@ extern "C" fn ffi_gen_cpp_string(s: ffi_interfaces::BaseBuffView) -> ffi_interfa
 
 #[no_mangle]
 extern "C" fn ffi_gc_raw_cpp_ptr(
-    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     ptr: ffi_interfaces::RawVoidPtr,
     tp: ffi_interfaces::RawCppPtrType,
 ) {
-    let _store = unsafe { into_engine_store_server_wrap(arg1) };
     match RawCppPtrTypeImpl::from(tp) {
         RawCppPtrTypeImpl::None => {}
         RawCppPtrTypeImpl::String => unsafe {

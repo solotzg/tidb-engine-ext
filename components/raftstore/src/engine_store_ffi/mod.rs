@@ -112,8 +112,9 @@ pub extern "C" fn ffi_encryption_method(
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
+    res: RawVoidPtr,
     timeout_ms: u64,
-) -> RawVoidPtr {
+) {
     assert!(!proxy_ptr.is_null());
     if view.len != 0 {
         assert_ne!(view.view, std::ptr::null());
@@ -132,12 +133,10 @@ pub extern "C" fn ffi_batch_read_index(
             .as_ref()
             .read_index_client
             .batch_read_index(req_vec, Duration::from_millis(timeout_ms));
-        let res = get_engine_store_server_helper().gen_batch_read_index_res(resp.len() as u64);
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
             get_engine_store_server_helper().insert_batch_read_index_resp(res, r, *region_id);
         }
-        res
     }
 }
 
@@ -538,11 +537,17 @@ impl Drop for RawCppPtr {
     }
 }
 
-static mut ENGINE_STORE_SERVER_HELPER_PTR: u64 = 0;
+static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
-pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
-    debug_assert!(unsafe { ENGINE_STORE_SERVER_HELPER_PTR } != 0);
-    unsafe { &(*(ENGINE_STORE_SERVER_HELPER_PTR as *const EngineStoreServerHelper)) }
+fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
+    gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
+}
+
+pub fn gen_engine_store_server_helper(
+    engine_store_server_helper: isize,
+) -> &'static EngineStoreServerHelper {
+    debug_assert!(engine_store_server_helper != 0);
+    unsafe { &(*(engine_store_server_helper as *const EngineStoreServerHelper)) }
 }
 
 /// # Safety
@@ -572,11 +577,17 @@ impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
     }
 }
 
+unsafe impl Sync for EngineStoreServerHelper {}
+
+pub fn set_server_info_resp(res: BaseBuffView, ptr: RawVoidPtr) {
+    get_engine_store_server_helper().set_server_info_resp(res, ptr)
+}
+
 impl EngineStoreServerHelper {
     fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
-            (self.fn_gc_raw_cpp_ptr.into_inner())(self.inner, ptr, tp);
+            (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
         }
     }
 
@@ -596,7 +607,6 @@ impl EngineStoreServerHelper {
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
         debug_assert!(self.fn_handle_get_engine_store_server_status.is_some());
-
         unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
@@ -710,14 +720,7 @@ impl EngineStoreServerHelper {
 
     fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
         debug_assert!(self.fn_gen_cpp_string.is_some());
-
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
-    }
-
-    fn gen_batch_read_index_res(&self, cap: u64) -> RawVoidPtr {
-        debug_assert!(self.fn_gen_batch_read_index_res.is_some());
-
-        unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
     }
 
     fn insert_batch_read_index_resp(
@@ -727,7 +730,6 @@ impl EngineStoreServerHelper {
         region_id: u64,
     ) {
         debug_assert!(self.fn_insert_batch_read_index_resp.is_some());
-
         let r = ProtoMsgBaseBuff::new(r);
         unsafe {
             (self.fn_insert_batch_read_index_resp.into_inner())(
