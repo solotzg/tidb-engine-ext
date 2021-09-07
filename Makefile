@@ -269,10 +269,10 @@ unset-override:
 	@# unset first in case of any previous overrides
 	@if rustup override list | grep `pwd` > /dev/null; then rustup override unset; fi
 
-pre-format: gen_proxy_ffi unset-override
+pre-format: unset-override
 	@rustup component add rustfmt
 
-format: pre-format
+format: pre-format gen_proxy_ffi
 	@cargo fmt -- --check >/dev/null || \
 	cargo fmt
 
