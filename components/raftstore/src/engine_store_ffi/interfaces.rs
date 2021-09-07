@@ -713,8 +713,9 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
                     arg2: root::DB::CppStrVecView,
-                    arg3: u64,
-                ) -> root::DB::RawVoidPtr,
+                    arg3: root::DB::RawVoidPtr,
+                    arg4: u64,
+                ),
             >,
             pub sst_reader_interfaces: root::DB::SSTReaderInterfaces,
             pub fn_server_info: ::std::option::Option<
@@ -806,8 +807,6 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
-            pub fn_gen_batch_read_index_res:
-                ::std::option::Option<unsafe extern "C" fn(arg1: u64) -> root::DB::RawVoidPtr>,
             pub fn_insert_batch_read_index_resp: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RawVoidPtr,

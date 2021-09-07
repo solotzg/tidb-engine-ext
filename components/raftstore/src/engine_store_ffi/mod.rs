@@ -112,8 +112,9 @@ pub extern "C" fn ffi_encryption_method(
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
+    res: RawVoidPtr,
     timeout_ms: u64,
-) -> RawVoidPtr {
+) {
     assert!(!proxy_ptr.is_null());
     if view.len != 0 {
         assert_ne!(view.view, std::ptr::null());
@@ -132,12 +133,10 @@ pub extern "C" fn ffi_batch_read_index(
             .as_ref()
             .read_index_client
             .batch_read_index(req_vec, Duration::from_millis(timeout_ms));
-        let res = get_engine_store_server_helper().gen_batch_read_index_res(resp.len() as u64);
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
             get_engine_store_server_helper().insert_batch_read_index_resp(res, r, *region_id);
         }
-        res
     }
 }
 
@@ -704,10 +703,6 @@ impl EngineStoreServerHelper {
 
     fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
-    }
-
-    fn gen_batch_read_index_res(&self, cap: u64) -> RawVoidPtr {
-        unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
     }
 
     fn insert_batch_read_index_resp(
