@@ -8,6 +8,8 @@ use walkdir::WalkDir;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+type VersionType = u64;
+
 fn read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
     let mut file = fs::File::open(path).expect("Couldn't open headers");
     let mut buff = String::new();
@@ -15,7 +17,7 @@ fn read_file_to_string<P: AsRef<Path>>(path: P, expect: &str) -> String {
     buff
 }
 
-fn scan_ffi_src_head(dir: &str) -> (Vec<String>, u64) {
+fn scan_ffi_src_head(dir: &str) -> (Vec<String>, VersionType) {
     let mut headers = Vec::new();
     let mut headers_buff = HashMap::new();
     for result in WalkDir::new(Path::new(dir)) {
@@ -43,14 +45,14 @@ fn scan_ffi_src_head(dir: &str) -> (Vec<String>, u64) {
     (headers, hash_version)
 }
 
-fn read_version_file(version_cpp_file: &str) -> u64 {
+fn read_version_file(version_cpp_file: &str) -> VersionType {
     let buff = read_file_to_string(version_cpp_file, "Couldn't open version file");
     let data: Vec<_> = buff.split("//").collect();
-    let ver = data[1].parse::<u64>().unwrap();
+    let ver = data[1].parse::<VersionType>().unwrap();
     ver
 }
 
-fn make_version_file(version: u64, tar_version_head_path: &str) {
+fn make_version_file(version: VersionType, tar_version_head_path: &str) {
     let buff = format!(
         "//{}//\n#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t RAFT_STORE_PROXY_VERSION = {}ull; }}",
         version, version
