@@ -25,9 +25,9 @@ jobs:
             ~/.cargo/git/
             # ~/.cache/sccache
             target/
-          key: ${{ runner.os }}-cargo2-${{ hashFiles('**/rust-toolchain') }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo4-${{ hashFiles('**/rust-toolchain') }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo2-${{ hashFiles('**/rust-toolchain') }}-
+            ${{ runner.os }}-cargo4-${{ hashFiles('**/rust-toolchain') }}-
       - name: install rust
         if: steps.cache-cargo.outputs.cache-hit != 'true'
         run: |
@@ -40,7 +40,7 @@ jobs:
       - name: format check
         run: |
           cd ${{github.workspace}}
-          make pre-format
+          make gen_proxy_ffi
           cargo fmt -- --check >/dev/null
       - name: test
         run: |
