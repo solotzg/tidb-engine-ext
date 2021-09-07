@@ -47,9 +47,12 @@ fn scan_ffi_src_head(dir: &str) -> (Vec<String>, VersionType) {
 
 fn read_version_file(version_cpp_file: &str) -> VersionType {
     let buff = read_file_to_string(version_cpp_file, "Couldn't open version file");
-    let data: Vec<_> = buff.split("//").collect();
-    let ver = data[1].parse::<VersionType>().unwrap();
-    ver
+    let data: Vec<_> = buff.split("/**/").collect();
+    let data = data[1];
+    let len = data.len();
+    let num = &data[1..(len - 3 - 1)];
+    let version = num.parse::<VersionType>().unwrap();
+    version
 }
 
 fn make_version_file(version: VersionType, tar_version_head_path: &str) {
