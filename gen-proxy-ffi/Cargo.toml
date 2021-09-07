@@ -5,11 +5,11 @@ authors = ["Tong Zhigao <tongzhigao@pingcap.com>"]
 edition = "2018"
 
 [lib]
-name = "gen_proxy_ffi"
+name = "gen_proxy_ffi_lib"
 path = "src/lib.rs"
 
 [[bin]]
-name = "gen_proxy_ffi_gen"
+name = "gen_proxy_ffi"
 path = "bin.rs"
 
 [dependencies.bindgen]

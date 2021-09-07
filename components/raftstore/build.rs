@@ -1,11 +1,11 @@
 fn main() {
     println!(
-        "cargo:rerun-if-changed={}",
-        "components/raftstore/src/engine_store_ffi/interfaces.rs"
+        "cargo:rerun-if-changed={}/{}",
+        env!("CARGO_MANIFEST_DIR"), "src/engine_store_ffi/interfaces.rs"
     );
     println!(
-        "cargo:rerun-if-changed={}",
-        "raftstore-proxy/ffi/src/RaftStoreProxyFFI"
+        "cargo:rerun-if-changed={}/{}",
+        env!("CARGO_MANIFEST_DIR"), "../../raftstore-proxy/ffi/src/RaftStoreProxyFFI"
     );
-    gen_proxy_ffi::gen_ffi_code();
+    gen_proxy_ffi_lib::gen_ffi_code();
 }
