@@ -3,7 +3,7 @@
 #include "Common.h"
 
 namespace DB {
-enum class ColumnFamilyType : uint8_t {
+enum class ColumnFamilyType : PROXY_FII_TYPE_UINT8 {
   Lock = 0,
   Write,
   Default,

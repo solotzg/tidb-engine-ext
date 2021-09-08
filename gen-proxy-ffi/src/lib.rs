@@ -1,4 +1,3 @@
-use bindgen::EnumVariation;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -76,7 +75,7 @@ fn read_version_file(version_cpp_file: &str) -> VersionType {
 
 fn make_version_file(version: VersionType, tar_version_head_path: &str) {
     let buff = format!(
-        "#pragma once\n#include <cstdint>\nnamespace DB {{ constexpr uint64_t {} = {}ull; }}",
+        "#pragma once\nnamespace DB {{ const unsigned long int {} = {}ull; }}",
         RAFT_STORE_PROXY_VERSION_PREFIX, version
     );
     let tmp_path = format!("{}.tmp", tar_version_head_path);
@@ -120,14 +119,14 @@ pub fn gen_ffi_code() {
     }
 
     let mut builder = bindgen::Builder::default()
+        .clang_arg("-xc++")
         .clang_arg("-std=c++11")
-        .clang_arg("-x")
-        .clang_arg("c++")
         .clang_arg("-Wno-pragma-once-outside-header")
         .layout_tests(false)
         .derive_copy(false)
         .enable_cxx_namespaces()
-        .default_enum_style(EnumVariation::Rust {
+        .disable_header_comment()
+        .default_enum_style(bindgen::EnumVariation::Rust {
             non_exhaustive: false,
         });
 

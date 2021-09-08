@@ -5,13 +5,13 @@
 namespace DB {
 struct RawCppString;
 using RawCppStringPtr = RawCppString *;
-enum class FileEncryptionRes : uint8_t {
+enum class FileEncryptionRes : PROXY_FII_TYPE_UINT8 {
   Disabled = 0,
   Ok,
   Error,
 };
 
-enum class EncryptionMethod : uint8_t {
+enum class EncryptionMethod : PROXY_FII_TYPE_UINT8 {
   Unknown = 0,
   Plaintext,
   Aes128Ctr,

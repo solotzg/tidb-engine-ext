@@ -6,26 +6,26 @@ namespace DB {
 
 struct EngineStoreServerWrap;
 
-enum class EngineStoreApplyRes : uint32_t {
+enum class EngineStoreApplyRes : PROXY_FII_TYPE_UINT32 {
   None = 0,
   Persist,
   NotFound,
 };
 
-enum class WriteCmdType : uint8_t {
+enum class WriteCmdType : PROXY_FII_TYPE_UINT8 {
   Put = 0,
   Del,
 };
 
 struct BaseBuffView {
   const char *data;
-  const uint64_t len;
+  const PROXY_FII_TYPE_UINT64 len;
 };
 
 struct RaftCmdHeader {
-  uint64_t region_id;
-  uint64_t index;
-  uint64_t term;
+  PROXY_FII_TYPE_UINT64 region_id;
+  PROXY_FII_TYPE_UINT64 index;
+  PROXY_FII_TYPE_UINT64 term;
 };
 
 struct WriteCmdsView {
@@ -33,39 +33,39 @@ struct WriteCmdsView {
   const BaseBuffView *vals;
   const WriteCmdType *cmd_types;
   const ColumnFamilyType *cmd_cf;
-  const uint64_t len;
+  const PROXY_FII_TYPE_UINT64 len;
 };
 
 struct FsStats {
-  uint64_t used_size;
-  uint64_t avail_size;
-  uint64_t capacity_size;
+  PROXY_FII_TYPE_UINT64 used_size;
+  PROXY_FII_TYPE_UINT64 avail_size;
+  PROXY_FII_TYPE_UINT64 capacity_size;
 
-  uint8_t ok;
+  PROXY_FII_TYPE_UINT8 ok;
 };
 
 struct StoreStats {
   FsStats fs_stats;
 
-  uint64_t engine_bytes_written;
-  uint64_t engine_keys_written;
-  uint64_t engine_bytes_read;
-  uint64_t engine_keys_read;
+  PROXY_FII_TYPE_UINT64 engine_bytes_written;
+  PROXY_FII_TYPE_UINT64 engine_keys_written;
+  PROXY_FII_TYPE_UINT64 engine_bytes_read;
+  PROXY_FII_TYPE_UINT64 engine_keys_read;
 };
 
-enum class RaftProxyStatus : uint8_t {
+enum class RaftProxyStatus : PROXY_FII_TYPE_UINT8 {
   Idle = 0,
   Running,
   Stopped,
 };
 
-enum class EngineStoreServerStatus : uint8_t {
+enum class EngineStoreServerStatus : PROXY_FII_TYPE_UINT8 {
   Idle = 0,
   Running,
   Stopped,
 };
 
-using RawCppPtrType = uint32_t;
+using RawCppPtrType = PROXY_FII_TYPE_UINT32;
 
 struct RawCppPtr {
   RawVoidPtr ptr;
@@ -77,7 +77,7 @@ struct CppStrWithView {
   BaseBuffView view;
 };
 
-enum class HttpRequestStatus : uint8_t {
+enum class HttpRequestStatus : PROXY_FII_TYPE_UINT8 {
   Ok = 0,
   ErrorParam,
 };
@@ -89,11 +89,11 @@ struct HttpRequestRes {
 
 struct CppStrVecView {
   const BaseBuffView *view;
-  uint64_t len;
+  PROXY_FII_TYPE_UINT64 len;
 };
 
 struct FileEncryptionInfoRaw;
-enum class EncryptionMethod : uint8_t;
+enum class EncryptionMethod : PROXY_FII_TYPE_UINT8;
 
 struct SSTView {
   ColumnFamilyType type;
@@ -102,7 +102,7 @@ struct SSTView {
 
 struct SSTViewVec {
   const SSTView *views;
-  const uint64_t len;
+  const PROXY_FII_TYPE_UINT64 len;
 };
 
 struct RaftStoreProxyPtr {
@@ -115,7 +115,7 @@ struct SSTReaderPtr {
 
 struct SSTReaderInterfaces {
   SSTReaderPtr (*fn_get_sst_reader)(SSTView, RaftStoreProxyPtr);
-  uint8_t (*fn_remained)(SSTReaderPtr, ColumnFamilyType);
+  PROXY_FII_TYPE_UINT8 (*fn_remained)(SSTReaderPtr, ColumnFamilyType);
   BaseBuffView (*fn_key)(SSTReaderPtr, ColumnFamilyType);
   BaseBuffView (*fn_value)(SSTReaderPtr, ColumnFamilyType);
   void (*fn_next)(SSTReaderPtr, ColumnFamilyType);
@@ -125,7 +125,7 @@ struct SSTReaderInterfaces {
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);
-  uint8_t (*fn_is_encryption_enabled)(RaftStoreProxyPtr);
+  PROXY_FII_TYPE_UINT8 (*fn_is_encryption_enabled)(RaftStoreProxyPtr);
   EncryptionMethod (*fn_encryption_method)(RaftStoreProxyPtr);
   FileEncryptionInfoRaw (*fn_handle_get_file)(RaftStoreProxyPtr, BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_new_file)(RaftStoreProxyPtr, BaseBuffView);
@@ -134,16 +134,17 @@ struct RaftStoreProxyFFIHelper {
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
   void (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
-                                     RawVoidPtr, uint64_t);
+                                     RawVoidPtr, PROXY_FII_TYPE_UINT64);
   SSTReaderInterfaces sst_reader_interfaces;
 
-  uint32_t (*fn_server_info)(RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
+  PROXY_FII_TYPE_UINT32(*fn_server_info)
+  (RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
 };
 
 struct EngineStoreServerHelper {
-  uint32_t magic_number;  // use a very special number to check whether this
-                          // struct is legal
-  uint64_t version;       // version of function interface
+  PROXY_FII_TYPE_UINT32 magic_number;  // use a very special number to check
+                                       // whether this struct is legal
+  PROXY_FII_TYPE_UINT64 version;       // version of function interface
   //
 
   EngineStoreServerWrap *inner;
@@ -155,22 +156,25 @@ struct EngineStoreServerHelper {
                                                   RaftCmdHeader);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
-  void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
+  void (*fn_handle_destroy)(EngineStoreServerWrap *, PROXY_FII_TYPE_UINT64);
   EngineStoreApplyRes (*fn_handle_ingest_sst)(EngineStoreServerWrap *,
                                               SSTViewVec, RaftCmdHeader);
-  uint8_t (*fn_handle_check_terminated)(EngineStoreServerWrap *);
+  PROXY_FII_TYPE_UINT8 (*fn_handle_check_terminated)(EngineStoreServerWrap *);
   StoreStats (*fn_handle_compute_store_stats)(EngineStoreServerWrap *);
   EngineStoreServerStatus (*fn_handle_get_engine_store_server_status)(
       EngineStoreServerWrap *);
   RawCppPtr (*fn_pre_handle_snapshot)(EngineStoreServerWrap *, BaseBuffView,
-                                      uint64_t, SSTViewVec, uint64_t, uint64_t);
+                                      PROXY_FII_TYPE_UINT64, SSTViewVec,
+                                      PROXY_FII_TYPE_UINT64,
+                                      PROXY_FII_TYPE_UINT64);
   void (*fn_apply_pre_handled_snapshot)(EngineStoreServerWrap *, RawVoidPtr,
                                         RawCppPtrType);
   HttpRequestRes (*fn_handle_http_request)(EngineStoreServerWrap *,
                                            BaseBuffView);
-  uint8_t (*fn_check_http_uri_available)(BaseBuffView);
+  PROXY_FII_TYPE_UINT8 (*fn_check_http_uri_available)(BaseBuffView);
   void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
-  void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView, uint64_t);
+  void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,
+                                          PROXY_FII_TYPE_UINT64);
   void (*fn_set_server_info_resp)(BaseBuffView, RawVoidPtr);
 };
 }  // namespace DB
