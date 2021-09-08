@@ -38,11 +38,10 @@ use tikv_util::thread_group::GroupProperties;
 use tikv_util::HandyRwLock;
 
 use super::*;
+use mock_engine_store::EngineStoreServerWrap;
 use std::sync::atomic::{AtomicBool, AtomicU8};
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
-use mock_engine_store::EngineStoreServerWrap;
-
 
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
@@ -129,7 +128,7 @@ pub trait Simulator {
     }
 }
 
-pub struct Cluster<'a, T: Simulator> {
+pub struct Cluster<T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
     count: usize,
@@ -149,18 +148,18 @@ pub struct Cluster<'a, T: Simulator> {
     pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
     pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
     pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
-    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'a>>,
+    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap>,
     pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
-impl<'a, T: Simulator> Cluster<'a, T> {
+impl<T: Simulator> Cluster<T> {
     // Create the default Store cluster.
     pub fn new(
         id: u64,
         count: usize,
         sim: Arc<RwLock<T>>,
         pd_client: Arc<TestPdClient>,
-    ) -> Cluster<'a, T> {
+    ) -> Cluster<T> {
         // TODO: In the future, maybe it's better to test both case where `use_delete_range` is true and false
         Cluster {
             cfg: new_tikv_config(id),
@@ -243,7 +242,11 @@ impl<'a, T: Simulator> Cluster<'a, T> {
         }
 
         // Try start new nodes.
-        println!("!!!!! self.count {} self.engines.len() {}", self.count, self.engines.len());
+        println!(
+            "!!!!! self.count {} self.engines.len() {}",
+            self.count,
+            self.engines.len()
+        );
         for it in 0..self.count - self.engines.len() {
             println!("!!!!! +++++++++++++++++ begin {}", it);
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
@@ -268,19 +271,31 @@ impl<'a, T: Simulator> Cluster<'a, T> {
 
             let proxy = self.proxy.last_mut().unwrap();
             self.proxy_helpers
-                .push(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy));
-            let maybe_proxy_helper = Some(self.proxy_helpers.last_mut().unwrap());
-            self.engine_store_servers.push(mock_engine_store::EngineStoreServer::new());
-            self.engine_store_server_wraps.push(mock_engine_store::EngineStoreServerWrap::new(self.engine_store_servers.last_mut().unwrap(), maybe_proxy_helper));
-            self.engine_store_server_helpers.push(mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-                self.engine_store_server_wraps.last(),
-            )));
+                .push(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
+                    &proxy,
+                ));
+            self.engine_store_servers
+                .push(mock_engine_store::EngineStoreServer::new());
+            self.engine_store_server_wraps
+                .push(mock_engine_store::EngineStoreServerWrap::new(
+                    self.engine_store_servers.last_mut().unwrap(),
+                    Some(self.proxy_helpers.last_mut().unwrap()),
+                ));
+            self.engine_store_server_helpers.push(
+                mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+                    self.engine_store_server_wraps.last(),
+                )),
+            );
             let mut node_cfg = self.cfg.clone();
             unsafe {
-                node_cfg.raft_store.engine_store_server_helper = &self.engine_store_server_helpers.last() as *const _ as isize;
+                node_cfg.raft_store.engine_store_server_helper =
+                    &self.engine_store_server_helpers.last() as *const _ as isize;
             }
 
-            println!("!!!!! node_cfg.raft_store.engine_store_server_helper is {}", node_cfg.raft_store.engine_store_server_helper);
+            println!(
+                "!!!!! node_cfg.raft_store.engine_store_server_helper is {}",
+                node_cfg.raft_store.engine_store_server_helper
+            );
 
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(
@@ -364,8 +379,10 @@ impl<'a, T: Simulator> Cluster<'a, T> {
         let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
         let maybe_proxy_helper = Some(&mut proxy_helper);
         let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
-        let engine_store_server_wrap =
-            mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, maybe_proxy_helper);
+        let engine_store_server_wrap = mock_engine_store::EngineStoreServerWrap::new(
+            &mut engine_store_server,
+            maybe_proxy_helper,
+        );
         let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
             &engine_store_server_wrap,
         ));
@@ -1561,7 +1578,7 @@ impl<'a, T: Simulator> Cluster<'a, T> {
     }
 }
 
-impl<'a, T: Simulator> Drop for Cluster<'a, T> {
+impl<T: Simulator> Drop for Cluster<T> {
     fn drop(&mut self) {
         test_util::clear_failpoints();
         self.shutdown();
