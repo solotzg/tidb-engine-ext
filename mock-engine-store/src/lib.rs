@@ -34,8 +34,8 @@ impl EngineStoreServer {
 }
 
 pub struct EngineStoreServerWrap<'a> {
-    engine_store_server: &'a mut EngineStoreServer,
-    maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
+    pub engine_store_server: &'a mut EngineStoreServer,
+    pub maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
 }
 
 impl<'a> EngineStoreServerWrap<'a> {

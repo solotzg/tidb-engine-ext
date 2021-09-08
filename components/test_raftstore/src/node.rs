@@ -201,6 +201,7 @@ impl Simulator for NodeCluster {
         let pd_worker = FutureWorker::new("test-pd-worker");
 
         let simulate_trans = SimulateTransport::new(self.trans.clone());
+        println!("!!!!!!!!! cfg.raft_store is {}", &cfg.raft_store.engine_store_server_helper);
         let mut raft_store = cfg.raft_store.clone();
         raft_store.validate().unwrap();
         let bg_worker = WorkerBuilder::new("background").thread_count(2).create();

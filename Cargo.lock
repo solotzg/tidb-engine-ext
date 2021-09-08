@@ -4413,6 +4413,7 @@ dependencies = [
  "kvproto",
  "lazy_static",
  "log_wrappers",
+ "mock-engine-store",
  "pd_client",
  "protobuf",
  "raft",

@@ -31,5 +31,6 @@ export RUST_BACKTRACE=1
 #     --exclude fuzzer-honggfuzz --exclude fuzzer-afl --exclude fuzzer-libfuzzer \
 #     --features "${TIKV_ENABLE_FEATURES}" ${EXTRA_CARGO_ARGS} "$@"
 
+
 cargo test --package tests \
     --features "${TIKV_ENABLE_FEATURES}" ${EXTRA_CARGO_ARGS} "$@"

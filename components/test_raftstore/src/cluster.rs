@@ -227,12 +227,15 @@ impl<T: Simulator> Cluster<T> {
     pub fn start(&mut self) -> ServerResult<()> {
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
+        println!("!!!!! node_ids.len() {}", node_ids.len());
         for node_id in node_ids {
             self.run_node(node_id)?;
         }
 
         // Try start new nodes.
-        for _ in 0..self.count - self.engines.len() {
+        println!("!!!!! self.count {} self.engines.len() {}", self.count, self.engines.len());
+        for it in 0..self.count - self.engines.len() {
+            println!("!!!!! +++++++++++++++++ begin {}", it);
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -252,16 +255,34 @@ impl<T: Simulator> Cluster<T> {
                         SysQuota::cpu_cores_quota() as usize * 2,
                     )),
                 });
+
+            let proxy = self.proxy.last_mut().unwrap();
+            let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
+            let maybe_proxy_helper = Some(&mut proxy_helper);
+            let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
+            let engine_store_server_wrap =
+                mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, maybe_proxy_helper);
+            let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+                &engine_store_server_wrap,
+            ));
+            let mut node_cfg = self.cfg.clone();
+            unsafe {
+                node_cfg.raft_store.engine_store_server_helper = &helper as *const _ as isize;
+            }
+
+            println!("!!!!! node_cfg.raft_store.engine_store_server_helper is {}", node_cfg.raft_store.engine_store_server_helper);
+
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(
                 0,
-                self.cfg.clone(),
+                node_cfg,
                 engines.clone(),
                 store_meta.clone(),
                 key_mgr.clone(),
                 router,
                 system,
             )?;
+            println!("!!!!! node_id is {}", node_id);
             self.group_props.insert(node_id, props);
             self.engines.insert(node_id, engines);
             self.store_metas.insert(node_id, store_meta);
@@ -328,6 +349,22 @@ impl<T: Simulator> Cluster<T> {
         self.group_props.insert(node_id, props.clone());
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
+
+        let proxy = &mut self.proxy[node_id as usize];
+        let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
+        let maybe_proxy_helper = Some(&mut proxy_helper);
+        let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
+        let engine_store_server_wrap =
+            mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, maybe_proxy_helper);
+        let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+            &engine_store_server_wrap,
+        ));
+        let node_cfg = self.cfg.clone();
+        unsafe {
+            let ptr = &node_cfg.raft_store.engine_store_server_helper as *const _ as *mut _;
+            *ptr = &helper;
+        }
+
         // FIXME: rocksdb event listeners may not work, because we change the router.
         self.sim
             .wl()
