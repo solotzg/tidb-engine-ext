@@ -41,6 +41,8 @@ use super::*;
 use std::sync::atomic::{AtomicBool, AtomicU8};
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
+use mock_engine_store::EngineStoreServerWrap;
+
 
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
@@ -127,7 +129,7 @@ pub trait Simulator {
     }
 }
 
-pub struct Cluster<T: Simulator> {
+pub struct Cluster<'a, T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
     count: usize,
@@ -145,16 +147,20 @@ pub struct Cluster<T: Simulator> {
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
     pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
+    pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
+    pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
+    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'a>>,
+    pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
-impl<T: Simulator> Cluster<T> {
+impl<'a, T: Simulator> Cluster<'a, T> {
     // Create the default Store cluster.
     pub fn new(
         id: u64,
         count: usize,
         sim: Arc<RwLock<T>>,
         pd_client: Arc<TestPdClient>,
-    ) -> Cluster<T> {
+    ) -> Cluster<'a, T> {
         // TODO: In the future, maybe it's better to test both case where `use_delete_range` is true and false
         Cluster {
             cfg: new_tikv_config(id),
@@ -172,6 +178,10 @@ impl<T: Simulator> Cluster<T> {
             sim,
             pd_client,
             proxy: vec![],
+            proxy_helpers: vec![],
+            engine_store_servers: vec![],
+            engine_store_server_wraps: vec![],
+            engine_store_server_helpers: vec![],
         }
     }
 
@@ -257,17 +267,17 @@ impl<T: Simulator> Cluster<T> {
                 });
 
             let proxy = self.proxy.last_mut().unwrap();
-            let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
-            let maybe_proxy_helper = Some(&mut proxy_helper);
-            let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
-            let engine_store_server_wrap =
-                mock_engine_store::EngineStoreServerWrap::new(&mut engine_store_server, maybe_proxy_helper);
-            let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-                &engine_store_server_wrap,
-            ));
+            self.proxy_helpers
+                .push(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy));
+            let maybe_proxy_helper = Some(self.proxy_helpers.last_mut().unwrap());
+            self.engine_store_servers.push(mock_engine_store::EngineStoreServer::new());
+            self.engine_store_server_wraps.push(mock_engine_store::EngineStoreServerWrap::new(self.engine_store_servers.last_mut().unwrap(), maybe_proxy_helper));
+            self.engine_store_server_helpers.push(mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+                self.engine_store_server_wraps.last(),
+            )));
             let mut node_cfg = self.cfg.clone();
             unsafe {
-                node_cfg.raft_store.engine_store_server_helper = &helper as *const _ as isize;
+                node_cfg.raft_store.engine_store_server_helper = &self.engine_store_server_helpers.last() as *const _ as isize;
             }
 
             println!("!!!!! node_cfg.raft_store.engine_store_server_helper is {}", node_cfg.raft_store.engine_store_server_helper);
@@ -1551,7 +1561,7 @@ impl<T: Simulator> Cluster<T> {
     }
 }
 
-impl<T: Simulator> Drop for Cluster<T> {
+impl<'a, T: Simulator> Drop for Cluster<'a, T> {
     fn drop(&mut self) {
         test_util::clear_failpoints();
         self.shutdown();
