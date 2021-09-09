@@ -3892,6 +3892,17 @@ where
 
     fn build(&mut self, priority: Priority) -> ApplyPoller<EK, W> {
         let cfg = self.cfg.value();
+        println!(
+            "!!!!! in apply raft_store.engine_store_server_helper is {}",
+            cfg.engine_store_server_helper,
+        );
+
+        unsafe {
+            println!(
+                "!!!!! in apply engine_store_server_helper.inner is {}",
+                (*(cfg.engine_store_server_helper as *const crate::engine_store_ffi::EngineStoreServerHelper)).inner as usize,
+            );
+        }
         ApplyPoller {
             msg_buf: Vec::with_capacity(cfg.messages_per_tick),
             apply_ctx: ApplyContext::new(

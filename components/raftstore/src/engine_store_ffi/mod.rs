@@ -602,6 +602,7 @@ impl EngineStoreServerHelper {
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_write_raft_cmd.is_some());
+        println!("+++++ handle_write_raft_cmd self.inner {}", self.inner as usize);
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
 

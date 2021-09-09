@@ -249,6 +249,12 @@ impl<T: Simulator> Cluster<T> {
         );
         for it in 0..self.count - self.engines.len() {
             println!("!!!!! +++++++++++++++++ begin {}", it);
+            if(self.engine_store_server_helpers.last().is_some()){
+                println!(
+                    "!!!!! self.inner2 {}",
+                    self.engine_store_server_helpers.last().unwrap().inner as usize
+                );
+            }
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -287,14 +293,16 @@ impl<T: Simulator> Cluster<T> {
                 )),
             );
             let mut node_cfg = self.cfg.clone();
+            let sz = &self.engine_store_server_helpers.last() as *const _ as isize;
             unsafe {
                 node_cfg.raft_store.engine_store_server_helper =
-                    &self.engine_store_server_helpers.last() as *const _ as isize;
+                    sz;
             }
 
             println!(
-                "!!!!! node_cfg.raft_store.engine_store_server_helper is {}",
-                node_cfg.raft_store.engine_store_server_helper
+                "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {}",
+                node_cfg.raft_store.engine_store_server_helper,
+                self.engine_store_server_helpers.last().unwrap().inner as usize
             );
 
             let mut sim = self.sim.wl();
