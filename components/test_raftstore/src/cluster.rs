@@ -251,8 +251,8 @@ impl<T: Simulator> Cluster<T> {
             println!("!!!!! +++++++++++++++++ begin {}", it);
             if(self.engine_store_server_helpers.last().is_some()){
                 println!(
-                    "!!!!! self.inner2 {}",
-                    self.engine_store_server_helpers.last().unwrap().inner as usize
+                    "!!!!! self.engine_store_server_helpers.inner2 {}",
+                    self.engine_store_server_helpers.last().unwrap().inner as isize
                 );
             }
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
@@ -287,23 +287,29 @@ impl<T: Simulator> Cluster<T> {
                     &mut **self.engine_store_servers.last_mut().unwrap(),
                     Some(&mut **self.proxy_helpers.last_mut().unwrap()),
                 )));
+            let wrapper = std::pin::Pin::new(
+                & **self.engine_store_server_wraps.last().unwrap());
             self.engine_store_server_helpers.push(
-                Box::new(mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-                    self.engine_store_server_wraps.last().unwrap(),
-                ))),
+                Box::new(mock_engine_store::gen_engine_store_server_helper(wrapper
+                )),
             );
             let mut node_cfg = self.cfg.clone();
-            let sz = &self.engine_store_server_helpers.last() as *const _ as isize;
+            let sz = & **self.engine_store_server_helpers.last().unwrap() as *const _ as isize;
+            // let sz = &self.engine_store_server_helpers.last() as *const _ as isize;
             unsafe {
-                node_cfg.raft_store.engine_store_server_helper =
-                    sz;
+                node_cfg.raft_store.engine_store_server_helper = sz;
             }
 
-            println!(
-                "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {}",
-                node_cfg.raft_store.engine_store_server_helper,
-                self.engine_store_server_helpers.last().unwrap().inner as usize
-            );
+            unsafe {
+                println!(
+                    "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {} node_cfg.isize {} sz {} X {:?}",
+                    node_cfg.raft_store.engine_store_server_helper,
+                    self.engine_store_server_helpers.last().unwrap().inner as isize,
+                    (*(sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+                    sz,
+                    (*(sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
+                );
+            }
 
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(

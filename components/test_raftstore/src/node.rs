@@ -197,14 +197,23 @@ impl Simulator for NodeCluster {
         router: RaftRouter<RocksEngine, RocksEngine>,
         system: RaftBatchSystem<RocksEngine, RocksEngine>,
     ) -> ServerResult<u64> {
+        println!(
+            "!!!!! run_node at start raft_store.engine_store_server_helper is {}",
+            &cfg.raft_store.engine_store_server_helper,
+        );
+
+        unsafe {
+            println!(
+                "!!!!! run_node at start engine_store_server_helper.inner is {}",
+                (*(cfg.raft_store.engine_store_server_helper as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+            );
+        }
+
         assert!(node_id == 0 || !self.nodes.contains_key(&node_id));
         let pd_worker = FutureWorker::new("test-pd-worker");
 
         let simulate_trans = SimulateTransport::new(self.trans.clone());
-        println!(
-            "!!!!!!!!! cfg.raft_store is {}",
-            &cfg.raft_store.engine_store_server_helper
-        );
+
         let mut raft_store = cfg.raft_store.clone();
         raft_store.validate().unwrap();
         let bg_worker = WorkerBuilder::new("background").thread_count(2).create();
@@ -270,6 +279,19 @@ impl Simulator for NodeCluster {
 
         let mut raftstore_cfg = cfg.raft_store;
         raftstore_cfg.validate().unwrap();
+
+        println!(
+            "!!!!! run_node raft_store.engine_store_server_helper is {}",
+            raftstore_cfg.engine_store_server_helper,
+        );
+
+        unsafe {
+            println!(
+                "!!!!! run_node engine_store_server_helper.inner is {}",
+                (*(raftstore_cfg.engine_store_server_helper as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+            );
+        }
+
         let raft_store = Arc::new(VersionTrack::new(raftstore_cfg));
         cfg_controller.register(
             Module::Raftstore,
@@ -289,6 +311,7 @@ impl Simulator for NodeCluster {
             AutoSplitController::default(),
             cm,
         )?;
+
         assert!(
             engines
                 .kv
