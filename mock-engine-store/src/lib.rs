@@ -33,15 +33,15 @@ impl EngineStoreServer {
     }
 }
 
-pub struct EngineStoreServerWrap<'a> {
-    pub engine_store_server: &'a mut EngineStoreServer,
-    pub maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
+pub struct EngineStoreServerWrap {
+    pub engine_store_server: *mut EngineStoreServer,
+    pub maybe_proxy_helper: std::option::Option<*mut RaftStoreProxyFFIHelper>,
 }
 
-impl<'a> EngineStoreServerWrap<'a> {
+impl EngineStoreServerWrap {
     pub fn new(
-        engine_store_server: &'a mut EngineStoreServer,
-        maybe_proxy_helper: std::option::Option<&'a mut RaftStoreProxyFFIHelper>,
+        engine_store_server: *mut EngineStoreServer,
+        maybe_proxy_helper: std::option::Option<*mut RaftStoreProxyFFIHelper>,
     ) -> Self {
         Self {
             engine_store_server,
@@ -63,7 +63,7 @@ impl<'a> EngineStoreServerWrap<'a> {
             }
             ffi_interfaces::EngineStoreApplyRes::Persist
         };
-        match self.engine_store_server.kvstore.entry(region_id) {
+        match (*self.engine_store_server).kvstore.entry(region_id) {
             std::collections::hash_map::Entry::Occupied(mut o) => {
                 do_handle_admin_raft_cmd(o.get_mut())
             }
@@ -104,7 +104,7 @@ impl<'a> EngineStoreServerWrap<'a> {
             ffi_interfaces::EngineStoreApplyRes::None
         };
 
-        match self.engine_store_server.kvstore.entry(region_id) {
+        match (*self.engine_store_server).kvstore.entry(region_id) {
             std::collections::hash_map::Entry::Occupied(mut o) => {
                 do_handle_write_raft_cmd(o.get_mut())
             }
@@ -116,8 +116,8 @@ impl<'a> EngineStoreServerWrap<'a> {
     }
 }
 
-pub fn gen_engine_store_server_helper<'a>(
-    wrap: Pin<&EngineStoreServerWrap<'a>>,
+pub fn gen_engine_store_server_helper(
+    wrap: Pin<&EngineStoreServerWrap>,
 ) -> EngineStoreServerHelper {
     EngineStoreServerHelper {
         magic_number: ffi_interfaces::RAFT_STORE_PROXY_MAGIC_NUMBER,
@@ -144,7 +144,7 @@ pub fn gen_engine_store_server_helper<'a>(
 
 unsafe fn into_engine_store_server_wrap(
     arg1: *const ffi_interfaces::EngineStoreServerWrap,
-) -> &'static mut EngineStoreServerWrap<'static> {
+) -> &'static mut EngineStoreServerWrap {
     &mut *(arg1 as *mut EngineStoreServerWrap)
 }
 
@@ -239,7 +239,7 @@ unsafe extern "C" fn ffi_handle_destroy(
     arg2: u64,
 ) {
     let store = into_engine_store_server_wrap(arg1);
-    store.engine_store_server.kvstore.remove(&arg2);
+    (*store.engine_store_server).kvstore.remove(&arg2);
 }
 
 type TiFlashRaftProxyHelper = RaftStoreProxyFFIHelper;
@@ -323,8 +323,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     term: u64,
 ) -> ffi_interfaces::RawCppPtr {
     let store = into_engine_store_server_wrap(arg1);
-    let proxy_helper = store.maybe_proxy_helper.as_ref().unwrap();
-    let kvstore = &mut store.engine_store_server.kvstore;
+    let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
+    let kvstore = &mut (*store.engine_store_server).kvstore;
 
     let mut req = kvproto::metapb::Region::default();
     assert_ne!(region_buff.data, std::ptr::null());

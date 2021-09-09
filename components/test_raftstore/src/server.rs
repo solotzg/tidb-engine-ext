@@ -581,32 +581,32 @@ impl Simulator for ServerCluster {
     }
 }
 
-pub fn new_server_cluster<'a>(id: u64, count: usize) -> Cluster<'a,ServerCluster> {
+pub fn new_server_cluster(id: u64, count: usize) -> Cluster<ServerCluster> {
     let pd_client = Arc::new(TestPdClient::new(id, false));
     let sim = Arc::new(RwLock::new(ServerCluster::new(Arc::clone(&pd_client))));
     Cluster::new(id, count, sim, pd_client)
 }
 
-pub fn new_incompatible_server_cluster<'a>(id: u64, count: usize) -> Cluster<'a,ServerCluster> {
+pub fn new_incompatible_server_cluster(id: u64, count: usize) -> Cluster<ServerCluster> {
     let pd_client = Arc::new(TestPdClient::new(id, true));
     let sim = Arc::new(RwLock::new(ServerCluster::new(Arc::clone(&pd_client))));
     Cluster::new(id, count, sim, pd_client)
 }
 
-pub fn must_new_cluster_mul<'a>(count: usize) -> (Cluster<'a,ServerCluster>, metapb::Peer, Context) {
+pub fn must_new_cluster_mul(count: usize) -> (Cluster<ServerCluster>, metapb::Peer, Context) {
     must_new_and_configure_cluster_mul(count, |_| ())
 }
 
-pub fn must_new_and_configure_cluster<'a>(
+pub fn must_new_and_configure_cluster(
     configure: impl FnMut(&mut Cluster<ServerCluster>),
-) -> (Cluster<'a,ServerCluster>, metapb::Peer, Context) {
+) -> (Cluster<ServerCluster>, metapb::Peer, Context) {
     must_new_and_configure_cluster_mul(1, configure)
 }
 
-fn must_new_and_configure_cluster_mul<'a>(
+fn must_new_and_configure_cluster_mul(
     count: usize,
     mut configure: impl FnMut(&mut Cluster<ServerCluster>),
-) -> (Cluster<'a,ServerCluster>, metapb::Peer, Context) {
+) -> (Cluster<ServerCluster>, metapb::Peer, Context) {
     let mut cluster = new_server_cluster(0, count);
     configure(&mut cluster);
     cluster.run();
@@ -622,13 +622,13 @@ fn must_new_and_configure_cluster_mul<'a>(
     (cluster, leader, ctx)
 }
 
-pub fn must_new_cluster_and_kv_client<'a>() -> (Cluster<'a,ServerCluster>, TikvClient, Context) {
+pub fn must_new_cluster_and_kv_client() -> (Cluster<ServerCluster>, TikvClient, Context) {
     must_new_cluster_and_kv_client_mul(1)
 }
 
-pub fn must_new_cluster_and_kv_client_mul<'a>(
+pub fn must_new_cluster_and_kv_client_mul(
     count: usize,
-) -> (Cluster<'a,ServerCluster>, TikvClient, Context) {
+) -> (Cluster<ServerCluster>, TikvClient, Context) {
     let (cluster, leader, ctx) = must_new_cluster_mul(count);
 
     let env = Arc::new(Environment::new(1));
@@ -639,7 +639,7 @@ pub fn must_new_cluster_and_kv_client_mul<'a>(
     (cluster, client, ctx)
 }
 
-pub fn must_new_cluster_and_debug_client<'a>() -> (Cluster<'a,ServerCluster>, DebugClient, u64) {
+pub fn must_new_cluster_and_debug_client() -> (Cluster<ServerCluster>, DebugClient, u64) {
     let (cluster, leader, _) = must_new_cluster_mul(1);
 
     let env = Arc::new(Environment::new(1));
@@ -650,9 +650,9 @@ pub fn must_new_cluster_and_debug_client<'a>() -> (Cluster<'a,ServerCluster>, De
     (cluster, client, leader.get_store_id())
 }
 
-pub fn must_new_and_configure_cluster_and_kv_client<'a>(
+pub fn must_new_and_configure_cluster_and_kv_client(
     configure: impl FnMut(&mut Cluster<ServerCluster>),
-) -> (Cluster<'a,ServerCluster>, TikvClient, Context) {
+) -> (Cluster<ServerCluster>, TikvClient, Context) {
     let (cluster, leader, ctx) = must_new_and_configure_cluster(configure);
 
     let env = Arc::new(Environment::new(1));

@@ -128,7 +128,7 @@ pub trait Simulator {
     }
 }
 
-pub struct Cluster<'a, T: Simulator> {
+pub struct Cluster<T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
     count: usize,
@@ -148,18 +148,18 @@ pub struct Cluster<'a, T: Simulator> {
     pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
     pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
     pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
-    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'a>>,
+    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap>,
     pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
-impl<'a, T: Simulator> Cluster<'a, T> {
+impl<T: Simulator> Cluster<T> {
     // Create the default Store cluster.
     pub fn new(
         id: u64,
         count: usize,
         sim: Arc<RwLock<T>>,
         pd_client: Arc<TestPdClient>,
-    ) -> Cluster<'a, T> {
+    ) -> Cluster<T> {
         // TODO: In the future, maybe it's better to test both case where `use_delete_range` is true and false
         Cluster {
             cfg: new_tikv_config(id),
@@ -377,7 +377,7 @@ impl<'a, T: Simulator> Cluster<'a, T> {
 
         let proxy = &mut self.proxy[node_id as usize];
         let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
-        let maybe_proxy_helper = Some(&mut proxy_helper);
+        let maybe_proxy_helper = Some(&mut proxy_helper as *mut _);
         let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
         let engine_store_server_wrap = mock_engine_store::EngineStoreServerWrap::new(
             &mut engine_store_server,
@@ -1578,7 +1578,7 @@ impl<'a, T: Simulator> Cluster<'a, T> {
     }
 }
 
-impl<'a, T: Simulator> Drop for Cluster<'a, T> {
+impl<T: Simulator> Drop for Cluster<T> {
     fn drop(&mut self) {
         test_util::clear_failpoints();
         self.shutdown();
