@@ -760,6 +760,12 @@ impl EngineStoreServerHelper {
     }
 }
 
+impl Drop for EngineStoreServerHelper{
+    fn drop(&mut self){
+        println!("!!!!!!!!!!!! Drop EngineStoreServerHelper!");
+    }
+}
+
 impl Clone for SSTReaderPtr {
     fn clone(&self) -> SSTReaderPtr {
         return SSTReaderPtr {

@@ -145,11 +145,11 @@ pub struct Cluster<T: Simulator> {
 
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
-    pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
-    pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
-    pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
-    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap>,
-    pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
+    pub proxy: Vec<Box<raftstore::engine_store_ffi::RaftStoreProxy>>,
+    pub proxy_helpers: Vec<Box<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>>,
+    pub engine_store_servers: Vec<Box<mock_engine_store::EngineStoreServer>>,
+    pub engine_store_server_wraps: Vec<Box<mock_engine_store::EngineStoreServerWrap>>,
+    pub engine_store_server_helpers: Vec<Box<raftstore::engine_store_ffi::EngineStoreServerHelper>>,
 }
 
 impl<T: Simulator> Cluster<T> {
@@ -176,11 +176,11 @@ impl<T: Simulator> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
-            proxy: vec![],
-            proxy_helpers: vec![],
-            engine_store_servers: vec![],
-            engine_store_server_wraps: vec![],
-            engine_store_server_helpers: vec![],
+            proxy: Vec::with_capacity(10),
+            proxy_helpers: Vec::with_capacity(10),
+            engine_store_servers: Vec::with_capacity(10),
+            engine_store_server_wraps: Vec::with_capacity(10),
+            engine_store_server_helpers: Vec::with_capacity(10),
         }
     }
 
@@ -266,31 +266,31 @@ impl<T: Simulator> Cluster<T> {
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
             self.proxy
-                .push(raftstore::engine_store_ffi::RaftStoreProxy {
+                .push(Box::new(raftstore::engine_store_ffi::RaftStoreProxy {
                     status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
                     key_manager: key_mgr.clone(),
                     read_index_client: Box::new(raftstore::engine_store_ffi::ReadIndexClient::new(
                         router.clone(),
                         SysQuota::cpu_cores_quota() as usize * 2,
                     )),
-                });
+                }));
 
             let proxy = self.proxy.last_mut().unwrap();
             self.proxy_helpers
-                .push(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
+                .push(Box::new(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
                     &proxy,
-                ));
+                )));
             self.engine_store_servers
-                .push(mock_engine_store::EngineStoreServer::new());
+                .push(Box::new(mock_engine_store::EngineStoreServer::new()));
             self.engine_store_server_wraps
-                .push(mock_engine_store::EngineStoreServerWrap::new(
-                    self.engine_store_servers.last_mut().unwrap(),
-                    Some(self.proxy_helpers.last_mut().unwrap()),
-                ));
+                .push(Box::new(mock_engine_store::EngineStoreServerWrap::new(
+                    &mut **self.engine_store_servers.last_mut().unwrap(),
+                    Some(&mut **self.proxy_helpers.last_mut().unwrap()),
+                )));
             self.engine_store_server_helpers.push(
-                mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+                Box::new(mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
                     self.engine_store_server_wraps.last().unwrap(),
-                )),
+                ))),
             );
             let mut node_cfg = self.cfg.clone();
             let sz = &self.engine_store_server_helpers.last() as *const _ as isize;
