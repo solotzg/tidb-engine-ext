@@ -148,7 +148,7 @@ pub struct Cluster<T: Simulator> {
     pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
     pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
     pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
-    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap>,
+    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'_>>,
     pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
