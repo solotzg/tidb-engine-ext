@@ -128,7 +128,7 @@ pub trait Simulator {
     }
 }
 
-pub struct Cluster<T: Simulator> {
+pub struct Cluster<'a, T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
     count: usize,
@@ -148,18 +148,18 @@ pub struct Cluster<T: Simulator> {
     pub proxy: Vec<raftstore::engine_store_ffi::RaftStoreProxy>,
     pub proxy_helpers: Vec<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
     pub engine_store_servers: Vec<mock_engine_store::EngineStoreServer>,
-    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'_>>,
+    pub engine_store_server_wraps: Vec<mock_engine_store::EngineStoreServerWrap<'a>>,
     pub engine_store_server_helpers: Vec<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
-impl<T: Simulator> Cluster<T> {
+impl<'a, T: Simulator> Cluster<'a, T> {
     // Create the default Store cluster.
     pub fn new(
         id: u64,
         count: usize,
         sim: Arc<RwLock<T>>,
         pd_client: Arc<TestPdClient>,
-    ) -> Cluster<T> {
+    ) -> Cluster<'a, T> {
         // TODO: In the future, maybe it's better to test both case where `use_delete_range` is true and false
         Cluster {
             cfg: new_tikv_config(id),
@@ -283,7 +283,7 @@ impl<T: Simulator> Cluster<T> {
                 ));
             self.engine_store_server_helpers.push(
                 mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-                    self.engine_store_server_wraps.last(),
+                    self.engine_store_server_wraps.last().unwrap(),
                 )),
             );
             let mut node_cfg = self.cfg.clone();
@@ -1578,7 +1578,7 @@ impl<T: Simulator> Cluster<T> {
     }
 }
 
-impl<T: Simulator> Drop for Cluster<T> {
+impl<'a, T: Simulator> Drop for Cluster<'a, T> {
     fn drop(&mut self) {
         test_util::clear_failpoints();
         self.shutdown();
