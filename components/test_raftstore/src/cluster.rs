@@ -128,6 +128,14 @@ pub trait Simulator {
     }
 }
 
+pub struct FFIHelperSet {
+    pub proxy: Box<raftstore::engine_store_ffi::RaftStoreProxy>,
+    pub proxy_helper: Box<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>,
+    pub engine_store_server: Box<mock_engine_store::EngineStoreServer>,
+    pub engine_store_server_wrap: Box<mock_engine_store::EngineStoreServerWrap>,
+    pub engine_store_server_helper: Box<raftstore::engine_store_ffi::EngineStoreServerHelper>,
+}
+
 pub struct Cluster<T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
@@ -145,11 +153,7 @@ pub struct Cluster<T: Simulator> {
 
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
-    pub proxy: Vec<Box<raftstore::engine_store_ffi::RaftStoreProxy>>,
-    pub proxy_helpers: Vec<Box<raftstore::engine_store_ffi::RaftStoreProxyFFIHelper>>,
-    pub engine_store_servers: Vec<Box<mock_engine_store::EngineStoreServer>>,
-    pub engine_store_server_wraps: Vec<Box<mock_engine_store::EngineStoreServerWrap>>,
-    pub engine_store_server_helpers: Vec<Box<raftstore::engine_store_ffi::EngineStoreServerHelper>>,
+    pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
 }
 
 impl<T: Simulator> Cluster<T> {
@@ -176,11 +180,7 @@ impl<T: Simulator> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
-            proxy: vec![],
-            proxy_helpers: vec![],
-            engine_store_servers: vec![],
-            engine_store_server_wraps: vec![],
-            engine_store_server_helpers: vec![],
+            ffi_helper_set: HashMap::default(),
         }
     }
 
@@ -233,6 +233,59 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
+    pub fn make_ffi_helper_set(
+        &mut self,
+        key_mgr: &Option<Arc<DataKeyManager>>,
+        router: &RaftRouter<RocksEngine, RocksEngine>,
+    ) -> (FFIHelperSet, TiKvConfig) {
+        let proxy = Box::new(raftstore::engine_store_ffi::RaftStoreProxy {
+            status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
+            key_manager: key_mgr.clone(),
+            read_index_client: Box::new(raftstore::engine_store_ffi::ReadIndexClient::new(
+                router.clone(),
+                SysQuota::cpu_cores_quota() as usize * 2,
+            )),
+        });
+
+        let mut proxy_helper = Box::new(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
+            &proxy,
+        ));
+        let mut engine_store_server = Box::new(mock_engine_store::EngineStoreServer::new());
+        let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+            &mut *engine_store_server,
+            Some(&mut *proxy_helper),
+        ));
+        let mut engine_store_server_helper =
+            Box::new(mock_engine_store::gen_engine_store_server_helper(
+                std::pin::Pin::new(&*engine_store_server_wrap),
+            ));
+
+        let mut node_cfg = self.cfg.clone();
+        let helper_sz = &*engine_store_server_helper as *const _ as isize;
+        unsafe {
+            node_cfg.raft_store.engine_store_server_helper = helper_sz;
+        };
+        let ffi_helper_set = FFIHelperSet {
+            proxy,
+            proxy_helper,
+            engine_store_server,
+            engine_store_server_wrap,
+            engine_store_server_helper,
+        };
+        unsafe {
+            println!(
+                "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {} node_cfg.isize {} sz {} X {:?}",
+                node_cfg.raft_store.engine_store_server_helper,
+                ffi_helper_set.engine_store_server_helper.inner as isize,
+                (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
+                    as isize,
+                helper_sz,
+                (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
+            );
+        }
+        (ffi_helper_set, node_cfg)
+    }
+
     pub fn start(&mut self) -> ServerResult<()> {
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
@@ -249,12 +302,6 @@ impl<T: Simulator> Cluster<T> {
         );
         for it in 0..self.count - self.engines.len() {
             println!("!!!!! +++++++++++++++++ begin {}", it);
-            if (self.engine_store_server_helpers.last().is_some()) {
-                println!(
-                    "!!!!! self.engine_store_server_helpers.inner2 {}",
-                    self.engine_store_server_helpers.last().unwrap().inner as isize
-                );
-            }
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -265,52 +312,7 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
-            self.proxy
-                .push(Box::new(raftstore::engine_store_ffi::RaftStoreProxy {
-                    status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
-                    key_manager: key_mgr.clone(),
-                    read_index_client: Box::new(raftstore::engine_store_ffi::ReadIndexClient::new(
-                        router.clone(),
-                        SysQuota::cpu_cores_quota() as usize * 2,
-                    )),
-                }));
-
-            let proxy = self.proxy.last_mut().unwrap();
-            self.proxy_helpers.push(Box::new(
-                raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy),
-            ));
-            self.engine_store_servers
-                .push(Box::new(mock_engine_store::EngineStoreServer::new()));
-            self.engine_store_server_wraps.push(Box::new(
-                mock_engine_store::EngineStoreServerWrap::new(
-                    &mut **self.engine_store_servers.last_mut().unwrap(),
-                    Some(&mut **self.proxy_helpers.last_mut().unwrap()),
-                ),
-            ));
-            self.engine_store_server_helpers.push(Box::new(
-                mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-                    &**self.engine_store_server_wraps.last().unwrap(),
-                )),
-            ));
-            let mut node_cfg = self.cfg.clone();
-            let helper_sz =
-                &**self.engine_store_server_helpers.last().unwrap() as *const _ as isize;
-            unsafe {
-                node_cfg.raft_store.engine_store_server_helper = helper_sz;
-            }
-
-            unsafe {
-                println!(
-                    "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {} node_cfg.isize {} sz {} X {:?}",
-                    node_cfg.raft_store.engine_store_server_helper,
-                    self.engine_store_server_helpers.last().unwrap().inner as isize,
-                    (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
-                        .inner as isize,
-                    helper_sz,
-                    (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
-                        .inner
-                );
-            }
+            let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(&key_mgr, &router);
 
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(
@@ -327,6 +329,7 @@ impl<T: Simulator> Cluster<T> {
             self.engines.insert(node_id, engines);
             self.store_metas.insert(node_id, store_meta);
             self.key_managers_map.insert(node_id, key_mgr);
+            self.ffi_helper_set.insert(node_id, ffi_helper_set);
         }
         Ok(())
     }
@@ -390,11 +393,18 @@ impl<T: Simulator> Cluster<T> {
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
 
-        let mut node_cfg = self.cfg.clone();
-        unsafe {
-            node_cfg.raft_store.engine_store_server_helper =
-                &*self.engine_store_server_helpers[node_id as usize] as *const _ as isize;
-        }
+        let node_cfg = if self.ffi_helper_set.contains_key(&node_id) {
+            let mut node_cfg = self.cfg.clone();
+            unsafe {
+                node_cfg.raft_store.engine_store_server_helper =
+                    &*self.ffi_helper_set[&node_id].engine_store_server_helper as *const _ as isize;
+            }
+            node_cfg
+        } else {
+            let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(&key_mgr, &router);
+            self.ffi_helper_set.insert(node_id, ffi_helper_set);
+            node_cfg
+        };
 
         // FIXME: rocksdb event listeners may not work, because we change the router.
         self.sim
