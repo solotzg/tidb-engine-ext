@@ -176,11 +176,11 @@ impl<T: Simulator> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
-            proxy: Vec::with_capacity(10),
-            proxy_helpers: Vec::with_capacity(10),
-            engine_store_servers: Vec::with_capacity(10),
-            engine_store_server_wraps: Vec::with_capacity(10),
-            engine_store_server_helpers: Vec::with_capacity(10),
+            proxy: vec![],
+            proxy_helpers: vec![],
+            engine_store_servers: vec![],
+            engine_store_server_wraps: vec![],
+            engine_store_server_helpers: vec![],
         }
     }
 
@@ -236,8 +236,8 @@ impl<T: Simulator> Cluster<T> {
     pub fn start(&mut self) -> ServerResult<()> {
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
-        println!("!!!!! node_ids.len() {}", node_ids.len());
         for node_id in node_ids {
+            println!("!!!!! run old node_id {}", node_id);
             self.run_node(node_id)?;
         }
 
