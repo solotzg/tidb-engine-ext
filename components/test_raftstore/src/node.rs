@@ -205,7 +205,9 @@ impl Simulator for NodeCluster {
         unsafe {
             println!(
                 "!!!!! run_node at start engine_store_server_helper.inner is {}",
-                (*(cfg.raft_store.engine_store_server_helper as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+                (*(cfg.raft_store.engine_store_server_helper
+                    as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
+                    .inner as isize,
             );
         }
 
@@ -288,7 +290,9 @@ impl Simulator for NodeCluster {
         unsafe {
             println!(
                 "!!!!! run_node engine_store_server_helper.inner is {}",
-                (*(raftstore_cfg.engine_store_server_helper as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+                (*(raftstore_cfg.engine_store_server_helper
+                    as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
+                    .inner as isize,
             );
         }
 

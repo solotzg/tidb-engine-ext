@@ -436,7 +436,9 @@ where
         unsafe {
             println!(
                 "!!!!! ApplyContext in apply engine_store_server_helper.inner is {}",
-                (*(cfg.engine_store_server_helper as *const crate::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+                (*(cfg.engine_store_server_helper
+                    as *const crate::engine_store_ffi::EngineStoreServerHelper))
+                    .inner as isize,
             );
         }
         ApplyContext {
@@ -3910,7 +3912,9 @@ where
         unsafe {
             println!(
                 "!!!!! HandlerBuilder in apply engine_store_server_helper.inner is {}",
-                (*(cfg.engine_store_server_helper as *const crate::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
+                (*(cfg.engine_store_server_helper
+                    as *const crate::engine_store_ffi::EngineStoreServerHelper))
+                    .inner as isize,
             );
         }
         ApplyPoller {

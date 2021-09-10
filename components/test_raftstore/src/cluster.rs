@@ -249,7 +249,7 @@ impl<T: Simulator> Cluster<T> {
         );
         for it in 0..self.count - self.engines.len() {
             println!("!!!!! +++++++++++++++++ begin {}", it);
-            if(self.engine_store_server_helpers.last().is_some()){
+            if (self.engine_store_server_helpers.last().is_some()) {
                 println!(
                     "!!!!! self.engine_store_server_helpers.inner2 {}",
                     self.engine_store_server_helpers.last().unwrap().inner as isize
@@ -276,28 +276,27 @@ impl<T: Simulator> Cluster<T> {
                 }));
 
             let proxy = self.proxy.last_mut().unwrap();
-            self.proxy_helpers
-                .push(Box::new(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
-                    &proxy,
-                )));
+            self.proxy_helpers.push(Box::new(
+                raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy),
+            ));
             self.engine_store_servers
                 .push(Box::new(mock_engine_store::EngineStoreServer::new()));
-            self.engine_store_server_wraps
-                .push(Box::new(mock_engine_store::EngineStoreServerWrap::new(
+            self.engine_store_server_wraps.push(Box::new(
+                mock_engine_store::EngineStoreServerWrap::new(
                     &mut **self.engine_store_servers.last_mut().unwrap(),
                     Some(&mut **self.proxy_helpers.last_mut().unwrap()),
-                )));
-            let wrapper = std::pin::Pin::new(
-                & **self.engine_store_server_wraps.last().unwrap());
-            self.engine_store_server_helpers.push(
-                Box::new(mock_engine_store::gen_engine_store_server_helper(wrapper
+                ),
+            ));
+            self.engine_store_server_helpers.push(Box::new(
+                mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
+                    &**self.engine_store_server_wraps.last().unwrap(),
                 )),
-            );
+            ));
             let mut node_cfg = self.cfg.clone();
-            let sz = & **self.engine_store_server_helpers.last().unwrap() as *const _ as isize;
-            // let sz = &self.engine_store_server_helpers.last() as *const _ as isize;
+            let helper_sz =
+                &**self.engine_store_server_helpers.last().unwrap() as *const _ as isize;
             unsafe {
-                node_cfg.raft_store.engine_store_server_helper = sz;
+                node_cfg.raft_store.engine_store_server_helper = helper_sz;
             }
 
             unsafe {
@@ -305,9 +304,11 @@ impl<T: Simulator> Cluster<T> {
                     "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {} node_cfg.isize {} sz {} X {:?}",
                     node_cfg.raft_store.engine_store_server_helper,
                     self.engine_store_server_helpers.last().unwrap().inner as isize,
-                    (*(sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner as isize,
-                    sz,
-                    (*(sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
+                    (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
+                        .inner as isize,
+                    helper_sz,
+                    (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper))
+                        .inner
                 );
             }
 
@@ -389,21 +390,10 @@ impl<T: Simulator> Cluster<T> {
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
 
-        let proxy = &mut self.proxy[node_id as usize];
-        let mut proxy_helper = raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(&proxy);
-        let maybe_proxy_helper = Some(&mut proxy_helper as *mut _);
-        let mut engine_store_server = mock_engine_store::EngineStoreServer::new();
-        let engine_store_server_wrap = mock_engine_store::EngineStoreServerWrap::new(
-            &mut engine_store_server,
-            maybe_proxy_helper,
-        );
-        let helper = mock_engine_store::gen_engine_store_server_helper(std::pin::Pin::new(
-            &engine_store_server_wrap,
-        ));
-        let node_cfg = self.cfg.clone();
+        let mut node_cfg = self.cfg.clone();
         unsafe {
-            let ptr = &node_cfg.raft_store.engine_store_server_helper as *const _ as *mut _;
-            *ptr = &helper;
+            node_cfg.raft_store.engine_store_server_helper =
+                &*self.engine_store_server_helpers[node_id as usize] as *const _ as isize;
         }
 
         // FIXME: rocksdb event listeners may not work, because we change the router.
