@@ -17,9 +17,9 @@ fn test_normal() {
     // Try to start this node, return after persisted some keys.
     let result = cluster.start();
 
-    // let k = b"k1";
-    // let v = b"v1";
-    // cluster.must_put(k, v);
+    let k = b"k1";
+    let v = b"v1";
+    cluster.must_put(k, v);
     // println!("!!!! After put");
     // for id in cluster.engines.keys() {
     //     println!("!!!! After check eq {}", id);

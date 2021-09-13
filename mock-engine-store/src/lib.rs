@@ -88,6 +88,11 @@ impl EngineStoreServerWrap {
             for i in 0..cmds.len {
                 let key = &*cmds.keys.add(i as _);
                 let val = &*cmds.vals.add(i as _);
+                println!(
+                    "!!!! handle_write_raft_cmd add K {:?} V {:?}",
+                    key.to_slice(),
+                    val.to_slice()
+                );
                 let tp = &*cmds.cmd_types.add(i as _);
                 let cf = &*cmds.cmd_cf.add(i as _);
                 let cf_index = (*cf) as u8;
