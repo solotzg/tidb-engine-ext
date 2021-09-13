@@ -25,4 +25,6 @@ fn test_normal() {
     //     println!("!!!! After check eq {}", id);
     //     must_get_equal(&cluster.get_engine(*id), k, v);
     // }
+
+    cluster.shutdown();
 }
