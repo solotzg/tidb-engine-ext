@@ -133,7 +133,7 @@ pub fn gen_engine_store_server_helper(
         fn_handle_compute_store_stats: None,
         fn_handle_get_engine_store_server_status: None,
         fn_pre_handle_snapshot: Some(ffi_pre_handle_snapshot),
-        fn_apply_pre_handled_snapshot: None,
+        fn_apply_pre_handled_snapshot: Some(ffi_apply_pre_handled_snapshot),
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
@@ -376,4 +376,12 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         ptr: std::ptr::null_mut(),
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
+}
+
+unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    arg2: ffi_interfaces::RawVoidPtr,
+    arg3: ffi_interfaces::RawCppPtrType,
+) {
+    println!("!!!! start ffi_apply_pre_handled_snapshot");
 }

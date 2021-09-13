@@ -19,9 +19,9 @@ pub use read_index_helper::ReadIndexClient;
 
 pub use crate::engine_store_ffi::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
-    EngineStoreServerStatus, FileEncryptionRes, HttpRequestRes, HttpRequestStatus, RaftCmdHeader,
-    RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
-    WriteCmdType, WriteCmdsView,
+    EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
+    RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr, RawVoidPtr, SSTReaderPtr,
+    StoreStats, WriteCmdType, WriteCmdsView,
 };
 use crate::engine_store_ffi::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawCppStringPtr,
@@ -592,8 +592,20 @@ impl EngineStoreServerHelper {
     }
 
     pub fn handle_compute_store_stats(&self) -> StoreStats {
-        debug_assert!(self.fn_handle_compute_store_stats.is_some());
-        unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
+        // debug_assert!(self.fn_handle_compute_store_stats.is_some());
+        // unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
+        StoreStats {
+            fs_stats: FsStats {
+                used_size: 0,
+                avail_size: 0,
+                capacity_size: 0,
+                ok: 1,
+            },
+            engine_bytes_written: 0,
+            engine_keys_written: 0,
+            engine_bytes_read: 0,
+            engine_keys_read: 0,
+        }
     }
 
     pub fn handle_write_raft_cmd(
@@ -603,7 +615,7 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_write_raft_cmd.is_some());
         println!(
-            "+++++ handle_write_raft_cmd self.inner {}",
+            "!!!!! handle_write_raft_cmd self.inner {}",
             self.inner as usize
         );
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }

@@ -218,6 +218,10 @@ impl<T: Simulator> Cluster<T> {
             create_test_engine(router, self.io_rate_limiter.clone(), &self.cfg);
         self.dbs.push(engines);
         self.key_managers.push(key_manager);
+        println!(
+            "!!!! create_engine path is {}",
+            dir.as_ref().to_str().unwrap()
+        );
         self.paths.push(dir);
     }
 
@@ -331,6 +335,7 @@ impl<T: Simulator> Cluster<T> {
             self.key_managers_map.insert(node_id, key_mgr);
             self.ffi_helper_set.insert(node_id, ffi_helper_set);
         }
+        println!("!!!!! finish cluster.start");
         Ok(())
     }
 
@@ -375,9 +380,6 @@ impl<T: Simulator> Cluster<T> {
         let key_mgr = self.key_managers_map[&node_id].clone();
         let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
         let mut cfg = self.cfg.clone();
-        if let Some(labels) = self.labels.get(&node_id) {
-            cfg.server.labels = labels.to_owned();
-        }
         let store_meta = match self.store_metas.entry(node_id) {
             Entry::Occupied(o) => {
                 let mut meta = o.get().lock().unwrap();
@@ -393,7 +395,7 @@ impl<T: Simulator> Cluster<T> {
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
 
-        let node_cfg = if self.ffi_helper_set.contains_key(&node_id) {
+        let mut node_cfg = if self.ffi_helper_set.contains_key(&node_id) {
             let mut node_cfg = self.cfg.clone();
             unsafe {
                 node_cfg.raft_store.engine_store_server_helper =
@@ -406,10 +408,14 @@ impl<T: Simulator> Cluster<T> {
             node_cfg
         };
 
+        if let Some(labels) = self.labels.get(&node_id) {
+            node_cfg.server.labels = labels.to_owned();
+        }
+
         // FIXME: rocksdb event listeners may not work, because we change the router.
-        self.sim
-            .wl()
-            .run_node(node_id, cfg, engines, store_meta, key_mgr, router, system)?;
+        self.sim.wl().run_node(
+            node_id, node_cfg, engines, store_meta, key_mgr, router, system,
+        )?;
         debug!("node {} started", node_id);
         Ok(())
     }

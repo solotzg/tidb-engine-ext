@@ -1705,6 +1705,15 @@ where
         }
         Some(state) => state,
     };
+    println!(
+        "!!!! do_snapshot ApplyState({},{},{}) LastAppliedState({},{},{})",
+        apply_state.applied_index,
+        apply_state.commit_index,
+        apply_state.commit_term,
+        last_applied_state.applied_index,
+        last_applied_state.commit_index,
+        last_applied_state.commit_term
+    );
     assert_eq!(apply_state, last_applied_state);
 
     let key = SnapKey::new(
