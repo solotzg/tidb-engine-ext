@@ -55,9 +55,13 @@ pub use raftstore::store::util::{find_peer, new_learner_peer, new_peer};
 use tikv_util::time::ThreadReadId;
 
 pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
+    println!("!!!! must_get get key {:?}", key);
+    println!("!!!! must_get get value {:?}", value.unwrap());
+    println!("!!!! must_get actual key {:?}", keys::data_key(key));
     for _ in 1..300 {
         let res = engine.c().get_value_cf(cf, &keys::data_key(key)).unwrap();
         if let (Some(value), Some(res)) = (value, res.as_ref()) {
+            println!("!!!! must_get get key assert_eq {:?} {:?}", value, &res[..]);
             assert_eq!(value, &res[..]);
             return;
         }
@@ -66,7 +70,11 @@ pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
         }
         thread::sleep(Duration::from_millis(20));
     }
-    debug!("last try to get {}", log_wrappers::hex_encode_upper(key));
+    debug!(
+        "last try to get {} cf {}",
+        log_wrappers::hex_encode_upper(key),
+        cf
+    );
     let res = engine.c().get_value_cf(cf, &keys::data_key(key)).unwrap();
     if value.is_none() && res.is_none()
         || value.is_some() && res.is_some() && value.unwrap() == &*res.unwrap()
@@ -74,8 +82,9 @@ pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
         return;
     }
     panic!(
-        "can't get value {:?} for key {}",
+        "can't get value {:?} for key {:?} hex {}",
         value.map(escape),
+        key,
         log_wrappers::hex_encode_upper(key)
     )
 }

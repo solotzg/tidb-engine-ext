@@ -239,6 +239,8 @@ impl<T: Simulator> Cluster<T> {
 
     pub fn make_ffi_helper_set(
         &mut self,
+        id: u64,
+        engines: Engines<RocksEngine, RocksEngine>,
         key_mgr: &Option<Arc<DataKeyManager>>,
         router: &RaftRouter<RocksEngine, RocksEngine>,
     ) -> (FFIHelperSet, TiKvConfig) {
@@ -254,7 +256,8 @@ impl<T: Simulator> Cluster<T> {
         let mut proxy_helper = Box::new(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(
             &proxy,
         ));
-        let mut engine_store_server = Box::new(mock_engine_store::EngineStoreServer::new());
+        let mut engine_store_server =
+            Box::new(mock_engine_store::EngineStoreServer::new(id, engines));
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
@@ -316,7 +319,8 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
-            let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(&key_mgr, &router);
+            let (mut ffi_helper_set, mut node_cfg) =
+                self.make_ffi_helper_set(0, self.dbs.last().unwrap().clone(), &key_mgr, &router);
 
             let mut sim = self.sim.wl();
             let node_id = sim.run_node(
@@ -333,6 +337,7 @@ impl<T: Simulator> Cluster<T> {
             self.engines.insert(node_id, engines);
             self.store_metas.insert(node_id, store_meta);
             self.key_managers_map.insert(node_id, key_mgr);
+            ffi_helper_set.engine_store_server.id = node_id;
             self.ffi_helper_set.insert(node_id, ffi_helper_set);
         }
         println!("!!!!! finish cluster.start");
@@ -403,7 +408,12 @@ impl<T: Simulator> Cluster<T> {
             }
             node_cfg
         } else {
-            let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(&key_mgr, &router);
+            let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(
+                node_id,
+                self.engines[&node_id].clone(),
+                &key_mgr,
+                &router,
+            );
             self.ffi_helper_set.insert(node_id, ffi_helper_set);
             node_cfg
         };

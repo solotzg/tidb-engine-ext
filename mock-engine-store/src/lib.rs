@@ -1,6 +1,13 @@
+use engine_rocks::raw::DB;
+use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
+use engine_traits::IterOptions;
+use engine_traits::Iterable;
+use engine_traits::Iterator;
+use engine_traits::Peekable;
+use engine_traits::{Engines, SyncMutable};
 use protobuf::Message;
 use raftstore::engine_store_ffi;
 use std::collections::BTreeMap;
@@ -22,12 +29,16 @@ struct Region {
 }
 
 pub struct EngineStoreServer {
+    pub id: u64,
+    pub engines: Engines<RocksEngine, RocksEngine>,
     kvstore: HashMap<RegionId, Region>,
 }
 
 impl EngineStoreServer {
-    pub fn new() -> Self {
+    pub fn new(id: u64, engines: Engines<RocksEngine, RocksEngine>) -> Self {
         EngineStoreServer {
+            id,
+            engines,
             kvstore: Default::default(),
         }
     }
@@ -80,11 +91,12 @@ impl EngineStoreServerWrap {
         header: ffi_interfaces::RaftCmdHeader,
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
+        let kv = &mut (*self.engine_store_server).engines.kv;
+
         let do_handle_write_raft_cmd = move |region: &mut Region| {
             if region.apply_state.get_applied_index() >= header.index {
                 return ffi_interfaces::EngineStoreApplyRes::None;
             }
-
             for i in 0..cmds.len {
                 let key = &*cmds.keys.add(i as _);
                 let val = &*cmds.vals.add(i as _);
@@ -100,6 +112,27 @@ impl EngineStoreServerWrap {
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
                         let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
+                        kv.put_cf(
+                            "default",
+                            &key.to_slice().to_vec(),
+                            &val.to_slice().to_vec(),
+                        );
+                        let option = IterOptions::new(None, None, false);
+                        let r = kv.seek(&key.to_slice().to_vec()).unwrap().unwrap();
+                        println!("!!!! engine get {:?} {:?}", r.0, r.1);
+                        let r2 = kv.seek("LLLL".as_bytes()).unwrap().unwrap();
+                        println!("!!!! engine get2 {:?} {:?}", r2.0, r2.1);
+                        let r3 = kv
+                            .db
+                            .c()
+                            .get_value_cf("default", "k1".as_bytes())
+                            .unwrap()
+                            .unwrap();
+                        println!("!!!! engine get3 {:?}", r3);
+                        // let iter = kv.iterator_cf_opt("default", option);
+                        // for i in iter{
+                        //     println!("!!!! engine size {:?} {:?}", i.key(), i.value());
+                        // }
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         data.remove(key.to_slice());
