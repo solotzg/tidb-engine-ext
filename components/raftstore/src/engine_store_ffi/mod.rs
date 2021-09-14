@@ -616,7 +616,8 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_handle_write_raft_cmd.is_some());
         println!(
             "!!!!! handle_write_raft_cmd self.inner {}",
-            self.inner as usize
+            self.inner as usize,
+            self.inner.as_ref().unwrap()
         );
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
