@@ -112,30 +112,13 @@ impl EngineStoreServerWrap {
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
                         let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
-                        kv.put_cf(
-                            "default",
-                            &key.to_slice().to_vec(),
-                            &val.to_slice().to_vec(),
-                        );
-                        let option = IterOptions::new(None, None, false);
-                        let r = kv.seek(&key.to_slice().to_vec()).unwrap().unwrap();
-                        println!("!!!! engine get {:?} {:?}", r.0, r.1);
-                        let r2 = kv.seek("LLLL".as_bytes()).unwrap().unwrap();
-                        println!("!!!! engine get2 {:?} {:?}", r2.0, r2.1);
-                        let r3 = kv
-                            .db
-                            .c()
-                            .get_value_cf("default", "k1".as_bytes())
-                            .unwrap()
-                            .unwrap();
-                        println!("!!!! engine get3 {:?}", r3);
-                        // let iter = kv.iterator_cf_opt("default", option);
-                        // for i in iter{
-                        //     println!("!!!! engine size {:?} {:?}", i.key(), i.value());
-                        // }
+                        let tikv_key = keys::data_key(key.to_slice());
+                        println!("!!!! handle_write_raft_cmd tikv_key {:?}", tikv_key);
+                        kv.put_cf("default", &tikv_key, &val.to_slice().to_vec());
                     }
                     engine_store_ffi::WriteCmdType::Del => {
-                        data.remove(key.to_slice());
+                        let tikv_key = keys::data_key(key.to_slice());
+                        data.remove(tikv_key.as_slice());
                     }
                 }
             }
