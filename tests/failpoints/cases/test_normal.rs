@@ -16,6 +16,9 @@ fn test_normal() {
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(0, 3, sim, pd_client);
+    unsafe{
+        test_raftstore::init_cluster_ptr(&cluster);
+    }
 
     cluster.make_global_ffi_helper_set();
     // Try to start this node, return after persisted some keys.
@@ -25,28 +28,8 @@ fn test_normal() {
     let v = b"v1";
     cluster.must_put(k, v);
     println!("!!!! After put");
+    test_raftstore::print_all_cluster(std::str::from_utf8(k).unwrap());
     for id in cluster.engines.keys() {
-        let tikv_key = keys::data_key(k);
-        println!("!!!! Check engine node_id is {}", id);
-        let kv = &cluster.engines[&id].kv;
-        let db: &Arc<DB> = &kv.db;
-        // let r = kv.seek(&[122, 1]).unwrap().unwrap();
-        // println!("!!!! test_normal kv get {:?}", r.0);
-        // let r3 = kv.get_value_cf("default", &tikv_key);
-        // println!("!!!! test_normal kv get3 {:?}", r3.unwrap().unwrap());
-        let r4 = db.c().get_value_cf("default", &tikv_key);
-        println!("!!!! test_normal kv get4 overall {:?}", r4);
-        match r4 {
-            Ok(v) => {
-                if v.is_some() {
-                    println!("!!!! test_normal kv get4 {:?}", v.unwrap());
-                } else {
-                    println!("!!!! test_normal kv get4 is None");
-                }
-            }
-            Err(e) => println!("!!!! test_normal kv get4 is Error"),
-        }
-
         // must_get_equal(&cluster.get_engine(*id), k, v);
         // must_get_equal(db, k, v);
     }

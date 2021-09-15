@@ -43,6 +43,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8};
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
 
+
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
 // isn't allocated by pd, and node id, store id are same.
@@ -1653,5 +1654,45 @@ impl<T: Simulator> Drop for Cluster<T> {
     fn drop(&mut self) {
         test_util::clear_failpoints();
         self.shutdown();
+    }
+}
+
+
+static mut CLUSTER_PTR: isize = 0;
+
+fn get_cluster() -> &'static Cluster<NodeCluster> {
+    gen_cluster(unsafe { CLUSTER_PTR })
+}
+
+pub fn gen_cluster(
+    cluster_ptr: isize,
+) -> &'static Cluster<NodeCluster> {
+    debug_assert!(cluster_ptr != 0);
+    unsafe { &(*(cluster_ptr as *const Cluster<NodeCluster>)) }
+}
+
+pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) {
+    CLUSTER_PTR = cluster_ptr as *const Cluster<NodeCluster> as isize;
+}
+
+pub fn print_all_cluster(k: &str){
+    let cluster: &Cluster<NodeCluster> = get_cluster();
+    for id in cluster.engines.keys() {
+        let tikv_key = keys::data_key(k.as_bytes());
+        println!("!!!! Check engine node_id is {}", id);
+        let kv = &cluster.engines[&id].kv;
+        let db: &Arc<DB> = &kv.db;
+        let r = db.c().get_value_cf("default", &tikv_key);
+        println!("!!!! print_all_cluster kv  overall {:?}", r);
+        match r {
+            Ok(v) => {
+                if v.is_some() {
+                    println!("!!!! print_all_cluster kv get {:?}", v.unwrap());
+                } else {
+                    println!("!!!! print_all_cluster kv get is None");
+                }
+            }
+            Err(e) => println!("!!!! print_all_cluster kv get is Error"),
+        }
     }
 }
