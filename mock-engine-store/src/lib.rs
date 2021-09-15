@@ -376,6 +376,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     //     apply_state: Default::default(),
     // });
 
+    println!("!!!! snaps.len size {}", snaps.len);
     for i in 0..snaps.len {
         let mut snapshot = snaps.views.add(i as usize);
         let mut sst_reader =
@@ -394,6 +395,10 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
             let cf_index = (*snapshot).type_ as u8;
             let data = &mut region.data[cf_index as usize];
+            println!(
+                "!!!! snaps data.insert cf {} key {:?} value {:?}",
+                cf_index, key, value
+            );
             let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
 
             sst_reader.next();
@@ -434,13 +439,15 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
 
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     for cf in 0..3 {
+        println!("!!!! req.data at {} size {}", cf, req.data[cf].len());
         for (k, v) in &req.data[cf] {
             let tikv_key = keys::data_key(k.as_slice());
+            let cf_name = cf_to_name(cf.into());
             println!(
-                "!!!! ffi_apply_pre_handled_snapshot tikv_key {:?}",
-                tikv_key
+                "!!!! ffi_apply_pre_handled_snapshot cf_name {}, tikv_key {:?}, v {:?}",
+                cf_name, tikv_key, v
             );
-            kv.put_cf(cf_to_name(cf.into()), &tikv_key, &v);
+            kv.put_cf(cf_name, &tikv_key, &v);
         }
     }
 
