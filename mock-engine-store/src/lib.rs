@@ -246,7 +246,9 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::String => unsafe {
             Box::<Vec<u8>>::from_raw(ptr as *mut _);
         },
-        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {},
+        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
+            // Box::<Vec<u8>>::from_raw(ptr as *mut _);
+        },
         RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
     }
 }
