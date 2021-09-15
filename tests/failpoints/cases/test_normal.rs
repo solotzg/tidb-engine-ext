@@ -17,6 +17,7 @@ fn test_normal() {
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(0, 3, sim, pd_client);
 
+    cluster.make_global_ffi_helper_set();
     // Try to start this node, return after persisted some keys.
     let result = cluster.start();
 

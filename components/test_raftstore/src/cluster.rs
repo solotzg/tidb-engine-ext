@@ -136,6 +136,12 @@ pub struct FFIHelperSet {
     pub engine_store_server_helper: Box<raftstore::engine_store_ffi::EngineStoreServerHelper>,
 }
 
+pub struct EngineHelperSet {
+    pub engine_store_server: Box<mock_engine_store::EngineStoreServer>,
+    pub engine_store_server_wrap: Box<mock_engine_store::EngineStoreServerWrap>,
+    pub engine_store_server_helper: Box<raftstore::engine_store_ffi::EngineStoreServerHelper>,
+}
+
 pub struct Cluster<T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
@@ -154,6 +160,7 @@ pub struct Cluster<T: Simulator> {
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
     pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
+    pub global_engine_helper_set: Option<EngineHelperSet>,
 }
 
 impl<T: Simulator> Cluster<T> {
@@ -181,6 +188,7 @@ impl<T: Simulator> Cluster<T> {
             sim,
             pd_client,
             ffi_helper_set: HashMap::default(),
+            global_engine_helper_set: None,
         }
     }
 
@@ -237,6 +245,33 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
+    pub fn make_global_ffi_helper_set(&mut self) {
+        let mut engine_store_server =
+            Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
+        let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+            &mut *engine_store_server,
+            None,
+        ));
+        let mut engine_store_server_helper =
+            Box::new(mock_engine_store::gen_engine_store_server_helper(
+                std::pin::Pin::new(&*engine_store_server_wrap),
+            ));
+
+        unsafe {
+            raftstore::engine_store_ffi::init_engine_store_server_helper(
+                &*engine_store_server_helper
+                    as *const raftstore::engine_store_ffi::EngineStoreServerHelper
+                    as *mut u8,
+            );
+        }
+
+        self.global_engine_helper_set = Some(EngineHelperSet {
+            engine_store_server,
+            engine_store_server_wrap,
+            engine_store_server_helper,
+        });
+    }
+
     pub fn make_ffi_helper_set(
         &mut self,
         id: u64,
@@ -257,7 +292,7 @@ impl<T: Simulator> Cluster<T> {
             &proxy,
         ));
         let mut engine_store_server =
-            Box::new(mock_engine_store::EngineStoreServer::new(id, engines));
+            Box::new(mock_engine_store::EngineStoreServer::new(id, Some(engines)));
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),

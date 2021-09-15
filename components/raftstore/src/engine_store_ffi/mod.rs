@@ -531,8 +531,10 @@ impl RawCppPtr {
 impl Drop for RawCppPtr {
     fn drop(&mut self) {
         if !self.is_null() {
-            get_engine_store_server_helper().gc_raw_cpp_ptr(self.ptr, self.type_);
-            self.ptr = std::ptr::null_mut();
+            let helper = get_engine_store_server_helper();
+            helper.gc_raw_cpp_ptr(self.ptr, self.type_);
+            // self.ptr = std::ptr::null_mut();
+            println!("!!!! RawCppPtr::drop");
         }
     }
 }

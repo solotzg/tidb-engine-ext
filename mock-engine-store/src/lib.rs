@@ -30,12 +30,12 @@ pub struct Region {
 
 pub struct EngineStoreServer {
     pub id: u64,
-    pub engines: Engines<RocksEngine, RocksEngine>,
+    pub engines: Option<Engines<RocksEngine, RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
 }
 
 impl EngineStoreServer {
-    pub fn new(id: u64, engines: Engines<RocksEngine, RocksEngine>) -> Self {
+    pub fn new(id: u64, engines: Option<Engines<RocksEngine, RocksEngine>>) -> Self {
         EngineStoreServer {
             id,
             engines,
@@ -91,7 +91,7 @@ impl EngineStoreServerWrap {
         header: ffi_interfaces::RaftCmdHeader,
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
-        let kv = &mut (*self.engine_store_server).engines.kv;
+        let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
 
         let do_handle_write_raft_cmd = move |region: &mut Region| {
             if region.apply_state.get_applied_index() >= header.index {
@@ -242,7 +242,7 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::String => unsafe {
             Box::<Vec<u8>>::from_raw(ptr as *mut _);
         },
-        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unreachable!(),
+        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {},
         RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
     }
 }
@@ -352,10 +352,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     assert_ne!(region_buff.len, 0);
     req.merge_from_bytes(region_buff.to_slice()).unwrap();
 
-    // kvstore.insert(req.id, Default::default());
-    // let &mut region = kvstore.get_mut(&req.id).unwrap();
-    // region.region = req;
-
     let req_id = req.id;
     kvstore.insert(
         req_id,
@@ -394,8 +390,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     }
 
     ffi_interfaces::RawCppPtr {
-        ptr: std::ptr::null_mut(),
-        // ptr: (kvstore[&req_id].as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
+        // ptr: std::ptr::null_mut(),
+        ptr: (kvstore[&req_id].as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
 }
