@@ -21,7 +21,7 @@ use tikv_util::{debug, error, info, warn};
 
 type RegionId = u64;
 #[derive(Default)]
-struct Region {
+pub struct Region {
     region: kvproto::metapb::Region,
     peer: kvproto::metapb::Peer,
     data: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
@@ -31,7 +31,7 @@ struct Region {
 pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Engines<RocksEngine, RocksEngine>,
-    kvstore: HashMap<RegionId, Region>,
+    pub kvstore: HashMap<RegionId, Box<Region>>,
 }
 
 impl EngineStoreServer {
@@ -358,13 +358,13 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     let req_id = req.id;
     kvstore.insert(
-        req.id,
-        Region {
+        req_id,
+        Box::new(Region {
             region: req,
             peer: Default::default(),
             data: Default::default(),
             apply_state: Default::default(),
-        },
+        }),
     );
 
     let region = &mut kvstore.get_mut(&req_id).unwrap();
@@ -395,6 +395,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     ffi_interfaces::RawCppPtr {
         ptr: std::ptr::null_mut(),
+        // ptr: (kvstore[&req_id].as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
 }
@@ -404,5 +405,14 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg2: ffi_interfaces::RawVoidPtr,
     arg3: ffi_interfaces::RawCppPtrType,
 ) {
+    // let store = into_engine_store_server_wrap(arg1);
+    // let req = &mut *(arg2 as *mut Region);
+    // let node_id = (*store.engine_store_server).id;
+    //
+    // &(*store.engine_store_server).kvstore.insert(
+    //     node_id,
+    //     req.clone(),
+    // );
+
     println!("!!!! start ffi_apply_pre_handled_snapshot");
 }

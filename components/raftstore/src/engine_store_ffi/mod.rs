@@ -546,6 +546,10 @@ fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
 pub fn gen_engine_store_server_helper(
     engine_store_server_helper: isize,
 ) -> &'static EngineStoreServerHelper {
+    println!(
+        "!!!! engine_store_server_helper is {}",
+        engine_store_server_helper
+    );
     debug_assert!(engine_store_server_helper != 0);
     unsafe { &(*(engine_store_server_helper as *const EngineStoreServerHelper)) }
 }
@@ -617,7 +621,6 @@ impl EngineStoreServerHelper {
         println!(
             "!!!!! handle_write_raft_cmd self.inner {}",
             self.inner as usize,
-            self.inner.as_ref().unwrap()
         );
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
