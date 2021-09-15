@@ -112,8 +112,9 @@ pub extern "C" fn ffi_encryption_method(
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
+    res: RawVoidPtr,
     timeout_ms: u64,
-) -> RawVoidPtr {
+) {
     assert!(!proxy_ptr.is_null());
     if view.len != 0 {
         assert_ne!(view.view, std::ptr::null());
@@ -132,12 +133,10 @@ pub extern "C" fn ffi_batch_read_index(
             .as_ref()
             .read_index_client
             .batch_read_index(req_vec, Duration::from_millis(timeout_ms));
-        let res = get_engine_store_server_helper().gen_batch_read_index_res(resp.len() as u64);
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
             get_engine_store_server_helper().insert_batch_read_index_resp(res, r, *region_id);
         }
-        res
     }
 }
 
@@ -608,7 +607,6 @@ impl EngineStoreServerHelper {
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
         debug_assert!(self.fn_handle_get_engine_store_server_status.is_some());
-
         unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
@@ -642,7 +640,6 @@ impl EngineStoreServerHelper {
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_admin_raft_cmd.is_some());
-
         unsafe {
             let req = ProtoMsgBaseBuff::new(req);
             let resp = ProtoMsgBaseBuff::new(resp);
@@ -666,7 +663,6 @@ impl EngineStoreServerHelper {
         term: u64,
     ) -> RawCppPtr {
         debug_assert!(self.fn_pre_handle_snapshot.is_some());
-
         let snaps_view = into_sst_views(snaps);
         unsafe {
             let region = ProtoMsgBaseBuff::new(region);
@@ -683,7 +679,6 @@ impl EngineStoreServerHelper {
 
     pub fn apply_pre_handled_snapshot(&self, snap: RawCppPtr) {
         debug_assert!(self.fn_apply_pre_handled_snapshot.is_some());
-
         unsafe {
             (self.fn_apply_pre_handled_snapshot.into_inner())(self.inner, snap.ptr, snap.type_)
         }
@@ -695,7 +690,6 @@ impl EngineStoreServerHelper {
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_ingest_sst.is_some());
-
         let snaps_view = into_sst_views(snaps);
         unsafe {
             (self.fn_handle_ingest_sst.into_inner())(
@@ -708,7 +702,6 @@ impl EngineStoreServerHelper {
 
     pub fn handle_destroy(&self, region_id: u64) {
         debug_assert!(self.fn_handle_destroy.is_some());
-
         unsafe {
             (self.fn_handle_destroy.into_inner())(self.inner, region_id);
         }
@@ -716,20 +709,12 @@ impl EngineStoreServerHelper {
 
     pub fn handle_check_terminated(&self) -> bool {
         debug_assert!(self.fn_handle_check_terminated.is_some());
-
         unsafe { (self.fn_handle_check_terminated.into_inner())(self.inner) != 0 }
     }
 
     fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
         debug_assert!(self.fn_gen_cpp_string.is_some());
-
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
-    }
-
-    fn gen_batch_read_index_res(&self, cap: u64) -> RawVoidPtr {
-        debug_assert!(self.fn_gen_batch_read_index_res.is_some());
-
-        unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
     }
 
     fn insert_batch_read_index_resp(
@@ -739,7 +724,6 @@ impl EngineStoreServerHelper {
         region_id: u64,
     ) {
         debug_assert!(self.fn_insert_batch_read_index_resp.is_some());
-
         let r = ProtoMsgBaseBuff::new(r);
         unsafe {
             (self.fn_insert_batch_read_index_resp.into_inner())(
@@ -752,19 +736,16 @@ impl EngineStoreServerHelper {
 
     pub fn handle_http_request(&self, path: &str) -> HttpRequestRes {
         debug_assert!(self.fn_handle_http_request.is_some());
-
         unsafe { (self.fn_handle_http_request.into_inner())(self.inner, path.as_bytes().into()) }
     }
 
     pub fn check_http_uri_available(&self, path: &str) -> bool {
         debug_assert!(self.fn_check_http_uri_available.is_some());
-
         unsafe { (self.fn_check_http_uri_available.into_inner())(path.as_bytes().into()) != 0 }
     }
 
     pub fn set_server_info_resp(&self, res: BaseBuffView, ptr: RawVoidPtr) {
         debug_assert!(self.fn_set_server_info_resp.is_some());
-
         unsafe { (self.fn_set_server_info_resp.into_inner())(res, ptr) }
     }
 }

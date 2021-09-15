@@ -47,7 +47,8 @@ jobs:
       - name: format check
         run: |
           cd ${{github.workspace}}
-          make pre-format
+          make gen_proxy_ffi
+          [[ -z $(git status -s) ]]
           cargo fmt -- --check >/dev/null
       - name: test
         run: |

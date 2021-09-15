@@ -133,8 +133,8 @@ struct RaftStoreProxyFFIHelper {
                                                  BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
-  RawVoidPtr (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
-                                           uint64_t);
+  void (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
+                                     RawVoidPtr, uint64_t);
   SSTReaderInterfaces sst_reader_interfaces;
 
   uint32_t (*fn_server_info)(RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
@@ -143,7 +143,7 @@ struct RaftStoreProxyFFIHelper {
 struct EngineStoreServerHelper {
   uint32_t magic_number;  // use a very special number to check whether this
                           // struct is legal
-  uint32_t version;       // version of function interface
+  uint64_t version;       // version of function interface
   //
 
   EngineStoreServerWrap *inner;
@@ -170,7 +170,6 @@ struct EngineStoreServerHelper {
                                            BaseBuffView);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
   void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
-  RawVoidPtr (*fn_gen_batch_read_index_res)(uint64_t);
   void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView, uint64_t);
   void (*fn_set_server_info_resp)(BaseBuffView, RawVoidPtr);
 };
