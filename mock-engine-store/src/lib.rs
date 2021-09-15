@@ -8,19 +8,19 @@ use engine_traits::Iterable;
 use engine_traits::Iterator;
 use engine_traits::Peekable;
 use engine_traits::{Engines, SyncMutable};
+use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
 use raftstore::engine_store_ffi;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::pin::Pin;
 use tikv_util::{debug, error, info, warn};
-
 // use kvproto::raft_serverpb::{
 //     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
 // };
 
 type RegionId = u64;
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Region {
     region: kvproto::metapb::Region,
     peer: kvproto::metapb::Peer,
@@ -114,7 +114,11 @@ impl EngineStoreServerWrap {
                         let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
                         let tikv_key = keys::data_key(key.to_slice());
                         println!("!!!! handle_write_raft_cmd tikv_key {:?}", tikv_key);
-                        kv.put_cf("default", &tikv_key, &val.to_slice().to_vec());
+                        kv.put_cf(
+                            cf_to_name(cf.to_owned().into()),
+                            &tikv_key,
+                            &val.to_slice().to_vec(),
+                        );
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         let tikv_key = keys::data_key(key.to_slice());
@@ -365,6 +369,13 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     let region = &mut kvstore.get_mut(&req_id).unwrap();
 
+    // let mut region = Box::new(Region {
+    //     region: req,
+    //     peer: Default::default(),
+    //     data: Default::default(),
+    //     apply_state: Default::default(),
+    // });
+
     for i in 0..snaps.len {
         let mut snapshot = snaps.views.add(i as usize);
         let mut sst_reader =
@@ -392,7 +403,17 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     ffi_interfaces::RawCppPtr {
         // ptr: std::ptr::null_mut(),
         ptr: (kvstore[&req_id].as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
+        // ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
+    }
+}
+
+pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
+    match cf {
+        ffi_interfaces::ColumnFamilyType::Lock => CF_LOCK,
+        ffi_interfaces::ColumnFamilyType::Write => CF_WRITE,
+        ffi_interfaces::ColumnFamilyType::Default => CF_DEFAULT,
+        _ => unreachable!(),
     }
 }
 
@@ -401,14 +422,30 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg2: ffi_interfaces::RawVoidPtr,
     arg3: ffi_interfaces::RawCppPtrType,
 ) {
-    // let store = into_engine_store_server_wrap(arg1);
-    // let req = &mut *(arg2 as *mut Region);
-    // let node_id = (*store.engine_store_server).id;
-    //
-    // &(*store.engine_store_server).kvstore.insert(
-    //     node_id,
-    //     req.clone(),
-    // );
-
     println!("!!!! start ffi_apply_pre_handled_snapshot");
+
+    let store = into_engine_store_server_wrap(arg1);
+    let req = &mut *(arg2 as *mut Region);
+    let node_id = (*store.engine_store_server).id;
+
+    &(*store.engine_store_server)
+        .kvstore
+        .insert(node_id, Box::new(req.clone()));
+
+    let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
+    for cf in 0..3 {
+        for (k, v) in &req.data[cf] {
+            let tikv_key = keys::data_key(k.as_slice());
+            println!(
+                "!!!! ffi_apply_pre_handled_snapshot tikv_key {:?}",
+                tikv_key
+            );
+            kv.put_cf(cf_to_name(cf.into()), &tikv_key, &v);
+        }
+    }
+
+    println!(
+        "!!!! finish ffi_apply_pre_handled_snapshot node_id {}",
+        node_id
+    );
 }

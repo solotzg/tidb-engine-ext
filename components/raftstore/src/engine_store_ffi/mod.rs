@@ -833,3 +833,14 @@ impl Clone for RaftStoreProxyPtr {
         };
     }
 }
+
+impl From<usize> for ColumnFamilyType {
+    fn from(i: usize) -> Self {
+        match i {
+            0 => ColumnFamilyType::Lock,
+            1 => ColumnFamilyType::Write,
+            2 => ColumnFamilyType::Default,
+            _ => unreachable!(),
+        }
+    }
+}
