@@ -16,7 +16,7 @@ fn test_normal() {
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(0, 3, sim, pd_client);
-    unsafe{
+    unsafe {
         test_raftstore::init_cluster_ptr(&cluster);
     }
 
@@ -30,7 +30,7 @@ fn test_normal() {
     println!("!!!! After put");
     test_raftstore::print_all_cluster(std::str::from_utf8(k).unwrap());
     for id in cluster.engines.keys() {
-        // must_get_equal(&cluster.get_engine(*id), k, v);
+        must_get_equal(&cluster.get_engine(*id), k, v);
         // must_get_equal(db, k, v);
     }
 

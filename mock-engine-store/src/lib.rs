@@ -91,6 +91,7 @@ impl EngineStoreServerWrap {
         header: ffi_interfaces::RaftCmdHeader,
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
+        let server = &mut (*self.engine_store_server);
         let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
 
         let do_handle_write_raft_cmd = move |region: &mut Region| {
@@ -101,9 +102,11 @@ impl EngineStoreServerWrap {
                 let key = &*cmds.keys.add(i as _);
                 let val = &*cmds.vals.add(i as _);
                 println!(
-                    "!!!! handle_write_raft_cmd add K {:?} V {:?}",
+                    "!!!! handle_write_raft_cmd add K {:?} V {:?} to region {} node id {}",
                     key.to_slice(),
-                    val.to_slice()
+                    val.to_slice(),
+                    region_id,
+                    server.id
                 );
                 let tp = &*cmds.cmd_types.add(i as _);
                 let cf = &*cmds.cmd_cf.add(i as _);
@@ -113,7 +116,10 @@ impl EngineStoreServerWrap {
                     engine_store_ffi::WriteCmdType::Put => {
                         let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
                         let tikv_key = keys::data_key(key.to_slice());
-                        println!("!!!! handle_write_raft_cmd tikv_key {:?}", tikv_key);
+                        println!(
+                            "!!!! handle_write_raft_cmd tikv_key {:?} to region {} node id {}",
+                            tikv_key, region_id, server.id
+                        );
                         kv.put_cf(
                             cf_to_name(cf.to_owned().into()),
                             &tikv_key,
