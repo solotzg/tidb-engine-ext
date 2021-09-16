@@ -358,7 +358,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     let store = into_engine_store_server_wrap(arg1);
     let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
     let kvstore = &mut (*store.engine_store_server).kvstore;
-    let staging = &mut (*store.engine_store_server).staging;
 
     let mut req = kvproto::metapb::Region::default();
     assert_ne!(region_buff.data, std::ptr::null());
