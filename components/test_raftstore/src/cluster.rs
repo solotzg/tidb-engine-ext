@@ -329,6 +329,8 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn start(&mut self) -> ServerResult<()> {
+        self.make_global_ffi_helper_set();
+
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
@@ -1672,6 +1674,11 @@ pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) {
 }
 
 pub fn print_all_cluster(k: &str) {
+    unsafe {
+        if (CLUSTER_PTR == 0) {
+            return;
+        }
+    }
     let cluster: &Cluster<NodeCluster> = get_cluster();
     for id in cluster.engines.keys() {
         let tikv_key = keys::data_key(k.as_bytes());

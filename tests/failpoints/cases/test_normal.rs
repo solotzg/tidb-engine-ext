@@ -20,7 +20,6 @@ fn test_normal() {
         test_raftstore::init_cluster_ptr(&cluster);
     }
 
-    cluster.make_global_ffi_helper_set();
     // Try to start this node, return after persisted some keys.
     let result = cluster.start();
 
