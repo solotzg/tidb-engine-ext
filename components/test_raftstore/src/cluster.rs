@@ -1660,8 +1660,14 @@ impl<T: Simulator> Drop for Cluster<T> {
 
 static mut CLUSTER_PTR: isize = 0;
 
-fn get_cluster() -> &'static Cluster<NodeCluster> {
-    gen_cluster(unsafe { CLUSTER_PTR })
+fn get_cluster() -> Option<&'static Cluster<NodeCluster>> {
+    unsafe {
+        if CLUSTER_PTR == 0 {
+            None
+        } else {
+            Some(gen_cluster(unsafe { CLUSTER_PTR }))
+        }
+    }
 }
 
 pub fn gen_cluster(cluster_ptr: isize) -> &'static Cluster<NodeCluster> {
@@ -1674,12 +1680,11 @@ pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) {
 }
 
 pub fn print_all_cluster(k: &str) {
-    unsafe {
-        if (CLUSTER_PTR == 0) {
-            return;
-        }
+    let cluster = get_cluster();
+    if cluster.is_none() {
+        return;
     }
-    let cluster: &Cluster<NodeCluster> = get_cluster();
+    let cluster = cluster.unwrap();
     for id in cluster.engines.keys() {
         let tikv_key = keys::data_key(k.as_bytes());
         println!("!!!! Check engine node_id is {}", id);
