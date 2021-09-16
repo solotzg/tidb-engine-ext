@@ -32,6 +32,7 @@ pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Option<Engines<RocksEngine, RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
+    pub staging: HashMap<RegionId, Box<Region>>,
 }
 
 impl EngineStoreServer {
@@ -40,6 +41,7 @@ impl EngineStoreServer {
             id,
             engines,
             kvstore: Default::default(),
+            staging: Default::default(),
         }
     }
 }
@@ -358,6 +360,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     let store = into_engine_store_server_wrap(arg1);
     let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
     let kvstore = &mut (*store.engine_store_server).kvstore;
+    let staging = &mut (*store.engine_store_server).staging;
 
     let mut req = kvproto::metapb::Region::default();
     assert_ne!(region_buff.data, std::ptr::null());
@@ -365,7 +368,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     req.merge_from_bytes(region_buff.to_slice()).unwrap();
 
     let req_id = req.id;
-    kvstore.insert(
+    staging.insert(
         req_id,
         Box::new(Region {
             region: req,
@@ -375,14 +378,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         }),
     );
 
-    let region = &mut kvstore.get_mut(&req_id).unwrap();
-
-    // let mut region = Box::new(Region {
-    //     region: req,
-    //     peer: Default::default(),
-    //     data: Default::default(),
-    //     apply_state: Default::default(),
-    // });
+    let region = staging.get_mut(&req_id).unwrap();
 
     println!("!!!! snaps.len size {}", snaps.len);
     for i in 0..snaps.len {
@@ -415,7 +411,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     ffi_interfaces::RawCppPtr {
         // ptr: std::ptr::null_mut(),
-        ptr: (kvstore[&req_id].as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
+        ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         // ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
@@ -441,14 +437,23 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     let req = &mut *(arg2 as *mut Region);
     let node_id = (*store.engine_store_server).id;
 
+    // let region = req;
+
+    let region = *(*store.engine_store_server)
+        .staging
+        .remove(&req.region.id)
+        .unwrap();
+
     &(*store.engine_store_server)
         .kvstore
-        .insert(node_id, Box::new(req.clone()));
+        .insert(node_id, Box::new(region));
+
+    let region = (*store.engine_store_server).kvstore.get(&node_id).unwrap();
 
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     for cf in 0..3 {
-        println!("!!!! req.data at {} size {}", cf, req.data[cf].len());
-        for (k, v) in &req.data[cf] {
+        println!("!!!! req.data at {} size {}", cf, region.data[cf].len());
+        for (k, v) in &region.data[cf] {
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             println!(
