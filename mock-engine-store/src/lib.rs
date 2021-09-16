@@ -32,7 +32,6 @@ pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Option<Engines<RocksEngine, RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
-    pub staging: HashMap<RegionId, Box<Region>>,
 }
 
 impl EngineStoreServer {
@@ -41,7 +40,6 @@ impl EngineStoreServer {
             id,
             engines,
             kvstore: Default::default(),
-            staging: Default::default(),
         }
     }
 }
@@ -368,17 +366,13 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     req.merge_from_bytes(region_buff.to_slice()).unwrap();
 
     let req_id = req.id;
-    staging.insert(
-        req_id,
-        Box::new(Region {
-            region: req,
-            peer: Default::default(),
-            data: Default::default(),
-            apply_state: Default::default(),
-        }),
-    );
 
-    let region = staging.get_mut(&req_id).unwrap();
+    let mut region = Box::new(Region {
+        region: req,
+        peer: Default::default(),
+        data: Default::default(),
+        apply_state: Default::default(),
+    });
 
     println!("!!!! snaps.len size {}", snaps.len);
     for i in 0..snaps.len {
@@ -411,7 +405,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     ffi_interfaces::RawCppPtr {
         // ptr: std::ptr::null_mut(),
-        ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
+        ptr: Box::into_raw(region) as *const Region as ffi_interfaces::RawVoidPtr,
         // ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
@@ -439,16 +433,12 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
 
     // let region = req;
 
-    let region = *(*store.engine_store_server)
-        .staging
-        .remove(&req.region.id)
-        .unwrap();
+    let mut region = Box::from_raw(req);
+    let req_id = region.region.id;
 
-    &(*store.engine_store_server)
-        .kvstore
-        .insert(node_id, Box::new(region));
+    &(*store.engine_store_server).kvstore.insert(req_id, region);
 
-    let region = (*store.engine_store_server).kvstore.get(&node_id).unwrap();
+    let region = (*store.engine_store_server).kvstore.get(&req_id).unwrap();
 
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     for cf in 0..3 {
