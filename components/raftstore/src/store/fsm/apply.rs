@@ -3508,6 +3508,9 @@ where
             && self.delegate.last_flush_applied_index != applied_index;
         #[cfg(feature = "failpoint")]
         (|| fail_point!("apply_on_handle_snapshot_sync", |_| { need_sync = true }))();
+        if cfg!(feature = "failpoints") {
+            need_sync = true;
+        }
         if need_sync {
             if apply_ctx.timer.is_none() {
                 apply_ctx.timer = Some(Instant::now_coarse());

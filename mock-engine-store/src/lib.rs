@@ -132,6 +132,7 @@ impl EngineStoreServerWrap {
                     }
                 }
             }
+            // Do not advance apply index
             ffi_interfaces::EngineStoreApplyRes::None
         };
 
