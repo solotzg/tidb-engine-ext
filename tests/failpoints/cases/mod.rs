@@ -1,7 +1,6 @@
 // Copyright 2017 TiKV Project Authors. Licensed under Apache-2.0.
 
 mod test_bootstrap;
-mod test_normal;
 mod test_cmd_epoch_checker;
 mod test_compact_log;
 mod test_conf_change;
@@ -12,6 +11,7 @@ mod test_gc_worker;
 mod test_import_service;
 mod test_kv_service;
 mod test_merge;
+mod test_normal;
 mod test_pd_client;
 mod test_pending_peers;
 mod test_replica_read;
