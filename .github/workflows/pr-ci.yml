@@ -55,4 +55,16 @@ jobs:
           # make test
           # make debug
           cargo check
-          cargo test --package tests --test failpoints -- cases::test_bootstrap::test_bootstrap_half_way_failure_after_bootstrap_store --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_normal --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_bootstrap --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_compact_log --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_early_apply --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_encryption --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_pd_client --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_pending_peers --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_transaction --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_cmd_epoch_checker --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_disk_full --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_snap --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_merge --exact --nocapture
+          cargo test --package tests --test failpoints -- cases::test_stale_peer --exact --nocapture
