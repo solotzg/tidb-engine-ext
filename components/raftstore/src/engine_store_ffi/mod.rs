@@ -534,7 +534,6 @@ impl Drop for RawCppPtr {
             let helper = get_engine_store_server_helper();
             helper.gc_raw_cpp_ptr(self.ptr, self.type_);
             self.ptr = std::ptr::null_mut();
-            println!("!!!! RawCppPtr::drop");
         }
     }
 }
@@ -548,10 +547,6 @@ fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
 pub fn gen_engine_store_server_helper(
     engine_store_server_helper: isize,
 ) -> &'static EngineStoreServerHelper {
-    println!(
-        "!!!! engine_store_server_helper is {}",
-        engine_store_server_helper
-    );
     debug_assert!(engine_store_server_helper != 0);
     unsafe { &(*(engine_store_server_helper as *const EngineStoreServerHelper)) }
 }

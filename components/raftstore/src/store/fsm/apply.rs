@@ -3528,7 +3528,6 @@ where
 
         let tikv_key = keys::data_key("k1".as_bytes());
         let r = apply_ctx.engine.get_value_cf("default", &tikv_key);
-        println!("!!!! handle_snapshot apply_ctx overall {:?}", r);
 
         if let Err(e) = snap_task.generate_and_schedule_snapshot::<EK>(
             apply_ctx.engine.snapshot(),

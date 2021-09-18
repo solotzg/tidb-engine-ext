@@ -101,8 +101,8 @@ impl EngineStoreServerWrap {
             for i in 0..cmds.len {
                 let key = &*cmds.keys.add(i as _);
                 let val = &*cmds.vals.add(i as _);
-                println!(
-                    "!!!! handle_write_raft_cmd add K {:?} V {:?} to region {} node id {}",
+                debug!(
+                    "handle_write_raft_cmd add K {:?} V {:?} to region {} node id {}",
                     key.to_slice(),
                     val.to_slice(),
                     region_id,
@@ -116,10 +116,6 @@ impl EngineStoreServerWrap {
                     engine_store_ffi::WriteCmdType::Put => {
                         let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
                         let tikv_key = keys::data_key(key.to_slice());
-                        println!(
-                            "!!!! handle_write_raft_cmd tikv_key {:?} to region {} node id {}",
-                            tikv_key, region_id, server.id
-                        );
                         kv.put_cf(
                             cf_to_name(cf.to_owned().into()),
                             &tikv_key,
@@ -374,7 +370,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         apply_state: Default::default(),
     });
 
-    println!("!!!! snaps.len size {}", snaps.len);
+    debug!("apply snaps with len {}", snaps.len);
     for i in 0..snaps.len {
         let mut snapshot = snaps.views.add(i as usize);
         let mut sst_reader =
@@ -393,10 +389,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
             let cf_index = (*snapshot).type_ as u8;
             let data = &mut region.data[cf_index as usize];
-            println!(
-                "!!!! snaps data.insert cf {} key {:?} value {:?}",
-                cf_index, key, value
-            );
             let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
 
             sst_reader.next();
@@ -425,8 +417,6 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg2: ffi_interfaces::RawVoidPtr,
     arg3: ffi_interfaces::RawCppPtrType,
 ) {
-    println!("!!!! start ffi_apply_pre_handled_snapshot");
-
     let store = into_engine_store_server_wrap(arg1);
     let req = &mut *(arg2 as *mut Region);
     let node_id = (*store.engine_store_server).id;
@@ -442,20 +432,10 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
 
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     for cf in 0..3 {
-        println!("!!!! req.data at {} size {}", cf, region.data[cf].len());
         for (k, v) in &region.data[cf] {
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
-            println!(
-                "!!!! ffi_apply_pre_handled_snapshot cf_name {}, tikv_key {:?}, v {:?}",
-                cf_name, tikv_key, v
-            );
             kv.put_cf(cf_name, &tikv_key, &v);
         }
     }
-
-    println!(
-        "!!!! finish ffi_apply_pre_handled_snapshot node_id {}",
-        node_id
-    );
 }

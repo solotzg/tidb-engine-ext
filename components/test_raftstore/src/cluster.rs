@@ -226,10 +226,7 @@ impl<T: Simulator> Cluster<T> {
             create_test_engine(router, self.io_rate_limiter.clone(), &self.cfg);
         self.dbs.push(engines);
         self.key_managers.push(key_manager);
-        println!(
-            "!!!! create_engine path is {}",
-            dir.as_ref().to_str().unwrap()
-        );
+        debug!("create_engine path is {}", dir.as_ref().to_str().unwrap());
         self.paths.push(dir);
     }
 
@@ -314,17 +311,6 @@ impl<T: Simulator> Cluster<T> {
             engine_store_server_wrap,
             engine_store_server_helper,
         };
-        unsafe {
-            println!(
-                "!!!!! node_cfg.raft_store.engine_store_server_helper is {} engine_store_server_helper.inner {} node_cfg.isize {} helper pointer as isize {} inner {:?}",
-                node_cfg.raft_store.engine_store_server_helper,
-                ffi_helper_set.engine_store_server_helper.inner as isize,
-                (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
-                    as isize,
-                helper_sz,
-                (*(helper_sz as *const raftstore::engine_store_ffi::EngineStoreServerHelper)).inner
-            );
-        }
         (ffi_helper_set, node_cfg)
     }
 
@@ -1687,20 +1673,19 @@ pub fn print_all_cluster(k: &str) {
     let cluster = cluster.unwrap();
     for id in cluster.engines.keys() {
         let tikv_key = keys::data_key(k.as_bytes());
-        println!("!!!! Check engine node_id is {}", id);
+        println!("Check engine node_id is {}", id);
         let kv = &cluster.engines[&id].kv;
         let db: &Arc<DB> = &kv.db;
         let r = db.c().get_value_cf("default", &tikv_key);
-        println!("!!!! print_all_cluster kv  overall {:?}", r);
         match r {
             Ok(v) => {
                 if v.is_some() {
-                    println!("!!!! print_all_cluster kv get {:?}", v.unwrap());
+                    println!("print_all_cluster from id {} get {:?}", node_id, v.unwrap());
                 } else {
-                    println!("!!!! print_all_cluster kv get is None");
+                    println!("print_all_cluster from id {} get None", node_id);
                 }
             }
-            Err(e) => println!("!!!! print_all_cluster kv get is Error"),
+            Err(e) => println!("print_all_cluster from id {} get Error", node_id),
         }
     }
 }
