@@ -320,18 +320,11 @@ impl<T: Simulator> Cluster<T> {
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
-            println!("!!!!! run old node_id {}", node_id);
             self.run_node(node_id)?;
         }
 
         // Try start new nodes.
-        println!(
-            "!!!!! self.count {} self.engines.len() {}",
-            self.count,
-            self.engines.len()
-        );
         for it in 0..self.count - self.engines.len() {
-            println!("!!!!! +++++++++++++++++ begin {}", it);
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -355,7 +348,7 @@ impl<T: Simulator> Cluster<T> {
                 router,
                 system,
             )?;
-            println!("!!!!! node_id is {}", node_id);
+            debug!("start new node {}", node_id);
             self.group_props.insert(node_id, props);
             self.engines.insert(node_id, engines);
             self.store_metas.insert(node_id, store_meta);
@@ -363,7 +356,6 @@ impl<T: Simulator> Cluster<T> {
             ffi_helper_set.engine_store_server.id = node_id;
             self.ffi_helper_set.insert(node_id, ffi_helper_set);
         }
-        println!("!!!!! finish cluster.start");
         Ok(())
     }
 

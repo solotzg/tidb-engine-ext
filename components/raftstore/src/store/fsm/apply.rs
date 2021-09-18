@@ -428,19 +428,7 @@ where
         // If `enable_multi_batch_write` was set true, we create `RocksWriteBatchVec`.
         // Otherwise create `RocksWriteBatch`.
         let kv_wb = W::with_capacity(&engine, DEFAULT_APPLY_WB_SIZE);
-        println!(
-            "!!!!! ApplyContext in apply raft_store.engine_store_server_helper is {}",
-            cfg.engine_store_server_helper,
-        );
 
-        unsafe {
-            println!(
-                "!!!!! ApplyContext in apply engine_store_server_helper.inner is {}",
-                (*(cfg.engine_store_server_helper
-                    as *const crate::engine_store_ffi::EngineStoreServerHelper))
-                    .inner as isize,
-            );
-        }
         ApplyContext {
             engine_store_server_helper: crate::engine_store_ffi::gen_engine_store_server_helper(
                 cfg.engine_store_server_helper,
@@ -3910,19 +3898,6 @@ where
 
     fn build(&mut self, priority: Priority) -> ApplyPoller<EK, W> {
         let cfg = self.cfg.value();
-        println!(
-            "!!!!! HandlerBuilder in apply raft_store.engine_store_server_helper is {}",
-            cfg.engine_store_server_helper,
-        );
-
-        unsafe {
-            println!(
-                "!!!!! HandlerBuilder in apply engine_store_server_helper.inner is {}",
-                (*(cfg.engine_store_server_helper
-                    as *const crate::engine_store_ffi::EngineStoreServerHelper))
-                    .inner as isize,
-            );
-        }
         ApplyPoller {
             msg_buf: Vec::with_capacity(cfg.messages_per_tick),
             apply_ctx: ApplyContext::new(
