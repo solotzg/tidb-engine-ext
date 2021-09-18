@@ -3514,9 +3514,6 @@ where
             self.delegate.last_flush_applied_index = applied_index;
         }
 
-        let tikv_key = keys::data_key("k1".as_bytes());
-        let r = apply_ctx.engine.get_value_cf("default", &tikv_key);
-
         if let Err(e) = snap_task.generate_and_schedule_snapshot::<EK>(
             apply_ctx.engine.snapshot(),
             self.delegate.applied_index_term,

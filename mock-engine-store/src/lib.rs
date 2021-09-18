@@ -250,7 +250,7 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
             Box::<Vec<u8>>::from_raw(ptr as *mut _);
         },
         RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
-            // Box::<Vec<u8>>::from_raw(ptr as *mut _);
+            // We should not drop here
         },
         RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
     }
