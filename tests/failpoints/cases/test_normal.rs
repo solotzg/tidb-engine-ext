@@ -2,14 +2,9 @@
 
 use std::sync::{Arc, RwLock};
 
-use engine_rocks::raw::DB;
-use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
-use engine_traits::IterOptions;
-use engine_traits::Iterable;
-use engine_traits::{Iterator, Peekable};
+use engine_traits::{IterOptions, Iterable, Iterator, Peekable};
 use kvproto::{metapb, raft_serverpb};
 use mock_engine_store;
-use std::sync::atomic::{AtomicBool, AtomicU8};
 use test_raftstore::*;
 #[test]
 fn test_normal() {

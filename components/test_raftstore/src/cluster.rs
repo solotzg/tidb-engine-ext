@@ -301,9 +301,7 @@ impl<T: Simulator> Cluster<T> {
 
         let mut node_cfg = self.cfg.clone();
         let helper_sz = &*engine_store_server_helper as *const _ as isize;
-        unsafe {
-            node_cfg.raft_store.engine_store_server_helper = helper_sz;
-        };
+        node_cfg.raft_store.engine_store_server_helper = helper_sz;
         let ffi_helper_set = FFIHelperSet {
             proxy,
             proxy_helper,
@@ -324,7 +322,7 @@ impl<T: Simulator> Cluster<T> {
         }
 
         // Try start new nodes.
-        for it in 0..self.count - self.engines.len() {
+        for _it in 0..self.count - self.engines.len() {
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -399,7 +397,6 @@ impl<T: Simulator> Cluster<T> {
         let engines = self.engines[&node_id].clone();
         let key_mgr = self.key_managers_map[&node_id].clone();
         let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
-        let mut cfg = self.cfg.clone();
         let store_meta = match self.store_metas.entry(node_id) {
             Entry::Occupied(o) => {
                 let mut meta = o.get().lock().unwrap();
@@ -417,10 +414,8 @@ impl<T: Simulator> Cluster<T> {
 
         let mut node_cfg = if self.ffi_helper_set.contains_key(&node_id) {
             let mut node_cfg = self.cfg.clone();
-            unsafe {
-                node_cfg.raft_store.engine_store_server_helper =
-                    &*self.ffi_helper_set[&node_id].engine_store_server_helper as *const _ as isize;
-            }
+            node_cfg.raft_store.engine_store_server_helper =
+                &*self.ffi_helper_set[&node_id].engine_store_server_helper as *const _ as isize;
             node_cfg
         } else {
             let (ffi_helper_set, node_cfg) = self.make_ffi_helper_set(
@@ -1672,12 +1667,12 @@ pub fn print_all_cluster(k: &str) {
         match r {
             Ok(v) => {
                 if v.is_some() {
-                    println!("print_all_cluster from id {} get {:?}", node_id, v.unwrap());
+                    println!("print_all_cluster from id {} get {:?}", id, v.unwrap());
                 } else {
-                    println!("print_all_cluster from id {} get None", node_id);
+                    println!("print_all_cluster from id {} get None", id);
                 }
             }
-            Err(e) => println!("print_all_cluster from id {} get Error", node_id),
+            Err(_e) => println!("print_all_cluster from id {} get Error", id),
         }
     }
 }

@@ -1,12 +1,7 @@
-use engine_rocks::raw::DB;
 use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
-use engine_traits::IterOptions;
-use engine_traits::Iterable;
-use engine_traits::Iterator;
-use engine_traits::Peekable;
 use engine_traits::{Engines, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
@@ -249,9 +244,9 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::String => unsafe {
             Box::<Vec<u8>>::from_raw(ptr as *mut _);
         },
-        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
+        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => {
             // We should not drop here
-        },
+        }
         RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
     }
 }
