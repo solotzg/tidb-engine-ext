@@ -33,7 +33,7 @@ use raftstore::store::transport::CasualRouter;
 use raftstore::store::*;
 use raftstore::{Error, Result};
 use tikv::config::TiKvConfig;
-use tikv::server::Result as ServerResult;
+use tikv::server::{Node, Result as ServerResult};
 use tikv_util::thread_group::GroupProperties;
 use tikv_util::HandyRwLock;
 
@@ -248,6 +248,7 @@ impl<T: Simulator> Cluster<T> {
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             None,
+            unsafe { self as *const Cluster<T> as isize },
         ));
         let mut engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
@@ -293,6 +294,7 @@ impl<T: Simulator> Cluster<T> {
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
+            unsafe { self as *const Cluster<T> as isize },
         ));
         let mut engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
@@ -1629,46 +1631,16 @@ impl<T: Simulator> Drop for Cluster<T> {
 
 static mut CLUSTER_PTR: isize = 0;
 
-fn get_cluster() -> Option<&'static Cluster<NodeCluster>> {
+pub fn gen_cluster(cluster_ptr: isize) -> Option<&'static Cluster<NodeCluster>> {
     unsafe {
-        if CLUSTER_PTR == 0 {
+        if cluster_ptr == 0 {
             None
         } else {
-            Some(gen_cluster(unsafe { CLUSTER_PTR }))
+            Some(&(*(cluster_ptr as *const Cluster<NodeCluster>)))
         }
     }
 }
 
-pub fn gen_cluster(cluster_ptr: isize) -> &'static Cluster<NodeCluster> {
-    debug_assert!(cluster_ptr != 0);
-    unsafe { &(*(cluster_ptr as *const Cluster<NodeCluster>)) }
-}
-
-pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) {
-    CLUSTER_PTR = cluster_ptr as *const Cluster<NodeCluster> as isize;
-}
-
-pub fn print_all_cluster(k: &str) {
-    let cluster = get_cluster();
-    if cluster.is_none() {
-        return;
-    }
-    let cluster = cluster.unwrap();
-    for id in cluster.engines.keys() {
-        let tikv_key = keys::data_key(k.as_bytes());
-        println!("Check engine node_id is {}", id);
-        let kv = &cluster.engines[&id].kv;
-        let db: &Arc<DB> = &kv.db;
-        let r = db.c().get_value_cf("default", &tikv_key);
-        match r {
-            Ok(v) => {
-                if v.is_some() {
-                    println!("print_all_cluster from id {} get {:?}", id, v.unwrap());
-                } else {
-                    println!("print_all_cluster from id {} get None", id);
-                }
-            }
-            Err(_e) => println!("print_all_cluster from id {} get Error", id),
-        }
-    }
+pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) -> isize {
+    cluster_ptr as *const Cluster<NodeCluster> as isize
 }

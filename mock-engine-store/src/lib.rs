@@ -42,16 +42,19 @@ impl EngineStoreServer {
 pub struct EngineStoreServerWrap {
     pub engine_store_server: *mut EngineStoreServer,
     pub maybe_proxy_helper: std::option::Option<*mut RaftStoreProxyFFIHelper>,
+    pub cluster_ptr: isize,
 }
 
 impl EngineStoreServerWrap {
     pub fn new(
         engine_store_server: *mut EngineStoreServer,
         maybe_proxy_helper: std::option::Option<*mut RaftStoreProxyFFIHelper>,
+        cluster_ptr: isize,
     ) -> Self {
         Self {
             engine_store_server,
             maybe_proxy_helper,
+            cluster_ptr,
         }
     }
 
