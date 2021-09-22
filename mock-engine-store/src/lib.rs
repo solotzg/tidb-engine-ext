@@ -448,6 +448,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
 
     let region_id = header.region_id;
     let kvstore = &mut (*store.engine_store_server).kvstore;
+    let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     let region = kvstore.get_mut(&region_id).unwrap().as_mut();
 
     let index = header.index;
@@ -459,12 +460,6 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
 
-        {
-            region.apply_state.set_applied_index(index);
-            region.apply_state.mut_truncated_state().set_index(index);
-            region.apply_state.mut_truncated_state().set_term(term);
-        }
-
         while sst_reader.remained() {
             let key = sst_reader.key();
             let value = sst_reader.value();
@@ -473,10 +468,20 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             let data = &mut region.data[cf_index as usize];
             let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
 
+            let tikv_key = keys::data_key(key.to_slice());
+            let cf_name = cf_to_name((*snapshot).type_);
+            kv.put_cf(cf_name, &tikv_key.to_vec(), &value.to_slice().to_vec());
             sst_reader.next();
         }
     }
-    ffi_interfaces::EngineStoreApplyRes::None
+    //
+    // {
+    //     region.apply_state.set_applied_index(index);
+    //     region.apply_state.mut_truncated_state().set_index(index);
+    //     region.apply_state.mut_truncated_state().set_term(term);
+    // }
+
+    ffi_interfaces::EngineStoreApplyRes::Persist
 }
 
 unsafe extern "C" fn ffi_handle_compute_store_stats(

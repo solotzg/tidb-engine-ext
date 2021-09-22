@@ -120,9 +120,20 @@ fn test_ingest_reentrant() {
         .unwrap()
         .get_path(&meta);
 
+    println!(
+        "!!!! save_path {} exists {}",
+        save_path.as_path().to_str().unwrap(),
+        save_path.exists()
+    );
+
     let checksum1 = calc_crc32(save_path.clone()).unwrap();
     // Do ingest and it will ingest successs.
     let resp = import.ingest(&ingest).unwrap();
+    println!(
+        "!!!! save_path {} exists after ingest {}",
+        save_path.as_path().to_str().unwrap(),
+        save_path.exists()
+    );
     assert!(!resp.has_error());
 
     let checksum2 = calc_crc32(save_path).unwrap();

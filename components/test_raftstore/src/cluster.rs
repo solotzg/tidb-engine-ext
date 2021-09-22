@@ -248,7 +248,7 @@ impl<T: Simulator> Cluster<T> {
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             None,
-            unsafe { self as *const Cluster<T> as isize },
+            self as *const Cluster<T> as isize,
         ));
         let mut engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
@@ -294,7 +294,7 @@ impl<T: Simulator> Cluster<T> {
         let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
-            unsafe { self as *const Cluster<T> as isize },
+            self as *const Cluster<T> as isize,
         ));
         let mut engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
