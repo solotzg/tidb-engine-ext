@@ -151,9 +151,9 @@ pub fn gen_engine_store_server_helper(
         fn_handle_admin_raft_cmd: Some(ffi_handle_admin_raft_cmd),
         fn_atomic_update_proxy: Some(ffi_atomic_update_proxy),
         fn_handle_destroy: Some(ffi_handle_destroy),
-        fn_handle_ingest_sst: None,
+        fn_handle_ingest_sst: Some(ffi_handle_ingest_sst),
         fn_handle_check_terminated: None,
-        fn_handle_compute_store_stats: None,
+        fn_handle_compute_store_stats: Some(ffi_handle_compute_store_stats),
         fn_handle_get_engine_store_server_status: None,
         fn_pre_handle_snapshot: Some(ffi_pre_handle_snapshot),
         fn_apply_pre_handled_snapshot: Some(ffi_apply_pre_handled_snapshot),
@@ -380,7 +380,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         while sst_reader.remained() {
             let key = sst_reader.key();
             let value = sst_reader.value();
-            // new_region->insert(snaps.views[i].type, TiKVKey(key.data, key.len), TiKVValue(value.data, value.len));
 
             let cf_index = (*snapshot).type_ as u8;
             let data = &mut region.data[cf_index as usize];
@@ -432,5 +431,64 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
             let cf_name = cf_to_name(cf.into());
             kv.put_cf(cf_name, &tikv_key, &v);
         }
+    }
+}
+
+unsafe extern "C" fn ffi_handle_ingest_sst(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    snaps: ffi_interfaces::SSTViewVec,
+    header: ffi_interfaces::RaftCmdHeader,
+) -> ffi_interfaces::EngineStoreApplyRes {
+    let store = into_engine_store_server_wrap(arg1);
+    let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
+    debug!("ingest sst with len {}", snaps.len);
+
+    let region_id = header.region_id;
+    let kvstore = &mut (*store.engine_store_server).kvstore;
+    let region = kvstore.get_mut(&region_id).unwrap().as_mut();
+
+    let index = header.index;
+    let term = header.term;
+
+    // TODO
+    for i in 0..snaps.len {
+        let mut snapshot = snaps.views.add(i as usize);
+        let mut sst_reader =
+            SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
+
+        {
+            region.apply_state.set_applied_index(index);
+            region.apply_state.mut_truncated_state().set_index(index);
+            region.apply_state.mut_truncated_state().set_term(term);
+        }
+
+        while sst_reader.remained() {
+            let key = sst_reader.key();
+            let value = sst_reader.value();
+
+            let cf_index = (*snapshot).type_ as u8;
+            let data = &mut region.data[cf_index as usize];
+            let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
+
+            sst_reader.next();
+        }
+    }
+    ffi_interfaces::EngineStoreApplyRes::None
+}
+
+unsafe extern "C" fn ffi_handle_compute_store_stats(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+) -> ffi_interfaces::StoreStats {
+    ffi_interfaces::StoreStats {
+        fs_stats: ffi_interfaces::FsStats {
+            used_size: 0,
+            avail_size: 0,
+            capacity_size: 0,
+            ok: 1,
+        },
+        engine_bytes_written: 0,
+        engine_keys_written: 0,
+        engine_bytes_read: 0,
+        engine_keys_read: 0,
     }
 }

@@ -49,6 +49,7 @@ test-engines-rocksdb = [
 test-engines-panic = [
   "raftstore/test-engines-panic",
 ]
+test-raftstore-proxy = ["raftstore/test-raftstore-proxy"]
 
 [dependencies]
 backtrace = "0.3"

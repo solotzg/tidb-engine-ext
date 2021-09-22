@@ -3494,9 +3494,9 @@ where
             .iter()
             .any(|res| res.region_id == self.delegate.region_id())
             && self.delegate.last_flush_applied_index != applied_index;
-        #[cfg(feature = "failpoints")]
+        #[cfg(feature = "test-raftstore-proxy")]
         (|| fail_point!("apply_on_handle_snapshot_sync", |_| { need_sync = true }))();
-        if cfg!(feature = "failpoints") {
+        if cfg!(feature = "test-raftstore-proxy") {
             need_sync = true;
         }
         if need_sync {

@@ -122,4 +122,3 @@ tokio = { version = "1.5", features = ["rt-multi-thread"] }
 concurrency_manager = { path = "../components/concurrency_manager", default-features = false }
 file_system = { path = "../components/file_system" }
 resource_metering = { path = "../components/resource_metering" }
-server = { path = "../components/server" }

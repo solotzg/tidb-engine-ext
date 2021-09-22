@@ -1067,14 +1067,10 @@ impl<T: Simulator> Cluster<T> {
     pub fn must_put_cf(&mut self, cf: &str, key: &[u8], value: &[u8]) {
         match self.batch_put(key, vec![new_put_cf_cmd(cf, key, value)]) {
             Ok(resp) => {
-                println!(
-                    "must_put_cf resp len {} of key {:?} value {:?}",
-                    resp.get_responses().len(),
-                    key,
-                    value
-                );
-                // assert_eq!(resp.get_responses().len(), 1);
-                // assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Put);
+                if cfg!(feature = "test-raftstore-proxy") {
+                    assert_eq!(resp.get_responses().len(), 1);
+                    assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Put);
+                }
             }
             Err(e) => {
                 panic!("has error: {:?}", e);

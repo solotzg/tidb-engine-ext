@@ -593,20 +593,8 @@ impl EngineStoreServerHelper {
     }
 
     pub fn handle_compute_store_stats(&self) -> StoreStats {
-        // debug_assert!(self.fn_handle_compute_store_stats.is_some());
-        // unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
-        StoreStats {
-            fs_stats: FsStats {
-                used_size: 0,
-                avail_size: 0,
-                capacity_size: 0,
-                ok: 1,
-            },
-            engine_bytes_written: 0,
-            engine_keys_written: 0,
-            engine_bytes_read: 0,
-            engine_keys_read: 0,
-        }
+        debug_assert!(self.fn_handle_compute_store_stats.is_some());
+        unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
     }
 
     pub fn handle_write_raft_cmd(
@@ -770,10 +758,6 @@ impl EngineStoreServerHelper {
 
         unsafe { (self.fn_set_server_info_resp.into_inner())(res, ptr) }
     }
-}
-
-impl Drop for EngineStoreServerHelper {
-    fn drop(&mut self) {}
 }
 
 impl Clone for SSTReaderPtr {
