@@ -474,12 +474,12 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             sst_reader.next();
         }
     }
-    //
-    // {
-    //     region.apply_state.set_applied_index(index);
-    //     region.apply_state.mut_truncated_state().set_index(index);
-    //     region.apply_state.mut_truncated_state().set_term(term);
-    // }
+
+    {
+        region.apply_state.set_applied_index(index);
+        region.apply_state.mut_truncated_state().set_index(index);
+        region.apply_state.mut_truncated_state().set_term(term);
+    }
 
     ffi_interfaces::EngineStoreApplyRes::Persist
 }

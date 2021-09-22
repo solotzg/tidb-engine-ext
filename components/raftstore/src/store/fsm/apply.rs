@@ -1543,6 +1543,15 @@ where
 
         return if !ssts.is_empty() {
             assert_eq!(cmds.len(), 0);
+            #[cfg(feature = "failpoints")]
+            {
+                let mut dont_delete_ingested_sst_fp = || {
+                    fail_point!("dont_delete_ingested_sst", |_| {
+                        ssts.clear();
+                    });
+                };
+                dont_delete_ingested_sst_fp();
+            }
             match self.handle_ingest_sst_for_engine_store(&ctx, &ssts) {
                 EngineStoreApplyRes::None => {
                     self.pending_clean_ssts.append(&mut ssts);
