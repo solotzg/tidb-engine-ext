@@ -245,12 +245,12 @@ impl<T: Simulator> Cluster<T> {
     pub fn make_global_ffi_helper_set(&mut self) {
         let mut engine_store_server =
             Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
-        let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+        let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             None,
             self as *const Cluster<T> as isize,
         ));
-        let mut engine_store_server_helper =
+        let engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
                 std::pin::Pin::new(&*engine_store_server_wrap),
             ));
@@ -291,12 +291,12 @@ impl<T: Simulator> Cluster<T> {
         ));
         let mut engine_store_server =
             Box::new(mock_engine_store::EngineStoreServer::new(id, Some(engines)));
-        let mut engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+        let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
             self as *const Cluster<T> as isize,
         ));
-        let mut engine_store_server_helper =
+        let engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
                 std::pin::Pin::new(&*engine_store_server_wrap),
             ));

@@ -436,7 +436,6 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
             let cf_name = cf_to_name(cf.into());
             kv.put_cf(cf_name, &tikv_key, &v);
         }
-        println!("!!!! Size {}", region.data[cf].len());
     }
 }
 
