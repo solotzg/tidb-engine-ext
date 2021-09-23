@@ -375,7 +375,7 @@ impl PdCluster {
 
     // We don't care cluster id here, so any value like 0 in tests is ok.
     fn alloc_id(&self) -> Result<u64> {
-        Ok(self.base_id.fetch_add(1, Ordering::Relaxed) as u64)
+        Ok(self.base_id.fetch_add(1, Ordering::SeqCst) as u64)
     }
 
     fn put_store(&mut self, store: metapb::Store) -> Result<()> {
@@ -1263,7 +1263,9 @@ impl PdClient for TestPdClient {
     }
 
     fn alloc_id(&self) -> Result<u64> {
-        self.cluster.rl().alloc_id()
+        let result = self.cluster.rl().alloc_id();
+        debug!("!!!! alloc_id {}", result.as_ref().unwrap());
+        result
     }
 
     fn put_store(&self, store: metapb::Store) -> Result<Option<ReplicationStatus>> {
@@ -1467,11 +1469,15 @@ impl PdClient for TestPdClient {
         }
 
         let mut resp = pdpb::AskBatchSplitResponse::default();
-        for _ in 0..count {
+        debug!("!!!! ask_batch_split called");
+        for c in 0..count {
             let mut id = pdpb::SplitId::default();
             id.set_new_region_id(self.alloc_id().unwrap());
-            for _ in region.get_peers() {
-                id.mut_new_peer_ids().push(self.alloc_id().unwrap());
+
+            for peer in region.get_peers() {
+                let rid = self.alloc_id().unwrap();
+                debug!("!!!! ask_batch_split {} peer {:?} count {}", rid, peer, c);
+                id.mut_new_peer_ids().push(rid);
             }
             resp.mut_ids().push(id);
         }

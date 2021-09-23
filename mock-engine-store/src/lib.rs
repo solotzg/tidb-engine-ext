@@ -71,11 +71,11 @@ impl EngineStoreServerWrap {
                 return ffi_interfaces::EngineStoreApplyRes::Persist;
             }
 
-            match req.cmd_type {
-                kvproto::raft_cmdpb::AdminCmdType::CompactLog => 1,
-                kvproto::raft_cmdpb::AdminCmdType::VerifyHash => 1,
-                kvproto::raft_cmdpb::AdminCmdType::ComputeHash => 1,
-            };
+            // match req.cmd_type {
+            //     kvproto::raft_cmdpb::AdminCmdType::CompactLog => 1,
+            //     kvproto::raft_cmdpb::AdminCmdType::VerifyHash => 1,
+            //     kvproto::raft_cmdpb::AdminCmdType::ComputeHash => 1,
+            // };
 
             ffi_interfaces::EngineStoreApplyRes::Persist
         };

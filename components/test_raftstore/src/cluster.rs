@@ -1415,6 +1415,15 @@ impl<T: Simulator> Cluster<T> {
                     let admin_resp = resp.mut_admin_response();
                     let split_resp = admin_resp.mut_splits();
                     let regions = split_resp.get_regions();
+                    debug!(
+                        "!!!! get region1 id {} [{:?},{:?}) region2 id {} [{:?},{:?})",
+                        regions[0].get_id(),
+                        regions[0].get_start_key(),
+                        regions[0].get_end_key(),
+                        regions[1].get_id(),
+                        regions[1].get_start_key(),
+                        regions[1].get_end_key()
+                    );
                     assert_eq!(regions.len(), 2);
                     assert_eq!(regions[0].get_end_key(), key.as_slice());
                     assert_eq!(regions[0].get_end_key(), regions[1].get_start_key());
