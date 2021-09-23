@@ -1629,8 +1629,6 @@ impl<T: Simulator> Drop for Cluster<T> {
     }
 }
 
-static mut CLUSTER_PTR: isize = 0;
-
 pub fn gen_cluster(cluster_ptr: isize) -> Option<&'static Cluster<NodeCluster>> {
     unsafe {
         if cluster_ptr == 0 {

@@ -112,7 +112,6 @@ impl EngineStoreServerWrap {
                 let data = &mut region.data[cf_index as usize];
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
-                        let _ = data.insert(key.to_slice().to_vec(), val.to_slice().to_vec());
                         let tikv_key = keys::data_key(key.to_slice());
                         kv.put_cf(
                             cf_to_name(cf.to_owned().into()),
@@ -122,7 +121,7 @@ impl EngineStoreServerWrap {
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         let tikv_key = keys::data_key(key.to_slice());
-                        data.remove(tikv_key.as_slice());
+                        kv.delete_cf(cf_to_name(cf.to_owned().into()), &tikv_key);
                     }
                 }
             }
@@ -454,7 +453,6 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let index = header.index;
     let term = header.term;
 
-    // TODO
     for i in 0..snaps.len {
         let mut snapshot = snaps.views.add(i as usize);
         let mut sst_reader =
