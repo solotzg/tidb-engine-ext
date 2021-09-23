@@ -70,6 +70,13 @@ impl EngineStoreServerWrap {
             if region.apply_state.get_applied_index() >= header.index {
                 return ffi_interfaces::EngineStoreApplyRes::Persist;
             }
+
+            match req.cmd_type {
+                kvproto::raft_cmdpb::AdminCmdType::CompactLog => 1,
+                kvproto::raft_cmdpb::AdminCmdType::VerifyHash => 1,
+                kvproto::raft_cmdpb::AdminCmdType::ComputeHash => 1,
+            };
+
             ffi_interfaces::EngineStoreApplyRes::Persist
         };
         match (*self.engine_store_server).kvstore.entry(region_id) {

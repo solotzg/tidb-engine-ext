@@ -881,22 +881,22 @@ fn test_node_merge_cascade_merge_with_apply_yield() {
     cluster.run();
 
     let region = pd_client.get_region(b"k1").unwrap();
-    println!("!!!! region.get_id {}", region.get_id());
+    info!("!!!! region.get_id {}", region.get_id());
     cluster.must_split(&region, b"k5");
-    println!(
+    info!(
         "!!!! region.get_id after split k1 in {}",
         pd_client.get_region(b"k1").unwrap().get_id()
     );
     let region = pd_client.get_region(b"k5").unwrap();
     let region1 = pd_client.get_region(b"k1").unwrap();
-    println!(
+    info!(
         "!!!! region.get_id2 before split2 k1 in {} S {:?} E {:?}",
         region1.get_id(),
         region1.get_start_key(),
         region1.get_end_key()
     );
     cluster.must_split(&region, b"k9");
-    println!(
+    info!(
         "!!!! region.get_id after split2 k1 in {}",
         pd_client.get_region(b"k1").unwrap().get_id()
     );
@@ -910,8 +910,8 @@ fn test_node_merge_cascade_merge_with_apply_yield() {
     let r3 = pd_client.get_region(b"k9").unwrap();
 
     assert_eq!(r1.get_id(), 1000);
-    println!("!!!! r1.get_id {}", r1.get_id());
-    println!("!!!! r2.get_id {}", r2.get_id());
+    info!("!!!! r1.get_id {}", r1.get_id());
+    info!("!!!! r2.get_id {}", r2.get_id());
 
     pd_client.must_merge(r2.get_id(), r1.get_id());
     assert_eq!(r1.get_id(), 1000);
