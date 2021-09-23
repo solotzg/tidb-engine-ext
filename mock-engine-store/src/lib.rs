@@ -424,15 +424,19 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
 
     &(*store.engine_store_server).kvstore.insert(req_id, region);
 
-    let region = (*store.engine_store_server).kvstore.get(&req_id).unwrap();
+    let region = (*store.engine_store_server)
+        .kvstore
+        .get_mut(&req_id)
+        .unwrap();
 
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     for cf in 0..3 {
-        for (k, v) in &region.data[cf] {
+        for (k, v) in std::mem::take(region.data.as_mut().get_mut(cf).unwrap()).into_iter() {
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             kv.put_cf(cf_name, &tikv_key, &v);
         }
+        println!("!!!! Size {}", region.data[cf].len());
     }
 }
 
@@ -463,8 +467,6 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             let value = sst_reader.value();
 
             let cf_index = (*snapshot).type_ as u8;
-            let data = &mut region.data[cf_index as usize];
-            let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
 
             let tikv_key = keys::data_key(key.to_slice());
             let cf_name = cf_to_name((*snapshot).type_);
