@@ -189,7 +189,9 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             {
                 let _ = tikv.engines.take().unwrap().engines;
                 loop {
-                    if engine_store_server_helper.handle_check_terminated() {
+                    if engine_store_server_helper.handle_get_engine_store_server_status()
+                        != EngineStoreServerStatus::Running
+                    {
                         break;
                     }
                     thread::sleep(Duration::from_millis(200));
@@ -206,7 +208,7 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
 
             info!("wait for engine-store server to stop");
             while engine_store_server_helper.handle_get_engine_store_server_status()
-                != EngineStoreServerStatus::Stopped
+                != EngineStoreServerStatus::Terminated
             {
                 thread::sleep(Duration::from_millis(200));
             }
