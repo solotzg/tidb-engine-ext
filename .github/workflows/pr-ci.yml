@@ -69,3 +69,4 @@ jobs:
           cargo test --package tests --test failpoints -- cases::test_snap --nocapture
           cargo test --package tests --test failpoints -- cases::test_merge --nocapture
           cargo test --package tests --test failpoints -- cases::test_stale_peer --nocapture
+          cargo test --package tests --test failpoints -- cases::test_import_service --nocapture
