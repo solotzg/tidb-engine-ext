@@ -388,7 +388,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         ptr: Box::into_raw(Box::new(PrehandledSnapshot { region })) as *const Region
             as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
-    };
+    }
 }
 
 pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
