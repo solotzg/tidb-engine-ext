@@ -1394,6 +1394,7 @@ impl<T: Simulator> Cluster<T> {
             debug!("asking split"; "region" => ?region, "key" => ?split_key);
             // In case ask split message is ignored, we should retry.
             if try_cnt % 50 == 0 {
+                debug!("!!!! try once!");
                 self.reset_leader_of_region(region.get_id());
                 let key = split_key.to_vec();
                 let check = Box::new(move |write_resp: WriteResponse| {

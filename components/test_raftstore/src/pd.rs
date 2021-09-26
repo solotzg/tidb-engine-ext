@@ -375,7 +375,7 @@ impl PdCluster {
 
     // We don't care cluster id here, so any value like 0 in tests is ok.
     fn alloc_id(&self) -> Result<u64> {
-        Ok(self.base_id.fetch_add(1, Ordering::SeqCst) as u64)
+        Ok(self.base_id.fetch_add(1, Ordering::Relaxed) as u64)
     }
 
     fn put_store(&mut self, store: metapb::Store) -> Result<()> {
