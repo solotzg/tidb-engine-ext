@@ -335,7 +335,7 @@ impl<'a> SSTReader<'a> {
 }
 
 struct PrehandledSnapshot {
-    pub region: Region,
+    pub region: std::option::Option<Region>,
 }
 
 unsafe extern "C" fn ffi_pre_handle_snapshot(
@@ -389,8 +389,9 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     }
 
     ffi_interfaces::RawCppPtr {
-        ptr: Box::into_raw(Box::new(PrehandledSnapshot { region })) as *const Region
-            as ffi_interfaces::RawVoidPtr,
+        ptr: Box::into_raw(Box::new(PrehandledSnapshot {
+            region: Some(region),
+        })) as *const Region as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
 }
@@ -413,11 +414,11 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     let req = &mut *(arg2 as *mut PrehandledSnapshot);
     let node_id = (*store.engine_store_server).id;
 
-    let req_id = req.region.region.id;
+    let req_id = req.region.as_ref().unwrap().region.id;
 
     &(*store.engine_store_server)
         .kvstore
-        .insert(req_id, Box::new(std::mem::take(&mut req.region)));
+        .insert(req_id, Box::new(req.region.take().unwrap()));
 
     let region = (*store.engine_store_server)
         .kvstore
