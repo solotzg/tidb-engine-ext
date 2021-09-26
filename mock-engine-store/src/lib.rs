@@ -276,6 +276,17 @@ pub struct SSTReader<'a> {
     type_: ffi_interfaces::ColumnFamilyType,
 }
 
+impl<'a> Drop for SSTReader<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            (self.proxy_helper.sst_reader_interfaces.fn_gc.into_inner())(
+                self.inner.clone(),
+                self.type_,
+            );
+        }
+    }
+}
+
 impl<'a> SSTReader<'a> {
     pub unsafe fn new(
         proxy_helper: &'a TiFlashRaftProxyHelper,
@@ -289,13 +300,6 @@ impl<'a> SSTReader<'a> {
                 .into_inner())(view.clone(), proxy_helper.proxy_ptr.clone()),
             type_: view.type_,
         }
-    }
-
-    pub unsafe fn drop(&mut self) {
-        (self.proxy_helper.sst_reader_interfaces.fn_gc.into_inner())(
-            self.inner.clone(),
-            self.type_,
-        );
     }
 
     pub unsafe fn remained(&mut self) -> bool {
