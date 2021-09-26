@@ -2,6 +2,7 @@ use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
+use engine_store_ffi::UnwrapExternCFunc;
 use engine_traits::{Engines, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
@@ -42,6 +43,7 @@ impl EngineStoreServer {
 pub struct EngineStoreServerWrap {
     pub engine_store_server: *mut EngineStoreServer,
     pub maybe_proxy_helper: std::option::Option<*mut RaftStoreProxyFFIHelper>,
+    // Call `gen_cluster(cluster_ptr)`, and get which cluster this Server belong to.
     pub cluster_ptr: isize,
 }
 
@@ -70,12 +72,6 @@ impl EngineStoreServerWrap {
             if region.apply_state.get_applied_index() >= header.index {
                 return ffi_interfaces::EngineStoreApplyRes::Persist;
             }
-
-            // match req.cmd_type {
-            //     kvproto::raft_cmdpb::AdminCmdType::CompactLog => 1,
-            //     kvproto::raft_cmdpb::AdminCmdType::VerifyHash => 1,
-            //     kvproto::raft_cmdpb::AdminCmdType::ComputeHash => 1,
-            // };
 
             ffi_interfaces::EngineStoreApplyRes::Persist
         };
@@ -207,7 +203,6 @@ enum RawCppPtrTypeImpl {
     None = 0,
     String,
     PreHandledSnapshotWithBlock,
-    PreHandledSnapshotWithFiles,
 }
 
 impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
@@ -216,7 +211,6 @@ impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
             0 => RawCppPtrTypeImpl::None,
             1 => RawCppPtrTypeImpl::String,
             2 => RawCppPtrTypeImpl::PreHandledSnapshotWithBlock,
-            3 => RawCppPtrTypeImpl::PreHandledSnapshotWithFiles,
             _ => unreachable!(),
         }
     }
@@ -228,7 +222,6 @@ impl Into<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
             RawCppPtrTypeImpl::None => 0,
             RawCppPtrTypeImpl::String => 1,
             RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => 2,
-            RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => 3,
         }
     }
 }
@@ -253,10 +246,9 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::String => unsafe {
             Box::<Vec<u8>>::from_raw(ptr as *mut _);
         },
-        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => {
-            // We should not drop here
-        }
-        RawCppPtrTypeImpl::PreHandledSnapshotWithFiles => unreachable!(),
+        RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
+            Box::<PrehandledSnapshot>::from_raw(ptr as *mut _);
+        },
     }
 }
 
@@ -277,16 +269,6 @@ unsafe extern "C" fn ffi_handle_destroy(
 }
 
 type TiFlashRaftProxyHelper = RaftStoreProxyFFIHelper;
-
-trait UnwrapExternCFunc<T> {
-    unsafe fn into_inner(&self) -> &T;
-}
-
-impl<T> UnwrapExternCFunc<T> for std::option::Option<T> {
-    unsafe fn into_inner(&self) -> &T {
-        std::mem::transmute::<&Self, &T>(self)
-    }
-}
 
 pub struct SSTReader<'a> {
     proxy_helper: &'a TiFlashRaftProxyHelper,
@@ -348,6 +330,10 @@ impl<'a> SSTReader<'a> {
     }
 }
 
+struct PrehandledSnapshot {
+    pub region: Region,
+}
+
 unsafe extern "C" fn ffi_pre_handle_snapshot(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_buff: ffi_interfaces::BaseBuffView,
@@ -367,12 +353,12 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
     let req_id = req.id;
 
-    let mut region = Box::new(Region {
+    let mut region = Region {
         region: req,
         peer: Default::default(),
         data: Default::default(),
         apply_state: Default::default(),
-    });
+    };
 
     debug!("apply snaps with len {}", snaps.len);
     for i in 0..snaps.len {
@@ -399,11 +385,10 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     }
 
     ffi_interfaces::RawCppPtr {
-        // ptr: std::ptr::null_mut(),
-        ptr: Box::into_raw(region) as *const Region as ffi_interfaces::RawVoidPtr,
-        // ptr: (region.as_ref()) as *const Region as ffi_interfaces::RawVoidPtr,
+        ptr: Box::into_raw(Box::new(PrehandledSnapshot { region })) as *const Region
+            as ffi_interfaces::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
-    }
+    };
 }
 
 pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
@@ -421,15 +406,14 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg3: ffi_interfaces::RawCppPtrType,
 ) {
     let store = into_engine_store_server_wrap(arg1);
-    let req = &mut *(arg2 as *mut Region);
+    let req = &mut *(arg2 as *mut PrehandledSnapshot);
     let node_id = (*store.engine_store_server).id;
 
-    // let region = req;
+    let req_id = req.region.region.id;
 
-    let mut region = Box::from_raw(req);
-    let req_id = region.region.id;
-
-    &(*store.engine_store_server).kvstore.insert(req_id, region);
+    &(*store.engine_store_server)
+        .kvstore
+        .insert(req_id, Box::new(std::mem::take(&mut req.region)));
 
     let region = (*store.engine_store_server)
         .kvstore
@@ -476,7 +460,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
 
             let tikv_key = keys::data_key(key.to_slice());
             let cf_name = cf_to_name((*snapshot).type_);
-            kv.put_cf(cf_name, &tikv_key.to_vec(), &value.to_slice().to_vec());
+            kv.put_cf(cf_name, &tikv_key, &value.to_slice());
             sst_reader.next();
         }
     }

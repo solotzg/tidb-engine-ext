@@ -324,7 +324,7 @@ impl<T: Simulator> Cluster<T> {
         }
 
         // Try start new nodes.
-        for _it in 0..self.count - self.engines.len() {
+        for _ in 0..self.count - self.engines.len() {
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -1394,7 +1394,7 @@ impl<T: Simulator> Cluster<T> {
             debug!("asking split"; "region" => ?region, "key" => ?split_key);
             // In case ask split message is ignored, we should retry.
             if try_cnt % 50 == 0 {
-                debug!("must_split try once!");
+                debug!("must_split try once, count {}", try_cnt);
                 self.reset_leader_of_region(region.get_id());
                 let key = split_key.to_vec();
                 let check = Box::new(move |write_resp: WriteResponse| {

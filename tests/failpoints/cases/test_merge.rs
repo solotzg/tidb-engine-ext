@@ -883,7 +883,6 @@ fn test_node_merge_cascade_merge_with_apply_yield() {
     let region = pd_client.get_region(b"k1").unwrap();
     cluster.must_split(&region, b"k5");
     let region = pd_client.get_region(b"k5").unwrap();
-    let region1 = pd_client.get_region(b"k1").unwrap();
     cluster.must_split(&region, b"k9");
 
     for i in 0..10 {
@@ -897,7 +896,7 @@ fn test_node_merge_cascade_merge_with_apply_yield() {
     assert_eq!(r1.get_id() % 4, 0);
 
     pd_client.must_merge(r2.get_id(), r1.get_id());
-    assert_eq!(r1.get_id() % 4, 0);
+    assert_eq!(pd_client.get_region(b"k5").unwrap().get_id(), r1.get_id());
     let yield_apply_1000_fp = "yield_apply_1000";
     fail::cfg(yield_apply_1000_fp, "80%3*return()").unwrap();
 

@@ -42,7 +42,7 @@ impl From<&[u8]> for BaseBuffView {
     }
 }
 
-trait UnwrapExternCFunc<T> {
+pub trait UnwrapExternCFunc<T> {
     unsafe fn into_inner(&self) -> &T;
 }
 
