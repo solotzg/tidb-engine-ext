@@ -1264,7 +1264,6 @@ impl PdClient for TestPdClient {
 
     fn alloc_id(&self) -> Result<u64> {
         let result = self.cluster.rl().alloc_id();
-        debug!("!!!! alloc_id {}", result.as_ref().unwrap());
         result
     }
 
@@ -1469,14 +1468,12 @@ impl PdClient for TestPdClient {
         }
 
         let mut resp = pdpb::AskBatchSplitResponse::default();
-        debug!("!!!! ask_batch_split called");
         for c in 0..count {
             let mut id = pdpb::SplitId::default();
             id.set_new_region_id(self.alloc_id().unwrap());
 
             for peer in region.get_peers() {
                 let rid = self.alloc_id().unwrap();
-                debug!("!!!! ask_batch_split {} peer {:?} count {}", rid, peer, c);
                 id.mut_new_peer_ids().push(rid);
             }
             resp.mut_ids().push(id);
