@@ -3,7 +3,7 @@ use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
 use engine_store_ffi::UnwrapExternCFunc;
-use engine_traits::{Engines, SyncMutable};
+use engine_traits::{Engines, Iterable, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
 use raftstore::engine_store_ffi;
@@ -68,20 +68,68 @@ impl EngineStoreServerWrap {
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
         info!("handle admin raft cmd"; "request"=>?req, "response"=>?resp, "index"=>header.index, "region-id"=>header.region_id);
-        let do_handle_admin_raft_cmd = move |region: &mut Region| {
-            if region.apply_state.get_applied_index() >= header.index {
-                return ffi_interfaces::EngineStoreApplyRes::Persist;
-            }
+        let do_handle_admin_raft_cmd =
+            move |region: &mut Region, engine_store_server: &mut EngineStoreServer| {
+                if region.apply_state.get_applied_index() >= header.index {
+                    return ffi_interfaces::EngineStoreApplyRes::Persist;
+                }
+                if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::BatchSplit {
+                    let regions = resp.splits.as_ref().unwrap().regions.as_ref();
 
-            ffi_interfaces::EngineStoreApplyRes::Persist
-        };
+                    for i in 0..regions.len() {
+                        let region_meta = regions.get(i).unwrap();
+                        if region_meta.id == region_id {
+                            // This is the region to split from
+                            assert!(engine_store_server.kvstore.contains_key(&region_meta.id));
+                            engine_store_server
+                                .kvstore
+                                .get_mut(&region_meta.id)
+                                .as_mut()
+                                .unwrap()
+                                .region = region_meta.clone();
+                        } else {
+                            // Should split data into new region
+                            let mut new_region = Region {
+                                region: region_meta.clone(),
+                                peer: Default::default(),
+                                data: Default::default(),
+                                apply_state: Default::default(),
+                            };
+                            new_region
+                                .apply_state
+                                .set_applied_index(raftstore::store::RAFT_INIT_LOG_INDEX);
+                            new_region
+                                .apply_state
+                                .mut_truncated_state()
+                                .set_index(raftstore::store::RAFT_INIT_LOG_INDEX);
+                            new_region
+                                .apply_state
+                                .mut_truncated_state()
+                                .set_term(raftstore::store::RAFT_INIT_LOG_TERM);
+
+                            // No need to split because all KV are stored in the same RLocksDB.
+
+                            assert!(!engine_store_server.kvstore.contains_key(&region_meta.id));
+                            engine_store_server
+                                .kvstore
+                                .insert(region_meta.id, Box::new(new_region));
+                        }
+                    }
+                } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::PrepareMerge {
+                } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
+                }
+                ffi_interfaces::EngineStoreApplyRes::Persist
+            };
         match (*self.engine_store_server).kvstore.entry(region_id) {
             std::collections::hash_map::Entry::Occupied(mut o) => {
-                do_handle_admin_raft_cmd(o.get_mut())
+                do_handle_admin_raft_cmd(o.get_mut(), &mut (*self.engine_store_server))
             }
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found", region_id);
-                do_handle_admin_raft_cmd(v.insert(Default::default()))
+                do_handle_admin_raft_cmd(
+                    v.insert(Default::default()),
+                    &mut (*self.engine_store_server),
+                )
             }
         }
     }
@@ -401,7 +449,6 @@ pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
         ffi_interfaces::ColumnFamilyType::Lock => CF_LOCK,
         ffi_interfaces::ColumnFamilyType::Write => CF_WRITE,
         ffi_interfaces::ColumnFamilyType::Default => CF_DEFAULT,
-        _ => unreachable!(),
     }
 }
 
