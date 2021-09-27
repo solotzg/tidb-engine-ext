@@ -73,6 +73,7 @@ impl EngineStoreServerWrap {
                 return ffi_interfaces::EngineStoreApplyRes::Persist;
             }
 
+
             ffi_interfaces::EngineStoreApplyRes::Persist
         };
         match (*self.engine_store_server).kvstore.entry(region_id) {
