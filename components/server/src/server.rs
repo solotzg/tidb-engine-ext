@@ -202,7 +202,10 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
                 }
             }
 
-            info!("got terminal signal from engine-store server and stop all services");
+            info!(
+                "found engine-store server status is {:?}, start to stop all services",
+                engine_store_server_helper.handle_get_engine_store_server_status()
+            );
 
             tikv.stop();
 
