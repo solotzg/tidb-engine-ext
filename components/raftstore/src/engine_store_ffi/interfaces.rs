@@ -356,7 +356,7 @@ pub mod root {
                 unsafe extern "C" fn(arg1: root::DB::BaseBuffView, arg2: root::DB::RawVoidPtr),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 3659433438136834460;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 2118434012412631151;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

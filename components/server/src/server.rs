@@ -187,6 +187,10 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             proxy.set_status(RaftProxyStatus::Running);
 
             {
+                debug_assert!(
+                    engine_store_server_helper.handle_get_engine_store_server_status()
+                        == EngineStoreServerStatus::Running
+                );
                 let _ = tikv.engines.take().unwrap().engines;
                 loop {
                     if engine_store_server_helper.handle_get_engine_store_server_status()

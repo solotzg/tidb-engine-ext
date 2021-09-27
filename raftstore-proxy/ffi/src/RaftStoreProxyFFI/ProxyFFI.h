@@ -62,8 +62,10 @@ enum class RaftProxyStatus : uint8_t {
 enum class EngineStoreServerStatus : uint8_t {
   Idle = 0,
   Running,
-  Stopping,
-  Terminated,
+  Stopping,  // let raft-proxy stop all services, but encryption module is still
+             // working.
+  Terminated,  // after all services stopped in engine-store, let raft-proxy
+               // shutdown.
 };
 
 using RawCppPtrType = uint32_t;
