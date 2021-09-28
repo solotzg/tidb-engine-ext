@@ -149,41 +149,45 @@ impl EngineStoreServerWrap {
 
                     // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
-                    let target_region_meta = &mut (engine_store_server
-                        .kvstore
-                        .get_mut(&region_id)
-                        .unwrap()
-                        .region);
+                    {
+                        let target_region =
+                            &mut (engine_store_server.kvstore.get_mut(&region_id).unwrap());
+                        let target_region_meta = &mut target_region.region;
 
-                    let target_version = target_region_meta.get_region_epoch().get_version();
-                    let source_region = req.get_commit_merge().get_source();
-                    let source_version = source_region.get_region_epoch().get_version();
-                    let new_version = std::cmp::max(source_version, target_version) + 1;
+                        let target_version = target_region_meta.get_region_epoch().get_version();
+                        let source_region = req.get_commit_merge().get_source();
+                        let source_version = source_region.get_region_epoch().get_version();
+                        let new_version = std::cmp::max(source_version, target_version) + 1;
 
-                    target_region_meta
-                        .mut_region_epoch()
-                        .set_version(new_version);
+                        target_region_meta
+                            .mut_region_epoch()
+                            .set_version(new_version);
 
-                    // No need to merge data
+                        // No need to merge data
 
-                    let source_at_left = if source_region.get_start_key().is_empty() {
-                        true
-                    } else {
-                        compare_vec(
-                            source_region.get_end_key(),
-                            target_region_meta.get_start_key(),
-                        ) == std::cmp::Ordering::Equal
-                    };
+                        let source_at_left = if source_region.get_start_key().is_empty() {
+                            true
+                        } else {
+                            compare_vec(
+                                source_region.get_end_key(),
+                                target_region_meta.get_start_key(),
+                            ) == std::cmp::Ordering::Equal
+                        };
 
-                    if source_at_left {
-                        target_region_meta.set_start_key(source_region.get_start_key());
-                    } else {
-                        target_region_meta.set_end_key(source_region.get_end_key());
+                        if source_at_left {
+                            target_region_meta
+                                .set_start_key(source_region.get_start_key().to_vec());
+                        } else {
+                            target_region_meta.set_end_key(source_region.get_end_key().to_vec());
+                        }
+
+                        target_region.apply_state.set_applied_index(header.index);
                     }
-
-                    target_region_meta
-                        .apply_state
-                        .set_applied_index(header.index);
+                    {
+                        engine_store_server
+                            .kvstore
+                            .remove(&req.get_commit_merge().get_source().get_id());
+                    }
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::RollbackMerge {
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
