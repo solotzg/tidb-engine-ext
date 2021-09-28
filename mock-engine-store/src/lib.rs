@@ -124,18 +124,14 @@ impl EngineStoreServerWrap {
                         .unwrap()
                         .region);
 
-                    let new_version = region_meta.region_epoch.as_mut().unwrap().version + 1;
-                    region_meta
-                        .region_epoch
-                        .as_mut()
-                        .unwrap()
+                    let region_epoch = region_meta.region_epoch.as_mut().unwrap();
+
+                    let new_version = region_epoch.version + 1;
+                    region_epoch
                         .set_version(new_version);
 
-                    let conf_version = region_meta.region_epoch.as_mut().unwrap().conf_ver + 1;
-                    region_meta
-                        .region_epoch
-                        .as_mut()
-                        .unwrap()
+                    let conf_version = region_epoch.conf_ver + 1;
+                    region_epoch
                         .set_conf_ver(conf_version);
 
                     engine_store_server
