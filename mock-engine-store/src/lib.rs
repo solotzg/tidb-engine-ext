@@ -116,7 +116,39 @@ impl EngineStoreServerWrap {
                         }
                     }
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::PrepareMerge {
+                    let target = req.prepare_merge.as_ref().unwrap().target.as_ref();
+
+                    let region_meta = &mut (engine_store_server
+                        .kvstore
+                        .get_mut(&region_id)
+                        .unwrap()
+                        .region);
+
+                    let new_version = region_meta.region_epoch.as_mut().unwrap().version + 1;
+                    region_meta
+                        .region_epoch
+                        .as_mut()
+                        .unwrap()
+                        .set_version(new_version);
+
+                    let conf_version = region_meta.region_epoch.as_mut().unwrap().conf_ver + 1;
+                    region_meta
+                        .region_epoch
+                        .as_mut()
+                        .unwrap()
+                        .set_conf_ver(conf_version);
+
+                    engine_store_server
+                        .kvstore
+                        .get_mut(&region_id)
+                        .as_mut()
+                        .unwrap()
+                        .apply_state
+                        .set_applied_index(header.index);
+
+                    // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
+                } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::RollbackMerge {
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };
