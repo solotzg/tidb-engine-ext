@@ -47,6 +47,14 @@ pub struct EngineStoreServerWrap {
     pub cluster_ptr: isize,
 }
 
+pub fn compare_vec<T: Ord>(a: &[T], b: &[T]) -> std::cmp::Ordering {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| x.cmp(y))
+        .find(|&ord| ord != std::cmp::Ordering::Equal)
+        .unwrap_or(a.len().cmp(&b.len()))
+}
+
 impl EngineStoreServerWrap {
     pub fn new(
         engine_store_server: *mut EngineStoreServer,
@@ -107,7 +115,7 @@ impl EngineStoreServerWrap {
                                 .mut_truncated_state()
                                 .set_term(raftstore::store::RAFT_INIT_LOG_TERM);
 
-                            // No need to split because all KV are stored in the same RLocksDB.
+                            // No need to split data because all KV are stored in the same RocksDB.
 
                             assert!(!engine_store_server.kvstore.contains_key(&region_meta.id));
                             engine_store_server
@@ -127,23 +135,55 @@ impl EngineStoreServerWrap {
                     let region_epoch = region_meta.region_epoch.as_mut().unwrap();
 
                     let new_version = region_epoch.version + 1;
-                    region_epoch
-                        .set_version(new_version);
+                    region_epoch.set_version(new_version);
 
                     let conf_version = region_epoch.conf_ver + 1;
-                    region_epoch
-                        .set_conf_ver(conf_version);
+                    region_epoch.set_conf_ver(conf_version);
 
                     engine_store_server
                         .kvstore
                         .get_mut(&region_id)
-                        .as_mut()
                         .unwrap()
                         .apply_state
                         .set_applied_index(header.index);
 
                     // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
+                    let target_region_meta = &mut (engine_store_server
+                        .kvstore
+                        .get_mut(&region_id)
+                        .unwrap()
+                        .region);
+
+                    let target_version = target_region_meta.get_region_epoch().get_version();
+                    let source_region = req.get_commit_merge().get_source();
+                    let source_version = source_region.get_region_epoch().get_version();
+                    let new_version = std::cmp::max(source_version, target_version) + 1;
+
+                    target_region_meta
+                        .mut_region_epoch()
+                        .set_version(new_version);
+
+                    // No need to merge data
+
+                    let source_at_left = if source_region.get_start_key().is_empty() {
+                        true
+                    } else {
+                        compare_vec(
+                            source_region.get_end_key(),
+                            target_region_meta.get_start_key(),
+                        ) == std::cmp::Ordering::Equal
+                    };
+
+                    if source_at_left {
+                        target_region_meta.set_start_key(source_region.get_start_key());
+                    } else {
+                        target_region_meta.set_end_key(source_region.get_end_key());
+                    }
+
+                    target_region_meta
+                        .apply_state
+                        .set_applied_index(header.index);
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::RollbackMerge {
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
