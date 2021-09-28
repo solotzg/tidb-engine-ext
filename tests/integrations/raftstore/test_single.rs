@@ -196,7 +196,10 @@ fn test_node_apply_no_op() {
             break;
         }
         if timer.elapsed() > Duration::from_secs(3) {
-            panic!("apply no-op log not finish after 3 seconds");
+            panic!(
+                "apply no-op log not finish after 3 seconds, now {}",
+                state.get_applied_index()
+            );
         }
         sleep_ms(10);
     }

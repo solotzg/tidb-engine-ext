@@ -36,6 +36,13 @@ fn test_bootstrap_idempotent<T: Simulator>(cluster: &mut Cluster<T>) {
 
 #[test]
 fn test_node_bootstrap_with_prepared_data() {
+    let ffi_helper_set = Cluster::<NodeCluster>::make_global_ffi_helper_set_no_bind(0);
+    unsafe {
+        debug!(
+            "!!!! AAA {}",
+            raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR
+        );
+    }
     // create a node
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let cfg = new_tikv_config(0);

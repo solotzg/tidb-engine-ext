@@ -242,13 +242,13 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
-    pub fn make_global_ffi_helper_set(&mut self) {
+    pub fn make_global_ffi_helper_set_no_bind(cluster_ptr: isize) -> EngineHelperSet {
         let mut engine_store_server =
             Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
         let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             None,
-            self as *const Cluster<T> as isize,
+            cluster_ptr,
         ));
         let engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
@@ -263,11 +263,17 @@ impl<T: Simulator> Cluster<T> {
             );
         }
 
-        self.global_engine_helper_set = Some(EngineHelperSet {
+        EngineHelperSet {
             engine_store_server,
             engine_store_server_wrap,
             engine_store_server_helper,
-        });
+        }
+    }
+
+    pub fn make_global_ffi_helper_set(&mut self) {
+        let res =
+            Cluster::<T>::make_global_ffi_helper_set_no_bind(self as *const Cluster<T> as isize);
+        self.global_engine_helper_set = Some(res);
     }
 
     pub fn make_ffi_helper_set(

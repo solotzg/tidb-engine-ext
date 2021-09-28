@@ -538,7 +538,7 @@ impl Drop for RawCppPtr {
     }
 }
 
-static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
+pub static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
 fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
