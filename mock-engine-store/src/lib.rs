@@ -189,6 +189,15 @@ impl EngineStoreServerWrap {
                             .remove(&req.get_commit_merge().get_source().get_id());
                     }
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::RollbackMerge {
+                    let region = &mut (engine_store_server.kvstore.get_mut(&region_id).unwrap());
+                    let region_meta = &mut region.region;
+                    let new_version = region_meta.get_region_epoch().get_version() + 1;
+                    engine_store_server
+                        .kvstore
+                        .get_mut(&region_id)
+                        .unwrap()
+                        .apply_state
+                        .set_applied_index(header.index);
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };
