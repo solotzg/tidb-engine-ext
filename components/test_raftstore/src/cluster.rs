@@ -1093,6 +1093,7 @@ impl<T: Simulator> Cluster<T> {
         match self.batch_put(key, vec![new_put_cf_cmd(cf, key, value)]) {
             Ok(resp) => {
                 if cfg!(feature = "test-raftstore-proxy") {
+                    // Response is removed in raftstore-proxy
                     assert_eq!(resp.get_responses().len(), 1);
                     assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Put);
                 }
@@ -1135,8 +1136,11 @@ impl<T: Simulator> Cluster<T> {
         if resp.get_header().has_error() {
             panic!("response {:?} has error", resp);
         }
-        assert_eq!(resp.get_responses().len(), 1);
-        assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Delete);
+        if cfg!(feature = "test-raftstore-proxy") {
+            // Response is removed in raftstore-proxy
+            assert_eq!(resp.get_responses().len(), 1);
+            assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Delete);
+        }
     }
 
     pub fn must_delete_range_cf(&mut self, cf: &str, start: &[u8], end: &[u8]) {
