@@ -276,12 +276,13 @@ impl<T: Simulator> Cluster<T> {
         self.global_engine_helper_set = Some(res);
     }
 
-    pub fn make_ffi_helper_set(
-        &mut self,
+    pub fn make_ffi_helper_set_no_bind(
         id: u64,
         engines: Engines<RocksEngine, RocksEngine>,
         key_mgr: &Option<Arc<DataKeyManager>>,
         router: &RaftRouter<RocksEngine, RocksEngine>,
+        mut node_cfg: TiKvConfig,
+        cluster_id: isize,
     ) -> (FFIHelperSet, TiKvConfig) {
         let proxy = Box::new(raftstore::engine_store_ffi::RaftStoreProxy {
             status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
@@ -300,14 +301,13 @@ impl<T: Simulator> Cluster<T> {
         let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
-            self as *const Cluster<T> as isize,
+            cluster_id,
         ));
         let engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
                 std::pin::Pin::new(&*engine_store_server_wrap),
             ));
 
-        let mut node_cfg = self.cfg.clone();
         let helper_sz = &*engine_store_server_helper as *const _ as isize;
         node_cfg.raft_store.engine_store_server_helper = helper_sz;
         let ffi_helper_set = FFIHelperSet {
@@ -318,6 +318,23 @@ impl<T: Simulator> Cluster<T> {
             engine_store_server_helper,
         };
         (ffi_helper_set, node_cfg)
+    }
+
+    pub fn make_ffi_helper_set(
+        &mut self,
+        id: u64,
+        engines: Engines<RocksEngine, RocksEngine>,
+        key_mgr: &Option<Arc<DataKeyManager>>,
+        router: &RaftRouter<RocksEngine, RocksEngine>,
+    ) -> (FFIHelperSet, TiKvConfig) {
+        Cluster::<T>::make_ffi_helper_set_no_bind(
+            id,
+            engines,
+            key_mgr,
+            router,
+            self.cfg.clone(),
+            self as *const Cluster<T> as isize,
+        )
     }
 
     pub fn start(&mut self) -> ServerResult<()> {
