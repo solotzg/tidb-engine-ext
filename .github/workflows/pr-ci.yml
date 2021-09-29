@@ -70,3 +70,20 @@ jobs:
           cargo test --package tests --test failpoints cases::test_merge
           cargo test --package tests --test failpoints cases::test_stale_peer
           cargo test --package tests --test failpoints cases::test_import_service
+
+          cargo test --package tests --test integrations raftstore::test_bootstrap
+          cargo test --package tests --test integrations raftstore::test_clear_stale_data
+          cargo test --package tests --test integrations raftstore::test_compact_log
+          cargo test --package tests --test integrations raftstore::test_conf_change
+          cargo test --package tests --test integrations raftstore::test_early_apply
+          cargo test --package tests --test integrations raftstore::test_hibernate
+          cargo test --package tests --test integrations raftstore::test_joint_consensus
+          cargo test --package tests --test integrations raftstore::test_split_region
+          cargo test --package tests --test integrations raftstore::test_stale_peer
+          cargo test --package tests --test integrations raftstore::test_status_command
+          cargo test --package tests --test integrations raftstore::test_prevote
+          cargo test --package tests --test integrations raftstore::test_region_change_observer
+          cargo test --package tests --test integrations raftstore::test_region_heartbeat
+          cargo test --package tests --test integrations raftstore::test_region_info_accessor
+          cargo test --package tests --test integrations raftstore::test_replica_read
+          cargo test --package tests --test integrations raftstore::test_transfer_leader
