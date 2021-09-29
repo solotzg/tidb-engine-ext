@@ -225,6 +225,22 @@ impl EngineStoreServerWrap {
                             old_peer_id
                         );
                     }
+                } else if [
+                    kvproto::raft_cmdpb::AdminCmdType::CompactLog,
+                    kvproto::raft_cmdpb::AdminCmdType::ComputeHash,
+                    kvproto::raft_cmdpb::AdminCmdType::VerifyHash,
+                ]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<kvproto::raft_cmdpb::AdminCmdType>>()
+                .contains(&req.cmd_type)
+                {
+                    engine_store_server
+                        .kvstore
+                        .get_mut(&region_id)
+                        .unwrap()
+                        .apply_state
+                        .set_applied_index(header.index);
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };
