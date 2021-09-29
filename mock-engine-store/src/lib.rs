@@ -19,7 +19,7 @@ type RegionId = u64;
 #[derive(Default, Clone)]
 pub struct Region {
     region: kvproto::metapb::Region,
-    peer: kvproto::metapb::Peer,
+    peer: kvproto::metapb::Peer, // What peer is me?
     data: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
     apply_state: kvproto::raft_serverpb::RaftApplyState,
 }
@@ -82,7 +82,7 @@ impl EngineStoreServerWrap {
                     return ffi_interfaces::EngineStoreApplyRes::Persist;
                 }
                 if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::BatchSplit {
-                    let regions = resp.splits.as_ref().unwrap().regions.as_ref();
+                    let regions = resp.get_splits().regions.as_ref();
 
                     for i in 0..regions.len() {
                         let region_meta = regions.get(i).unwrap();
@@ -198,6 +198,33 @@ impl EngineStoreServerWrap {
                         .unwrap()
                         .apply_state
                         .set_applied_index(header.index);
+                } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeer
+                    || req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeerV2
+                {
+                    let new_region = resp.get_change_peer().get_region();
+
+                    let old_peer_id = {
+                        let old_region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
+                        old_region.region = new_region.clone();
+                        old_region.apply_state.set_applied_index(header.index);
+                        old_region.peer.get_id()
+                    };
+
+                    let mut do_remove = true;
+                    for peer in new_region.get_peers() {
+                        if peer.get_id() == old_peer_id {
+                            // Should not remove region
+                            do_remove = false;
+                        }
+                    }
+                    if do_remove {
+                        let removed = engine_store_server.kvstore.remove(&region_id);
+                        debug!(
+                            "Remove region {:?} peer_id {}",
+                            removed.unwrap().region,
+                            old_peer_id
+                        );
+                    }
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };
