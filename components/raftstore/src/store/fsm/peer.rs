@@ -3202,6 +3202,10 @@ where
         // Update metrics only when all exec_results are finished in case the metrics is counted multiple times
         // when waiting for commit merge
         self.ctx.store_stat.lock_cf_bytes_written += metrics.lock_cf_written_bytes;
+        debug!(
+            "!!!! A metrics.lock_cf_written_bytes {} self.ctx.store_stat.lock_cf_bytes_written {}",
+            metrics.lock_cf_written_bytes, self.ctx.store_stat.lock_cf_bytes_written
+        );
         self.ctx.store_stat.engine_total_bytes_written += metrics.written_bytes;
         self.ctx.store_stat.engine_total_keys_written += metrics.written_keys;
         self.ctx

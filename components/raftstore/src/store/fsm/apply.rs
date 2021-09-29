@@ -1509,7 +1509,14 @@ where
                         self.metrics.size_diff_hint += key.len() as i64 + value.len() as i64;
                         self.metrics.written_bytes += key.len() as u64 + value.len() as u64;
                         self.metrics.written_keys += 1;
+                    } else {
+                        self.metrics.lock_cf_written_bytes += key.len() as u64;
+                        self.metrics.lock_cf_written_bytes += value.len() as u64;
                     }
+                    debug!(
+                        "!!!! self.metrics.lock_cf_written_bytes {}",
+                        self.metrics.lock_cf_written_bytes
+                    );
                     cmds.push(key, value, WriteCmdType::Put, cf);
                 }
                 CmdType::Delete => {
@@ -1521,6 +1528,8 @@ where
                         self.metrics.delete_keys_hint += 1;
                         self.metrics.written_bytes += key.len() as u64;
                         self.metrics.written_keys += 1;
+                    } else {
+                        self.metrics.lock_cf_written_bytes += key.len() as u64;
                     }
                     cmds.push(key, NONE_STR.as_ref(), WriteCmdType::Del, cf);
                 }

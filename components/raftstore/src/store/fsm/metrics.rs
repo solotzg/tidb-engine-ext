@@ -71,6 +71,13 @@ impl LocalStoreStat {
                 .stat
                 .lock_cf_bytes_written
                 .fetch_add(self.lock_cf_bytes_written, Ordering::Relaxed);
+            tikv_util::debug!(
+                "!!!! lock_write is {}",
+                self.global
+                    .stat
+                    .lock_cf_bytes_written
+                    .load(Ordering::Relaxed)
+            );
             self.lock_cf_bytes_written = 0;
         }
         if self.engine_total_bytes_written != 0 {

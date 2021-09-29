@@ -14,7 +14,7 @@ fn flush<T: Simulator>(cluster: &mut Cluster<T>) {
 fn flush_then_check<T: Simulator>(cluster: &mut Cluster<T>, interval: u64, written: bool) {
     flush(cluster);
     // Wait for compaction.
-    sleep_ms(interval * 2);
+    sleep_ms(interval * 10);
     for engines in cluster.engines.values() {
         let compact_write_bytes = engines
             .kv
