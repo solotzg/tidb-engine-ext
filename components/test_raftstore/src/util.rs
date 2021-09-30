@@ -58,6 +58,7 @@ pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
     for _ in 1..300 {
         let res = engine.c().get_value_cf(cf, &keys::data_key(key)).unwrap();
         if let (Some(value), Some(res)) = (value, res.as_ref()) {
+            debug!("!!!! ans {:?} {:?}", value, &res[..]);
             assert_eq!(value, &res[..]);
             return;
         }

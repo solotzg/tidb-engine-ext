@@ -124,14 +124,6 @@ impl EngineStoreServerWrap {
                             };
 
                             debug!("!!!! new_region id {}", region_meta.id);
-                            {
-                                set_apply_index(
-                                    &mut new_region,
-                                    &mut engine_store_server.engines.as_mut().unwrap().kv,
-                                    region_meta.id,
-                                    raftstore::store::RAFT_INIT_LOG_INDEX,
-                                );
-                            }
                             new_region
                                 .apply_state
                                 .mut_truncated_state()
@@ -140,6 +132,14 @@ impl EngineStoreServerWrap {
                                 .apply_state
                                 .mut_truncated_state()
                                 .set_term(raftstore::store::RAFT_INIT_LOG_TERM);
+                            {
+                                set_apply_index(
+                                    &mut new_region,
+                                    &mut engine_store_server.engines.as_mut().unwrap().kv,
+                                    region_meta.id,
+                                    raftstore::store::RAFT_INIT_LOG_INDEX,
+                                );
+                            }
 
                             // No need to split data because all KV are stored in the same RocksDB.
                             if engine_store_server.kvstore.contains_key(&region_meta.id) {
@@ -596,6 +596,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
 
         {
+            region.apply_state.mut_truncated_state().set_index(index);
+            region.apply_state.mut_truncated_state().set_term(term);
             {
                 set_apply_index(
                     &mut region,
@@ -604,8 +606,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
                     index,
                 );
             }
-            region.apply_state.mut_truncated_state().set_index(index);
-            region.apply_state.mut_truncated_state().set_term(term);
         }
 
         while sst_reader.remained() {
@@ -704,9 +704,9 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     }
 
     {
-        set_apply_index(region, kv, region_id, index);
         region.apply_state.mut_truncated_state().set_index(index);
         region.apply_state.mut_truncated_state().set_term(term);
+        set_apply_index(region, kv, region_id, index);
     }
 
     ffi_interfaces::EngineStoreApplyRes::Persist
@@ -716,11 +716,18 @@ fn set_apply_index(region: &mut Region, kv: &mut RocksEngine, region_id: u64, in
     region.apply_state.set_applied_index(index);
     let apply_key = keys::apply_state_key(region_id);
 
+    kv.flush_cf(engine_traits::CF_DEFAULT, true);
     kv.put_cf(
         engine_traits::CF_RAFT,
         &apply_key,
         &region.apply_state.write_to_bytes().unwrap(),
     );
+    debug!(
+        "!!!! put {:?} {:?}",
+        apply_key,
+        region.apply_state.write_to_bytes().unwrap()
+    );
+    kv.flush_cf(engine_traits::CF_RAFT, true);
 }
 
 unsafe extern "C" fn ffi_handle_compute_store_stats(
