@@ -9,9 +9,6 @@ use test_raftstore::*;
 
 #[test]
 fn test_normal() {
-    let mut req = kvproto::metapb::Region::default();
-    let mut req2 = mock_engine_store::make_new_region_meta();
-
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(0, 3, sim, pd_client);

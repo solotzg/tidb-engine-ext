@@ -54,7 +54,7 @@ impl EngineStoreServer {
             engines,
             kvstore: Default::default(),
         };
-        server.kvstore.insert(1, Box::new(make_new_region()));
+        // server.kvstore.insert(1, Box::new(make_new_region()));
         server
     }
 }
@@ -343,18 +343,18 @@ impl EngineStoreServerWrap {
                             &tikv_key,
                             &val.to_slice().to_vec(),
                         );
-                        kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
+                        // kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         let tikv_key = keys::data_key(key.to_slice());
                         kv.delete_cf(cf_to_name(cf.to_owned().into()), &tikv_key);
-                        kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
+                        // kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
                     }
                 }
             }
             set_apply_index(region, kv, region_id, header.index);
             // Do not advance apply index
-            ffi_interfaces::EngineStoreApplyRes::Persist
+            ffi_interfaces::EngineStoreApplyRes::None
         };
 
         match (*self.engine_store_server).kvstore.entry(region_id) {
@@ -662,7 +662,7 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             kv.put_cf(cf_name, &tikv_key, &v);
-            kv.flush_cf(cf_name, true);
+            // kv.flush_cf(cf_name, true);
         }
     }
 }
@@ -698,7 +698,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             let tikv_key = keys::data_key(key.to_slice());
             let cf_name = cf_to_name((*snapshot).type_);
             kv.put_cf(cf_name, &tikv_key, &value.to_slice());
-            kv.flush_cf(cf_name, true);
+            // kv.flush_cf(cf_name, true);
             sst_reader.next();
         }
     }
