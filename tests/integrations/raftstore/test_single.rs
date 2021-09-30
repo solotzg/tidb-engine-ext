@@ -127,6 +127,7 @@ fn test_node_delete() {
     test_delete(&mut cluster);
 }
 
+#[cfg(not(feature = "test-raftstore-proxy"))]
 #[test]
 fn test_node_use_delete_range() {
     let mut cluster = new_node_cluster(0, 1);
@@ -137,6 +138,7 @@ fn test_node_use_delete_range() {
     test_delete_range(&mut cluster, CF_WRITE);
 }
 
+#[cfg(not(feature = "test-raftstore-proxy"))]
 #[test]
 fn test_node_not_use_delete_range() {
     let mut cluster = new_node_cluster(0, 1);

@@ -715,15 +715,11 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
 fn set_apply_index(region: &mut Region, kv: &mut RocksEngine, region_id: u64, index: u64) {
     region.apply_state.set_applied_index(index);
     let apply_key = keys::apply_state_key(region_id);
-    let mut pb = kv
-        .get_msg_cf::<RaftApplyState>(engine_traits::CF_RAFT, &apply_key)
-        .unwrap()
-        .unwrap();
-    pb.set_applied_index(index);
+
     kv.put_cf(
         engine_traits::CF_RAFT,
         &apply_key,
-        &pb.write_to_bytes().unwrap(),
+        &region.apply_state.write_to_bytes().unwrap(),
     );
 }
 
