@@ -24,6 +24,18 @@ pub struct Region {
     apply_state: kvproto::raft_serverpb::RaftApplyState,
 }
 
+pub fn make_new_region_meta() -> kvproto::metapb::Region {
+    let mut region = kvproto::metapb::Region {
+        region_epoch: Some(kvproto::metapb::RegionEpoch::default()).into(),
+        ..Default::default()
+    };
+    region
+}
+
+// fn make_new_region() -> Region {
+//
+// }
+
 pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Option<Engines<RocksEngine, RocksEngine>>,
