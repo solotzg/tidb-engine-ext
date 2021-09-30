@@ -1303,6 +1303,7 @@ impl<R: RaftEngine> EngineMetricsManager<R> {
     }
 
     pub fn flush(&mut self, now: Instant) {
+        debug!("!!!! flush");
         self.engines.kv.flush_metrics("kv");
         self.engines.raft.flush_metrics("raft");
         if now.duration_since(self.last_reset) >= DEFAULT_ENGINE_METRICS_RESET_INTERVAL {
