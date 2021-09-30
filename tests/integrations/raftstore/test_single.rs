@@ -192,6 +192,7 @@ fn test_node_apply_no_op() {
     let timer = Instant::now();
     loop {
         let state = cluster.apply_state(1, 1);
+        // When new leader is elected, should apply one no-op entry
         if state.get_applied_index() > RAFT_INIT_LOG_INDEX {
             break;
         }

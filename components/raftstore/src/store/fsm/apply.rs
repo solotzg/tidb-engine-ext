@@ -1010,6 +1010,7 @@ where
         let term = entry.get_term();
         let data = entry.get_data();
 
+        debug!("!!!! handle_raft_entry_normal data {:?}", data);
         if !data.is_empty() {
             let cmd = util::parse_data_at(data, index, &self.tag);
 

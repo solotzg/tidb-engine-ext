@@ -66,8 +66,6 @@ jobs:
           cargo test --package tests --test failpoints cases::test_transaction
           cargo test --package tests --test failpoints cases::test_cmd_epoch_checker
           cargo test --package tests --test failpoints cases::test_disk_full
-          # cargo test --package tests --test failpoints cases::test_snap
-          # cargo test --package tests --test failpoints cases::test_merge
           cargo test --package tests --test failpoints cases::test_stale_peer
           cargo test --package tests --test failpoints cases::test_import_service
           cargo test --package tests --test failpoints cases::test_split_region
@@ -75,7 +73,6 @@ jobs:
           cargo test --package tests --test integrations raftstore::test_bootstrap
           cargo test --package tests --test integrations raftstore::test_clear_stale_data
           cargo test --package tests --test integrations raftstore::test_compact_after_delete
-          # cargo test --package tests --test integrations raftstore::test_compact_lock_cf
           cargo test --package tests --test integrations raftstore::test_compact_log
           cargo test --package tests --test integrations raftstore::test_conf_change
           cargo test --package tests --test integrations raftstore::test_early_apply
@@ -91,6 +88,9 @@ jobs:
           cargo test --package tests --test integrations raftstore::test_region_heartbeat
           cargo test --package tests --test integrations raftstore::test_region_info_accessor
           cargo test --package tests --test integrations raftstore::test_transfer_leader
+          cargo test --package tests --test integrations raftstore::test_single::test_node_apply_no_op
+          cargo test --package tests --test integrations raftstore::test_single::test_node_delete
+
 
 
 

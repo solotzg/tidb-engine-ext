@@ -358,7 +358,7 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
-            let (mut ffi_helper_set, mut node_cfg) =
+            let (mut ffi_helper_set, node_cfg) =
                 self.make_ffi_helper_set(0, self.dbs.last().unwrap().clone(), &key_mgr, &router);
 
             let mut sim = self.sim.wl();
@@ -1219,6 +1219,7 @@ impl<T: Simulator> Cluster<T> {
 
     pub fn apply_state(&self, region_id: u64, store_id: u64) -> RaftApplyState {
         let key = keys::apply_state_key(region_id);
+
         self.get_engine(store_id)
             .c()
             .get_msg_cf::<RaftApplyState>(engine_traits::CF_RAFT, &key)
@@ -1669,4 +1670,25 @@ pub fn gen_cluster(cluster_ptr: isize) -> Option<&'static Cluster<NodeCluster>> 
 
 pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) -> isize {
     cluster_ptr as *const Cluster<NodeCluster> as isize
+}
+
+pub fn print_all_cluster(cluster: &mut Cluster<NodeCluster>, k: &str) {
+    for id in cluster.engines.keys() {
+        let tikv_key = keys::data_key(k.as_bytes());
+        println!("!!!! Check engine node_id is {}", id);
+        let kv = &cluster.engines[&id].kv;
+        let db: &Arc<DB> = &kv.db;
+        let r = db.c().get_value_cf("default", &tikv_key);
+        println!("!!!! print_all_cluster kv  overall {:?}", r);
+        match r {
+            Ok(v) => {
+                if v.is_some() {
+                    println!("!!!! print_all_cluster kv get {:?}", v.unwrap());
+                } else {
+                    println!("!!!! print_all_cluster kv get is None");
+                }
+            }
+            Err(e) => println!("!!!! print_all_cluster kv get is Error"),
+        }
+    }
 }
