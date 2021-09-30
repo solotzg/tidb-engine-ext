@@ -358,7 +358,7 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
-            let (mut ffi_helper_set, mut node_cfg) =
+            let (mut ffi_helper_set, node_cfg) =
                 self.make_ffi_helper_set(0, self.dbs.last().unwrap().clone(), &key_mgr, &router);
 
             let mut sim = self.sim.wl();

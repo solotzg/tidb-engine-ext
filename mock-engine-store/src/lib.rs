@@ -32,9 +32,13 @@ pub fn make_new_region_meta() -> kvproto::metapb::Region {
     region
 }
 
-// fn make_new_region() -> Region {
-//
-// }
+pub fn make_new_region() -> Region {
+    let mut region = Region {
+        region: make_new_region_meta(),
+        ..Default::default()
+    };
+    region
+}
 
 pub struct EngineStoreServer {
     pub id: u64,
@@ -44,11 +48,13 @@ pub struct EngineStoreServer {
 
 impl EngineStoreServer {
     pub fn new(id: u64, engines: Option<Engines<RocksEngine, RocksEngine>>) -> Self {
-        EngineStoreServer {
+        let mut server = EngineStoreServer {
             id,
             engines,
             kvstore: Default::default(),
-        }
+        };
+        server.kvstore.insert(1, Box::new(make_new_region()));
+        server
     }
 }
 
@@ -115,6 +121,9 @@ impl EngineStoreServerWrap {
                                 data: Default::default(),
                                 apply_state: Default::default(),
                             };
+
+                            debug!("!!!! new_region id {}", region_meta.id);
+
                             new_region
                                 .apply_state
                                 .set_applied_index(raftstore::store::RAFT_INIT_LOG_INDEX);
@@ -128,7 +137,9 @@ impl EngineStoreServerWrap {
                                 .set_term(raftstore::store::RAFT_INIT_LOG_TERM);
 
                             // No need to split data because all KV are stored in the same RocksDB.
-
+                            if engine_store_server.kvstore.contains_key(&region_meta.id) {
+                                debug!("!!!! contains key {}", region_meta.id);
+                            }
                             assert!(!engine_store_server.kvstore.contains_key(&region_meta.id));
                             engine_store_server
                                 .kvstore
@@ -262,10 +273,11 @@ impl EngineStoreServerWrap {
             }
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found", region_id);
-                do_handle_admin_raft_cmd(
-                    v.insert(Default::default()),
-                    &mut (*self.engine_store_server),
-                )
+                // do_handle_admin_raft_cmd(
+                //     v.insert(Default::default()),
+                //     &mut (*self.engine_store_server),
+                // )
+                ffi_interfaces::EngineStoreApplyRes::NotFound
             }
         }
     }
@@ -324,7 +336,8 @@ impl EngineStoreServerWrap {
             }
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found", region_id);
-                do_handle_write_raft_cmd(v.insert(Default::default()))
+                // do_handle_write_raft_cmd(v.insert(Default::default()))
+                ffi_interfaces::EngineStoreApplyRes::NotFound
             }
         }
     }
