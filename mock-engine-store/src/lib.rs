@@ -716,7 +716,6 @@ fn set_apply_index(region: &mut Region, kv: &mut RocksEngine, region_id: u64, in
     region.apply_state.set_applied_index(index);
     let apply_key = keys::apply_state_key(region_id);
 
-    kv.flush_cf(engine_traits::CF_DEFAULT, true);
     kv.put_cf(
         engine_traits::CF_RAFT,
         &apply_key,
@@ -727,7 +726,6 @@ fn set_apply_index(region: &mut Region, kv: &mut RocksEngine, region_id: u64, in
         apply_key,
         region.apply_state.write_to_bytes().unwrap()
     );
-    kv.flush_cf(engine_traits::CF_RAFT, true);
 }
 
 unsafe extern "C" fn ffi_handle_compute_store_stats(
