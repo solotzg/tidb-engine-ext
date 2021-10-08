@@ -1,7 +1,10 @@
 rustup component list | grep llvm-tools-preview
-
 if [ $? -ne 0 ]; then
   rustup component add llvm-tools-preview
+fi
+cargo install --list | grep grcov
+if [ $? -ne 0 ]; then
+  cargo install grcov
 fi
 
 export RUSTFLAGS="-Zinstrument-coverage"
