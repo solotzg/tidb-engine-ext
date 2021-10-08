@@ -39,4 +39,4 @@ fuzz-incremental/
 /last_tikv.toml
 /raft/
 core.*
-
+.profraw
