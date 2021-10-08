@@ -56,7 +56,7 @@ jobs:
           # make test
           # make debug
           cargo check
-          ./ci-test.sh
+          sh .github/workflows/ci-test.sh
 
 
 
