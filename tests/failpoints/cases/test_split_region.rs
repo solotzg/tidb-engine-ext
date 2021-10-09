@@ -278,45 +278,45 @@ fn test_split_not_to_split_existing_region() {
     assert_eq!(peer_b_3.get_id(), 1003);
     let on_handle_apply_1003_fp = "on_handle_apply_1003";
     fail::cfg(on_handle_apply_1003_fp, "pause").unwrap();
-    // // [-∞, k1), [k1, k2), [k2, +∞)
-    // //    c         b          a
-    // cluster.must_split(&region_b, b"k1");
+    // [-∞, k1), [k1, k2), [k2, +∞)
+    //    c         b          a
+    cluster.must_split(&region_b, b"k1");
 
-    // pd_client.must_remove_peer(region_b.get_id(), peer_b_3);
-    // pd_client.must_add_peer(region_b.get_id(), new_peer(4, 4));
-    //
-    // let mut region_c = pd_client.get_region(b"k0").unwrap();
-    // let peer_c_3 = find_peer(&region_c, 3).cloned().unwrap();
-    // pd_client.must_remove_peer(region_c.get_id(), peer_c_3);
-    // pd_client.must_failpoints/cases/test_split_region.rs:27add_peer(region_c.get_id(), new_peer(4, 5));
-    // // [-∞, k2), [k2, +∞)
-    // //     c        a
-    // pd_client.must_merge(region_b.get_id(), region_c.get_id());
-    //
-    // region_a = pd_client.get_region(b"k2").unwrap();
-    // let peer_a_3 = find_peer(&region_a, 3).cloned().unwrap();
-    // pd_client.must_remove_peer(region_a.get_id(), peer_a_3);
-    // pd_client.must_add_peer(region_a.get_id(), new_peer(4, 6));
-    // // [-∞, +∞)
-    // //    c
-    // pd_client.must_merge(region_a.get_id(), region_c.get_id());
-    //
-    // region_c = pd_client.get_region(b"k1").unwrap();
-    // // [-∞, k2), [k2, +∞)
-    // //     d        c
-    // cluster.must_split(&region_c, b"k2");
-    //
-    // let peer_c_4 = find_peer(&region_c, 4).cloned().unwrap();
-    // pd_client.must_remove_peer(region_c.get_id(), peer_c_4);
-    // pd_client.must_add_peer(region_c.get_id(), new_peer(3, 7));
-    //
-    // cluster.put(b"k2", b"v2").unwrap();
-    // must_get_equal(&cluster.get_engine(3), b"k2", b"v2");
-    //
-    // fail::remove(on_handle_apply_1003_fp);
-    //
-    // // If peer_c_3 is created, `must_get_none` will fail.
-    // must_get_none(&cluster.get_engine(3), b"k0");
+    pd_client.must_remove_peer(region_b.get_id(), peer_b_3);
+    pd_client.must_add_peer(region_b.get_id(), new_peer(4, 4));
+
+    let mut region_c = pd_client.get_region(b"k0").unwrap();
+    let peer_c_3 = find_peer(&region_c, 3).cloned().unwrap();
+    pd_client.must_remove_peer(region_c.get_id(), peer_c_3);
+    pd_client.must_add_peer(region_c.get_id(), new_peer(4, 5));
+    // [-∞, k2), [k2, +∞)
+    //     c        a
+    pd_client.must_merge(region_b.get_id(), region_c.get_id());
+
+    region_a = pd_client.get_region(b"k2").unwrap();
+    let peer_a_3 = find_peer(&region_a, 3).cloned().unwrap();
+    pd_client.must_remove_peer(region_a.get_id(), peer_a_3);
+    pd_client.must_add_peer(region_a.get_id(), new_peer(4, 6));
+    // [-∞, +∞)
+    //    c
+    pd_client.must_merge(region_a.get_id(), region_c.get_id());
+
+    region_c = pd_client.get_region(b"k1").unwrap();
+    // [-∞, k2), [k2, +∞)
+    //     d        c
+    cluster.must_split(&region_c, b"k2");
+
+    let peer_c_4 = find_peer(&region_c, 4).cloned().unwrap();
+    pd_client.must_remove_peer(region_c.get_id(), peer_c_4);
+    pd_client.must_add_peer(region_c.get_id(), new_peer(3, 7));
+
+    cluster.put(b"k2", b"v2").unwrap();
+    must_get_equal(&cluster.get_engine(3), b"k2", b"v2");
+
+    fail::remove(on_handle_apply_1003_fp);
+
+    // If peer_c_3 is created, `must_get_none` will fail.
+    must_get_none(&cluster.get_engine(3), b"k0");
 }
 
 // Test if a peer is created from splitting when another initialized peer with the same
@@ -365,6 +365,7 @@ fn test_split_not_to_split_existing_tombstone_region() {
     // Wait for the logs
     sleep_ms(100);
 
+    print_all_cluster(&mut cluster, "k22");
     // If left_peer_2 can be created, dropping all msg to make it exist.
     cluster.add_send_filter(IsolationFilterFactory::new(2));
     // Also don't send check stale msg to PD
@@ -375,15 +376,15 @@ fn test_split_not_to_split_existing_tombstone_region() {
 
     // If value of `k22` is equal to `v22`, the previous split log must be applied.
     must_get_equal(&cluster.get_engine(2), b"k22", b"v22");
-
-    // If left_peer_2 is created, `must_get_none` will fail.
-    must_get_none(&cluster.get_engine(2), b"k1");
-
-    cluster.clear_send_filters();
-
-    pd_client.must_add_peer(left.get_id(), new_peer(2, 4));
-
-    must_get_equal(&cluster.get_engine(2), b"k1", b"v1");
+    //
+    // // If left_peer_2 is created, `must_get_none` will fail.
+    // must_get_none(&cluster.get_engine(2), b"k1");
+    //
+    // cluster.clear_send_filters();
+    //
+    // pd_client.must_add_peer(left.get_id(), new_peer(2, 4));
+    //
+    // must_get_equal(&cluster.get_engine(2), b"k1", b"v1");
 }
 
 // Test if a peer can be created from splitting when another uninitialied peer with the same

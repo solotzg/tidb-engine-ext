@@ -38,6 +38,7 @@ use tikv_util::thread_group::GroupProperties;
 use tikv_util::HandyRwLock;
 
 use super::*;
+use mock_engine_store::make_new_region;
 use mock_engine_store::EngineStoreServerWrap;
 use std::sync::atomic::{AtomicBool, AtomicU8};
 use tikv_util::sys::SysQuota;
@@ -775,6 +776,12 @@ impl<T: Simulator> Cluster<T> {
 
         let region = initial_region(node_id, region_id, peer_id);
         prepare_bootstrap_cluster(&self.engines[&node_id], &region).unwrap();
+        self.ffi_helper_set
+            .get_mut(&node_id)
+            .unwrap()
+            .engine_store_server
+            .kvstore
+            .insert(1, Box::new(make_new_region(Some(region.clone()))));
         self.bootstrap_cluster(region);
         region_id
     }
