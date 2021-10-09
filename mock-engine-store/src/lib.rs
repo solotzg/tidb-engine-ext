@@ -145,11 +145,9 @@ impl EngineStoreServerWrap {
                                 );
                             }
 
-                            // No need to split data because all KV are stored in the same RocksDB.
-                            if engine_store_server.kvstore.contains_key(&region_meta.id) {
-                                debug!("!!!! contains key {}", region_meta.id);
-                            }
-                            assert!(!engine_store_server.kvstore.contains_key(&region_meta.id));
+                            // No need to split data because all KV are stored in the same RocksDB
+
+                            // We can't assert `region_meta.id` is brand new here
                             engine_store_server
                                 .kvstore
                                 .insert(region_meta.id, Box::new(new_region));
@@ -314,7 +312,7 @@ impl EngineStoreServerWrap {
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found", region_id);
                 do_handle_admin_raft_cmd(
-                    v.insert(Default::default()),
+                    v.insert(Box::new(make_new_region())),
                     &mut (*self.engine_store_server),
                 )
                 // ffi_interfaces::EngineStoreApplyRes::NotFound
@@ -380,7 +378,7 @@ impl EngineStoreServerWrap {
             }
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found", region_id);
-                do_handle_write_raft_cmd(v.insert(Default::default()))
+                do_handle_write_raft_cmd(v.insert(Box::new(make_new_region())))
                 // ffi_interfaces::EngineStoreApplyRes::NotFound
             }
         }
