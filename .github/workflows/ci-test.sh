@@ -7,8 +7,10 @@ if [ $? -ne 0 ]; then
   cargo install grcov
 fi
 
-export RUSTFLAGS="-Zinstrument-coverage"
-export LLVM_PROFILE_FILE="tidb-engine-ext-%p-%m.profraw"
+if [ ${GENERATE_COV:-0} -ne 0 ]; then
+  export RUSTFLAGS="-Zinstrument-coverage"
+  export LLVM_PROFILE_FILE="tidb-engine-ext-%p-%m.profraw"
+fi
 
 cargo test --package tests --test failpoints cases::test_normal
 cargo test --package tests --test failpoints cases::test_bootstrap
