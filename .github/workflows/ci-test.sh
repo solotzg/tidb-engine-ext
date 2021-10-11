@@ -45,4 +45,6 @@ cargo test --package tests --test integrations raftstore::test_transfer_leader
 cargo test --package tests --test integrations raftstore::test_single::test_node_apply_no_op
 cargo test --package tests --test integrations raftstore::test_single::test_node_delete
 
-grcov . --binary-path target/debug/ . -t html --branch --ignore-not-existing -o ./coverage/
+if [ ${GENERATE_COV:-0} -ne 0 ]; then
+  grcov . --binary-path target/debug/ . -t html --branch --ignore-not-existing -o ./coverage/
+fi
