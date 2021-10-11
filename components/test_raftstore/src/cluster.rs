@@ -775,13 +775,12 @@ impl<T: Simulator> Cluster<T> {
         let peer_id = 1;
 
         let region = initial_region(node_id, region_id, peer_id);
+        debug!(
+            "!!!! initial_region {} node_id {}",
+            region.get_id(),
+            node_id
+        );
         prepare_bootstrap_cluster(&self.engines[&node_id], &region).unwrap();
-        self.ffi_helper_set
-            .get_mut(&node_id)
-            .unwrap()
-            .engine_store_server
-            .kvstore
-            .insert(1, Box::new(make_new_region(Some(region.clone()))));
         self.bootstrap_cluster(region);
         region_id
     }

@@ -303,10 +303,13 @@ where
         store_id: u64,
     ) -> Result<Option<metapb::Region>> {
         if let Some(first_region) = engines.kv.get_msg(keys::PREPARE_BOOTSTRAP_KEY)? {
+            debug!("!!!! check_or_prepare_bootstrap_cluster has PREPARE_BOOTSTRAP_KEY");
             Ok(Some(first_region))
         } else if self.check_cluster_bootstrapped()? {
+            debug!("!!!! check_or_prepare_bootstrap_cluster None");
             Ok(None)
         } else {
+            debug!("!!!! check_or_prepare_bootstrap_cluster X");
             self.prepare_bootstrap_cluster(engines, store_id).map(Some)
         }
     }

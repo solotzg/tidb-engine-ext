@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
+use engine_rocks::Compat;
 use engine_traits::{IterOptions, Iterable, Iterator, Peekable};
 use kvproto::{metapb, raft_serverpb};
 use mock_engine_store;
@@ -13,8 +14,7 @@ fn test_normal() {
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(0, 3, sim, pd_client);
 
-    // Try to start this node, return after persisted some keys.
-    let result = cluster.start();
+    cluster.run();
 
     let k = b"k1";
     let v = b"v1";
