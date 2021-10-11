@@ -74,6 +74,28 @@ pub fn compare_vec<T: Ord>(a: &[T], b: &[T]) -> std::cmp::Ordering {
         .unwrap_or(a.len().cmp(&b.len()))
 }
 
+fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStoreServer) -> bool {
+    if region_id == 1 {
+        // In some tests, region 1 is not created on all nodes after store is started.
+        // We need to double check rocksdb before we are sure there are no region 1.
+        let kv = &mut engine_store_server.engines.as_mut().unwrap().kv;
+        let local_state: Option<RegionLocalState> = kv
+            .get_msg_cf(engine_traits::CF_RAFT, &keys::region_state_key(1))
+            .unwrap_or(None);
+        if local_state.is_none() {
+            return false;
+        }
+        engine_store_server.kvstore.insert(
+            region_id,
+            Box::new(make_new_region(Some(
+                local_state.unwrap().get_region().clone(),
+            ))),
+        );
+        return true;
+    }
+    return false;
+}
+
 impl EngineStoreServerWrap {
     pub fn new(
         engine_store_server: *mut EngineStoreServer,
@@ -307,12 +329,16 @@ impl EngineStoreServerWrap {
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };
+        if !(*self.engine_store_server).kvstore.contains_key(&region_id) {
+            hacked_is_real_no_region(region_id, &mut *self.engine_store_server);
+        }
         match (*self.engine_store_server).kvstore.entry(region_id) {
             std::collections::hash_map::Entry::Occupied(mut o) => {
                 do_handle_admin_raft_cmd(o.get_mut(), &mut (*self.engine_store_server))
             }
             std::collections::hash_map::Entry::Vacant(v) => {
                 warn!("region {} not found at node {}", region_id, node_id);
+
                 do_handle_admin_raft_cmd(
                     v.insert(Box::new(make_new_region(None))),
                     &mut (*self.engine_store_server),
@@ -375,6 +401,9 @@ impl EngineStoreServerWrap {
             ffi_interfaces::EngineStoreApplyRes::None
         };
 
+        if !(*self.engine_store_server).kvstore.contains_key(&region_id) {
+            hacked_is_real_no_region(region_id, &mut *self.engine_store_server);
+        }
         match (*self.engine_store_server).kvstore.entry(region_id) {
             std::collections::hash_map::Entry::Occupied(mut o) => {
                 do_handle_write_raft_cmd(o.get_mut())
