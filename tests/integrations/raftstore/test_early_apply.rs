@@ -67,9 +67,9 @@ where
         cluster.run_node(*id).unwrap();
     }
 
-    // if mode == DataLost::LeaderCommit || mode == DataLost::AllLost {
-    //     cluster.must_transfer_leader(1, new_peer(1, 1));
-    // }
+    if mode == DataLost::LeaderCommit || mode == DataLost::AllLost {
+        cluster.must_transfer_leader(1, new_peer(1, 1));
+    }
 }
 
 /// Test whether system can recover from mismatched raft state and apply state.
@@ -98,25 +98,25 @@ fn test_early_apply(mode: DataLost) {
         |c| must_get_equal(&c.get_engine(1), b"k2", b"v2"),
         mode,
     );
-    // let region = cluster.get_region(b"");
-    // test(
-    //     &mut cluster,
-    //     |c| {
-    //         c.split_region(&region, b"k2", Callback::None);
-    //     },
-    //     |c| c.wait_region_split(&region),
-    //     mode,
-    // );
-    // if mode != DataLost::LeaderCommit && mode != DataLost::AllLost {
-    //     test(
-    //         &mut cluster,
-    //         |c| {
-    //             c.async_remove_peer(1, new_peer(1, 1)).unwrap();
-    //         },
-    //         |c| must_get_none(&c.get_engine(1), b"k2"),
-    //         mode,
-    //     );
-    // }
+    let region = cluster.get_region(b"");
+    test(
+        &mut cluster,
+        |c| {
+            c.split_region(&region, b"k2", Callback::None);
+        },
+        |c| c.wait_region_split(&region),
+        mode,
+    );
+    if mode != DataLost::LeaderCommit && mode != DataLost::AllLost {
+        test(
+            &mut cluster,
+            |c| {
+                c.async_remove_peer(1, new_peer(1, 1)).unwrap();
+            },
+            |c| must_get_none(&c.get_engine(1), b"k2"),
+            mode,
+        );
+    }
 }
 
 /// Tests whether the cluster can recover from leader lost its commit index.
