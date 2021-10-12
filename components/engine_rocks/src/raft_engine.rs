@@ -16,6 +16,8 @@ const RAFT_LOG_MULTI_GET_CNT: u64 = 8;
 impl RaftEngineReadOnly for RocksEngine {
     fn get_raft_state(&self, raft_group_id: u64) -> Result<Option<RaftLocalState>> {
         let key = keys::raft_state_key(raft_group_id);
+        let r = self.get_value_cf(CF_DEFAULT, &key);
+        tikv_util::debug!("!!!! get_raft_state key {:?} r {:?}", key, r);
         self.get_msg_cf(CF_DEFAULT, &key)
     }
 
@@ -168,6 +170,11 @@ impl RaftEngine for RocksEngine {
     }
 
     fn put_raft_state(&self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        tikv_util::debug!(
+            "!!!! put_raft_state engine key {:?} value {:?}",
+            &keys::raft_state_key(raft_group_id),
+            state
+        );
         self.put_msg(&keys::raft_state_key(raft_group_id), state)
     }
 
@@ -247,6 +254,11 @@ impl RaftLogBatch for RocksWriteBatch {
     }
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        tikv_util::debug!(
+            "!!!! put_raft_state batch key {:?} value {:?}",
+            &keys::raft_state_key(raft_group_id),
+            state
+        );
         self.put_msg(&keys::raft_state_key(raft_group_id), state)
     }
 

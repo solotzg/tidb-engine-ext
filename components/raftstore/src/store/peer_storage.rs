@@ -457,6 +457,7 @@ impl InvokeContext {
 
     #[inline]
     pub fn save_raft_state_to<W: RaftLogBatch>(&self, raft_wb: &mut W) -> Result<()> {
+        debug!("!!!! save_raft_state_to");
         raft_wb.put_raft_state(self.region_id, &self.raft_state)?;
         Ok(())
     }
@@ -555,10 +556,16 @@ fn init_raft_state<EK: KvEngine, ER: RaftEngine>(
     region: &Region,
 ) -> Result<RaftLocalState> {
     if let Some(state) = engines.raft.get_raft_state(region.get_id())? {
+        debug!(
+            "!!!! init_raft_state with {:?} region id {}",
+            state,
+            region.get_id()
+        );
         return Ok(state);
     }
 
     let mut raft_state = RaftLocalState::default();
+    debug!("!!!! init_raft_state with new");
     if util::is_region_initialized(region) {
         // new split region
         raft_state.last_index = RAFT_INIT_LOG_INDEX;

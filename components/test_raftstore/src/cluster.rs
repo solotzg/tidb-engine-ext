@@ -44,6 +44,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8};
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
 
+use protobuf::Message;
+
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
 // isn't allocated by pd, and node id, store id are same.
@@ -1321,6 +1323,23 @@ impl<T: Simulator> Cluster<T> {
         kv_wb.write().unwrap();
     }
 
+    pub fn restore_raft2(&self, region_id: u64, store_id: u64, snap: &RocksSnapshot) {
+        let region_id = 1;
+        let (raft_start, raft_end) = (
+            keys::region_raft_prefix(region_id),
+            keys::region_raft_prefix(region_id + 1),
+        );
+        snap.scan(&raft_start, &raft_end, false, |k, v| {
+            debug!("!!!! instant snap {} k {:?} v", 1, k);
+            if k.len() == 11 {
+                let mut m = kvproto::raft_serverpb::RaftLocalState::default();
+                let mm = m.merge_from_bytes(&v);
+                debug!("!!!! instant snap decode {:?}", m);
+            }
+            Ok(true)
+        });
+    }
+
     pub fn restore_raft(&self, region_id: u64, store_id: u64, snap: &RocksSnapshot) {
         let (raft_start, raft_end) = (
             keys::region_raft_prefix(region_id),
@@ -1330,14 +1349,19 @@ impl<T: Simulator> Cluster<T> {
         self.engines[&store_id]
             .raft
             .scan(&raft_start, &raft_end, false, |k, _| {
-                raft_wb.delete(k).unwrap();
-                debug!("!!!! delete engine {} k {:?}", store_id, k);
+                let v = raft_wb.delete(k).unwrap();
+                debug!("!!!! delete engine {} k {:?} v {:?}", store_id, k, v);
                 Ok(true)
             })
             .unwrap();
         snap.scan(&raft_start, &raft_end, false, |k, v| {
             raft_wb.put(k, v).unwrap();
             debug!("!!!! insert engine {} k {:?} v {:?}", store_id, k, v);
+            if k.len() == 11 {
+                let mut m = RaftLocalState::default();
+                let mm = m.merge_from_bytes(&v);
+                debug!("!!!! insert engine decode {:?}", m);
+            }
             Ok(true)
         })
         .unwrap();

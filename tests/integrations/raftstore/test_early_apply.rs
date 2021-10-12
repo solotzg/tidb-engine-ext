@@ -1,6 +1,7 @@
 // Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
 
 use engine_rocks::RocksSnapshot;
+use protobuf::Message;
 use raft::eraftpb::MessageType;
 use raftstore::store::*;
 use std::time::*;
@@ -41,6 +42,9 @@ where
     cluster.wait_last_index(1, 1, last_index + 1, Duration::from_secs(3));
     let mut snaps = vec![];
     snaps.push((1, RocksSnapshot::new(cluster.get_raft_engine(1))));
+
+    cluster.restore_raft2(1, 1, &snaps.get(0).unwrap().1);
+
     if mode == DataLost::AllLost {
         cluster.wait_last_index(1, 2, last_index + 1, Duration::from_secs(3));
         snaps.push((2, RocksSnapshot::new(cluster.get_raft_engine(2))));
