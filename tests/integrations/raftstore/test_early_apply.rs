@@ -43,8 +43,6 @@ where
     let mut snaps = vec![];
     snaps.push((1, RocksSnapshot::new(cluster.get_raft_engine(1))));
 
-    cluster.restore_raft2(1, 1, &snaps.get(0).unwrap().1);
-
     if mode == DataLost::AllLost {
         cluster.wait_last_index(1, 2, last_index + 1, Duration::from_secs(3));
         snaps.push((2, RocksSnapshot::new(cluster.get_raft_engine(2))));
@@ -54,15 +52,12 @@ where
     cluster.clear_send_filters();
     check(cluster);
     for (id, _) in &snaps {
-        debug!("!!!! stop node {}", id);
         cluster.stop_node(*id);
     }
-    debug!("!!!! restore_raft");
     // Simulate data lost in raft cf.
     for (id, snap) in &snaps {
         cluster.restore_raft(1, *id, snap);
     }
-    debug!("!!!! run node");
     for (id, _) in &snaps {
         cluster.run_node(*id).unwrap();
     }
