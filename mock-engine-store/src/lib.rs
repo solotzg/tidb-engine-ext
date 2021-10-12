@@ -166,6 +166,8 @@ impl EngineStoreServerWrap {
                                     region_meta.id,
                                     true,
                                     true,
+                                    header.index,
+                                    header.term,
                                 );
                             }
 
@@ -203,6 +205,8 @@ impl EngineStoreServerWrap {
                             region_id,
                             true,
                             false,
+                            header.index,
+                            header.term,
                         );
                     }
                     // We don't handle MergeState and PeerState here
@@ -247,6 +251,8 @@ impl EngineStoreServerWrap {
                                 region_id,
                                 true,
                                 false,
+                                header.index,
+                                header.term,
                             );
                         }
                     }
@@ -267,6 +273,8 @@ impl EngineStoreServerWrap {
                             region_id,
                             true,
                             false,
+                            header.index,
+                            header.term,
                         );
                     }
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeer
@@ -285,6 +293,8 @@ impl EngineStoreServerWrap {
                                 region_id,
                                 true,
                                 false,
+                                header.index,
+                                header.term,
                             );
                         }
                         old_region.peer.get_id()
@@ -324,6 +334,8 @@ impl EngineStoreServerWrap {
                             region_id,
                             true,
                             false,
+                            header.index,
+                            header.term,
                         );
                     }
                 }
@@ -396,7 +408,15 @@ impl EngineStoreServerWrap {
                 }
             }
             region.apply_state.set_applied_index(header.index);
-            set_apply_index(region, kv, region_id, true, false);
+            set_apply_index(
+                region,
+                kv,
+                region_id,
+                true,
+                false,
+                header.index,
+                header.term,
+            );
             // Do not advance apply index
             ffi_interfaces::EngineStoreApplyRes::None
         };
@@ -653,6 +673,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
                     req_id,
                     true,
                     true,
+                    index,
+                    term,
                 );
             }
         }
@@ -762,7 +784,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_index(index);
         region.apply_state.mut_truncated_state().set_term(term);
         region.apply_state.set_applied_index(index);
-        set_apply_index(region, kv, region_id, true, true);
+        set_apply_index(region, kv, region_id, true, true, index, term);
     }
 
     ffi_interfaces::EngineStoreApplyRes::Persist
@@ -774,6 +796,8 @@ fn set_apply_index(
     region_id: u64,
     persist_apply_index: bool,
     persist_truncated_state: bool,
+    potential_index: u64,
+    potential_term: u64,
 ) {
     let apply_key = keys::apply_state_key(region_id);
     let mut pb = kv
@@ -798,6 +822,10 @@ fn set_apply_index(
                 region.apply_state.get_applied_index()
             );
             pb.set_applied_index(region.apply_state.get_applied_index());
+            if potential_index > pb.get_commit_index() || potential_term > pb.get_commit_term() {
+                pb.set_commit_index(potential_index);
+                pb.set_commit_term(potential_term);
+            }
         }
         if persist_truncated_state {
             pb.mut_truncated_state()
