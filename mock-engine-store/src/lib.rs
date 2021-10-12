@@ -800,10 +800,10 @@ fn persist_apply_state(
     potential_term: u64,
 ) {
     let apply_key = keys::apply_state_key(region_id);
-    let mut pb = kv
+    let mut old_apply_state = kv
         .get_msg_cf::<RaftApplyState>(engine_traits::CF_RAFT, &apply_key)
         .unwrap_or(None);
-    if pb.is_none() {
+    if old_apply_state.is_none() {
         // Have not set apply_state, use ours
         debug!(
             "!!!! set origin applied index to {}",
@@ -815,29 +815,31 @@ fn persist_apply_state(
             &region.apply_state.write_to_bytes().unwrap(),
         );
     } else {
-        let pb = pb.as_mut().unwrap();
+        let old_apply_state = old_apply_state.as_mut().unwrap();
         if persist_apply_index {
-            debug!(
-                "!!!! set applied index to {}",
-                region.apply_state.get_applied_index()
-            );
-            pb.set_applied_index(region.apply_state.get_applied_index());
-            if potential_index > pb.get_commit_index() || potential_term > pb.get_commit_term() {
-                pb.set_commit_index(potential_index);
-                pb.set_commit_term(potential_term);
+            old_apply_state.set_applied_index(region.apply_state.get_applied_index());
+            if potential_index > old_apply_state.get_commit_index()
+                || potential_term > old_apply_state.get_commit_term()
+            {
+                old_apply_state.set_commit_index(potential_index);
+                old_apply_state.set_commit_term(potential_term);
+                region.apply_state.set_commit_index(potential_index);
+                region.apply_state.set_commit_term(potential_term);
             }
         }
         if persist_truncated_state {
-            pb.mut_truncated_state()
+            old_apply_state
+                .mut_truncated_state()
                 .set_index(region.apply_state.get_truncated_state().get_index());
-            pb.mut_truncated_state()
+            old_apply_state
+                .mut_truncated_state()
                 .set_term(region.apply_state.get_truncated_state().get_term());
         }
         if persist_apply_index || persist_truncated_state {
             kv.put_cf(
                 engine_traits::CF_RAFT,
                 &apply_key,
-                &pb.write_to_bytes().unwrap(),
+                &old_apply_state.write_to_bytes().unwrap(),
             );
         }
     }
