@@ -651,6 +651,11 @@ fn validate_states<EK: KvEngine, ER: RaftEngine>(
         commit_index = recorded_commit_index;
     }
     // Invariant: applied index <= max(commit index, recorded commit index)
+    debug!(
+        "!!!! get_applied_index {} commit_index {}",
+        apply_state.get_applied_index(),
+        commit_index
+    );
     if apply_state.get_applied_index() > commit_index {
         return Err(box_err!(
             "applied index > max(commit index, recorded commit index), {}",
@@ -1553,6 +1558,7 @@ where
 
         // Save raft state if it has changed or there is a snapshot.
         if ctx.raft_state != self.raft_state || snapshot_index > 0 {
+            debug!("!!!! ctx.raft_state {:?}", ctx.raft_state);
             ctx.save_raft_state_to(ready_ctx.raft_wb_mut())?;
             if snapshot_index > 0 {
                 // in case of restart happen when we just write region state to Applying,

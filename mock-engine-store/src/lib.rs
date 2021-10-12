@@ -781,6 +781,10 @@ fn set_apply_index(
         .unwrap_or(None);
     if pb.is_none() {
         // Have not set apply_state, use ours
+        debug!(
+            "!!!! set origin applied index to {}",
+            region.apply_state.get_applied_index()
+        );
         kv.put_cf(
             engine_traits::CF_RAFT,
             &apply_key,
@@ -789,6 +793,10 @@ fn set_apply_index(
     } else {
         let pb = pb.as_mut().unwrap();
         if persist_apply_index {
+            debug!(
+                "!!!! set applied index to {}",
+                region.apply_state.get_applied_index()
+            );
             pb.set_applied_index(region.apply_state.get_applied_index());
         }
         if persist_truncated_state {

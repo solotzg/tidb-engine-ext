@@ -1331,11 +1331,13 @@ impl<T: Simulator> Cluster<T> {
             .raft
             .scan(&raft_start, &raft_end, false, |k, _| {
                 raft_wb.delete(k).unwrap();
+                debug!("!!!! delete engine {} k {:?}", store_id, k);
                 Ok(true)
             })
             .unwrap();
         snap.scan(&raft_start, &raft_end, false, |k, v| {
             raft_wb.put(k, v).unwrap();
+            debug!("!!!! insert engine {} k {:?} v {:?}", store_id, k, v);
             Ok(true)
         })
         .unwrap();
