@@ -160,7 +160,7 @@ impl EngineStoreServerWrap {
                                 .apply_state
                                 .set_applied_index(raftstore::store::RAFT_INIT_LOG_INDEX);
                             {
-                                set_apply_index(
+                                persist_apply_state(
                                     &mut new_region,
                                     &mut engine_store_server.engines.as_mut().unwrap().kv,
                                     region_meta.id,
@@ -199,7 +199,7 @@ impl EngineStoreServerWrap {
                     {
                         let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         region.apply_state.set_applied_index(header.index);
-                        set_apply_index(
+                        persist_apply_state(
                             region,
                             &mut engine_store_server.engines.as_mut().unwrap().kv,
                             region_id,
@@ -245,7 +245,7 @@ impl EngineStoreServerWrap {
 
                         {
                             target_region.apply_state.set_applied_index(header.index);
-                            set_apply_index(
+                            persist_apply_state(
                                 target_region,
                                 &mut engine_store_server.engines.as_mut().unwrap().kv,
                                 region_id,
@@ -267,7 +267,7 @@ impl EngineStoreServerWrap {
                     let new_version = region_meta.get_region_epoch().get_version() + 1;
                     {
                         region.apply_state.set_applied_index(header.index);
-                        set_apply_index(
+                        persist_apply_state(
                             region,
                             &mut engine_store_server.engines.as_mut().unwrap().kv,
                             region_id,
@@ -287,7 +287,7 @@ impl EngineStoreServerWrap {
                         old_region.region = new_region.clone();
                         {
                             old_region.apply_state.set_applied_index(header.index);
-                            set_apply_index(
+                            persist_apply_state(
                                 old_region,
                                 &mut engine_store_server.engines.as_mut().unwrap().kv,
                                 region_id,
@@ -328,7 +328,7 @@ impl EngineStoreServerWrap {
                     {
                         let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         region.apply_state.set_applied_index(header.index);
-                        set_apply_index(
+                        persist_apply_state(
                             region,
                             &mut engine_store_server.engines.as_mut().unwrap().kv,
                             region_id,
@@ -408,7 +408,7 @@ impl EngineStoreServerWrap {
                 }
             }
             region.apply_state.set_applied_index(header.index);
-            set_apply_index(
+            persist_apply_state(
                 region,
                 kv,
                 region_id,
@@ -667,7 +667,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
             region.apply_state.mut_truncated_state().set_term(term);
             {
                 region.apply_state.set_applied_index(index);
-                set_apply_index(
+                persist_apply_state(
                     &mut region,
                     &mut (*store.engine_store_server).engines.as_mut().unwrap().kv,
                     req_id,
@@ -784,13 +784,13 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_index(index);
         region.apply_state.mut_truncated_state().set_term(term);
         region.apply_state.set_applied_index(index);
-        set_apply_index(region, kv, region_id, true, true, index, term);
+        persist_apply_state(region, kv, region_id, true, true, index, term);
     }
 
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 
-fn set_apply_index(
+fn persist_apply_state(
     region: &mut Region,
     kv: &mut RocksEngine,
     region_id: u64,

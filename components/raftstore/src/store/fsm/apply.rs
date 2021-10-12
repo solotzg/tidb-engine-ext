@@ -932,6 +932,14 @@ where
                 break;
             }
 
+            if cfg!(feature = "test-raftstore-proxy") {
+                // Since `expect_index != entry.get_index()` may occasionally fail, add this log to gather log if it fails.
+                debug!(
+                    "currently apply_state is {:?} entry index {}",
+                    self.apply_state,
+                    entry.get_index()
+                );
+            }
             let expect_index = self.apply_state.get_applied_index() + 1;
             if expect_index != entry.get_index() {
                 panic!(

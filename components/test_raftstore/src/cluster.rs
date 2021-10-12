@@ -1332,8 +1332,7 @@ impl<T: Simulator> Cluster<T> {
         self.engines[&store_id]
             .raft
             .scan(&raft_start, &raft_end, false, |k, _| {
-                let v = raft_wb.delete(k).unwrap();
-                debug!("!!!! delete engine {} k {:?} v {:?}", store_id, k, v);
+                raft_wb.delete(k).unwrap();
                 Ok(true)
             })
             .unwrap();
