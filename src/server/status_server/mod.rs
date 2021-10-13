@@ -297,6 +297,7 @@ where
 
         Ok(match (encode_res, engine_store_config) {
             (Ok(json), Ok(store_config)) => Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(format!(
                     "{{\"raftstore-proxy\":{},\"engine-store\":{}}}",
                     json, store_config,
