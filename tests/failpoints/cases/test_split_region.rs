@@ -369,7 +369,8 @@ fn test_split_not_to_split_existing_tombstone_region() {
 
     debug!("!!!! start wait");
     // Wait for the logs
-    sleep_ms(100);
+    sleep_ms(1000);
+    debug!("!!!! end wait");
 
     print_all_cluster(&mut cluster, "k22");
     print_all_cluster(&mut cluster, "k1");
@@ -381,7 +382,6 @@ fn test_split_not_to_split_existing_tombstone_region() {
 
     fail::remove(on_handle_apply_2_fp);
 
-    debug!("!!!! start assert");
     // If value of `k22` is equal to `v22`, the previous split log must be applied.
     must_get_equal(&cluster.get_engine(2), b"k22", b"v22");
     //
