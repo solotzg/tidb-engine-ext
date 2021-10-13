@@ -749,9 +749,9 @@ where
                     )),
                 }
             }
-            Err(e) => err_resp(
+            Err(err) => err_resp(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("body error: {}", e),
+                format!("fails to build response: {}", err),
             ),
         }
     }
