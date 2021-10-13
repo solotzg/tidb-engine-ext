@@ -290,7 +290,7 @@ where
             Err(e) => {
                 return Ok(StatusServer::err_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal Server Error",
+                    "Internal Server Error: fail to parse config from engine-store",
                 ));
             }
         };
