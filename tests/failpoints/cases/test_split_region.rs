@@ -347,10 +347,15 @@ fn test_split_not_to_split_existing_tombstone_region() {
     cluster.must_put(b"k2", b"v2");
 
     let region = pd_client.get_region(b"k1").unwrap();
+    debug!("!!!! k1 in region {} region {:?}", region.get_id(), region);
     cluster.must_split(&region, b"k2");
     cluster.must_put(b"k22", b"v22");
 
     must_get_equal(&cluster.get_engine(2), b"k1", b"v1");
+    let region22 = pd_client.get_region(b"k22").unwrap();
+    debug!("!!!! k22 in region {} {:?}", region22.get_id(), region22);
+    let region1 = pd_client.get_region(b"k1").unwrap();
+    debug!("!!!! k1 in region {} {:?}", region1.get_id(), region1);
 
     let left = pd_client.get_region(b"k1").unwrap();
     let left_peer_2 = find_peer(&left, 2).cloned().unwrap();
@@ -362,10 +367,12 @@ fn test_split_not_to_split_existing_tombstone_region() {
 
     fail::remove(before_check_snapshot_1_2_fp);
 
+    debug!("!!!! start wait");
     // Wait for the logs
     sleep_ms(100);
 
     print_all_cluster(&mut cluster, "k22");
+    print_all_cluster(&mut cluster, "k1");
     // If left_peer_2 can be created, dropping all msg to make it exist.
     cluster.add_send_filter(IsolationFilterFactory::new(2));
     // Also don't send check stale msg to PD
@@ -374,6 +381,7 @@ fn test_split_not_to_split_existing_tombstone_region() {
 
     fail::remove(on_handle_apply_2_fp);
 
+    debug!("!!!! start assert");
     // If value of `k22` is equal to `v22`, the previous split log must be applied.
     must_get_equal(&cluster.get_engine(2), b"k22", b"v22");
     //
