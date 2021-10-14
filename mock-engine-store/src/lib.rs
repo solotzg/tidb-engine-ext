@@ -48,13 +48,14 @@ pub fn make_new_region(
 }
 
 fn set_new_region_peer(new_region: &mut Region, store_id: u64) {
-    let peer = new_region
+    if let Some(peer) = new_region
         .region
         .get_peers()
         .iter()
         .find(|&peer| peer.get_store_id() == store_id)
-        .unwrap();
-    new_region.peer = peer.clone();
+    {
+        new_region.peer = peer.clone();
+    }
 }
 
 pub struct EngineStoreServer {

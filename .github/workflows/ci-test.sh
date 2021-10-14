@@ -13,7 +13,7 @@ if [ ${GENERATE_COV:-0} -ne 0 ]; then
 fi
 
 cargo test --package tests --test failpoints cases::test_normal && \
-cargo test --package tests --test failpoints cases::test_bootstrap && \
+#cargo test --package tests --test failpoints cases::test_bootstrap && \
 cargo test --package tests --test failpoints cases::test_compact_log && \
 cargo test --package tests --test failpoints cases::test_early_apply && \
 cargo test --package tests --test failpoints cases::test_encryption && \
