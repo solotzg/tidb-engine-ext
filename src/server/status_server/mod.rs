@@ -715,13 +715,6 @@ where
         req: Request<Body>,
         engine_store_server_helper: &'static raftstore::engine_store_ffi::EngineStoreServerHelper,
     ) -> hyper::Result<Response<Body>> {
-        fn err_resp(
-            status_code: StatusCode,
-            msg: impl Into<Body>,
-        ) -> hyper::Result<Response<Body>> {
-            Ok(StatusServer::err_response(status_code, msg))
-        }
-
         let (head, body) = req.into_parts();
         let body = hyper::body::to_bytes(body).await;
 
@@ -733,10 +726,10 @@ where
                     &s,
                 );
                 if res.status != raftstore::engine_store_ffi::HttpRequestStatus::Ok {
-                    return err_resp(
-                        StatusCode::BAD_REQUEST,
-                        format!("error uri path: {}", head.uri.path()),
-                    );
+                    return Ok(StatusServer::err_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "engine-store fails to build response".to_string(),
+                    ));
                 }
 
                 let data = res.res.view.to_slice().to_vec();
@@ -749,10 +742,10 @@ where
                     )),
                 }
             }
-            Err(err) => err_resp(
+            Err(err) => Ok(StatusServer::err_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("fails to build response: {}", err),
-            ),
+            )),
         }
     }
 
