@@ -1090,6 +1090,7 @@ where
             _ => unreachable!(),
         };
         let cmd = util::parse_data_at(conf_change.get_context(), index, &self.tag);
+        tikv_util::debug!("!!!! conf change cmd is {:?}", cmd);
         match self.process_raft_cmd(apply_ctx, index, term, cmd) {
             ApplyResult::None => {
                 // If failed, tell Raft that the `ConfChange` was aborted.
@@ -1901,14 +1902,14 @@ where
 
         match change_type {
             ConfChangeType::AddNode => {
-                let add_ndoe_fp = || {
+                let add_node_fp = || {
                     fail_point!(
                         "apply_on_add_node_1_2",
                         self.id == 2 && self.region_id() == 1,
                         |_| {}
                     )
                 };
-                add_ndoe_fp();
+                add_node_fp();
 
                 PEER_ADMIN_CMD_COUNTER_VEC
                     .with_label_values(&["add_peer", "all"])
@@ -1972,6 +1973,11 @@ where
                         ));
                     }
                     if self.id == peer.get_id() {
+                        debug!(
+                            "!!!! pending_remove {} self.region_id {}",
+                            self.id,
+                            self.region_id()
+                        );
                         // Remove ourself, we will destroy all region data later.
                         // So we need not to apply following logs.
                         self.stopped = true;
