@@ -1018,7 +1018,6 @@ where
         let term = entry.get_term();
         let data = entry.get_data();
 
-        debug!("!!!! handle_raft_entry_normal data {:?}", data);
         if !data.is_empty() {
             let cmd = util::parse_data_at(data, index, &self.tag);
 
@@ -1090,7 +1089,6 @@ where
             _ => unreachable!(),
         };
         let cmd = util::parse_data_at(conf_change.get_context(), index, &self.tag);
-        tikv_util::debug!("!!!! conf change cmd is {:?}", cmd);
         match self.process_raft_cmd(apply_ctx, index, term, cmd) {
             ApplyResult::None => {
                 // If failed, tell Raft that the `ConfChange` was aborted.
@@ -1973,11 +1971,6 @@ where
                         ));
                     }
                     if self.id == peer.get_id() {
-                        debug!(
-                            "!!!! pending_remove {} self.region_id {}",
-                            self.id,
-                            self.region_id()
-                        );
                         // Remove ourself, we will destroy all region data later.
                         // So we need not to apply following logs.
                         self.stopped = true;

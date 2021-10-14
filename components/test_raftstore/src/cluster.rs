@@ -777,11 +777,6 @@ impl<T: Simulator> Cluster<T> {
         let peer_id = 1;
 
         let region = initial_region(node_id, region_id, peer_id);
-        debug!(
-            "!!!! initial_region {} node_id {}",
-            region.get_id(),
-            node_id
-        );
         prepare_bootstrap_cluster(&self.engines[&node_id], &region).unwrap();
         self.bootstrap_cluster(region);
         region_id

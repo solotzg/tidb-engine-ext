@@ -555,24 +555,17 @@ fn init_raft_state<EK: KvEngine, ER: RaftEngine>(
     region: &Region,
 ) -> Result<RaftLocalState> {
     if let Some(state) = engines.raft.get_raft_state(region.get_id())? {
-        debug!("!!!! init_raft_state have state {:?}", state);
         return Ok(state);
     }
 
     let mut raft_state = RaftLocalState::default();
     if util::is_region_initialized(region) {
         // new split region
-        debug!("!!!! init_raft_state region initialized");
         raft_state.last_index = RAFT_INIT_LOG_INDEX;
         raft_state.mut_hard_state().set_term(RAFT_INIT_LOG_TERM);
         raft_state.mut_hard_state().set_commit(RAFT_INIT_LOG_INDEX);
         engines.raft.put_raft_state(region.get_id(), &raft_state)?;
     }
-    debug!(
-        "!!!! init_raft_state raw raft_state {:?} {:?}",
-        region,
-        region.get_peers()
-    );
     Ok(raft_state)
 }
 
@@ -658,10 +651,6 @@ fn validate_states<EK: KvEngine, ER: RaftEngine>(
         commit_index = recorded_commit_index;
     }
     // Invariant: applied index <= max(commit index, recorded commit index)
-    debug!(
-        "!!!! apply_state {:?}, commit_index {}, raft_state {:?}",
-        apply_state, commit_index, raft_state
-    );
     if apply_state.get_applied_index() > commit_index {
         return Err(box_err!(
             "applied index > max(commit index, recorded commit index), {}",
