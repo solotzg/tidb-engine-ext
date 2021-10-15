@@ -1502,6 +1502,13 @@ where
         ApplyResult<EK::Snapshot>,
         EngineStoreApplyRes,
     )> {
+        fail_point!(
+            "on_apply_write_cmd",
+            cfg!(release) || self.id() == 3,
+            |_| {
+                unimplemented!();
+            }
+        );
         const NONE_STR: &str = "";
         let requests = req.get_requests();
         let mut ssts = vec![];

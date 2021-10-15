@@ -27,19 +27,22 @@ cargo test --package tests --test failpoints -- cases::test_import_service && \
 cargo test --package tests --test failpoints -- cases::test_split_region --skip test_report_approximate_size_after_split_check && \
 cargo test --package tests --test failpoints -- cases::test_snap && \
 cargo test --package tests --test failpoints -- cases::test_merge && \
+cargo test --package tests --test failpoints -- cases::test_replica_read && \
+#cargo test --package tests --test failpoints -- cases::test_replica_stale_read && \
+#cargo test --package tests --test failpoints -- cases::test_server && \
 
 cargo test --package tests --test integrations raftstore::test_bootstrap && \
 cargo test --package tests --test integrations raftstore::test_clear_stale_data && \
 cargo test --package tests --test integrations raftstore::test_compact_after_delete && \
 cargo test --package tests --test integrations raftstore::test_compact_log && \
 # Sometimes fails
-#cargo test --package tests --test integrations raftstore::test_conf_change && \
+cargo test --package tests --test integrations raftstore::test_conf_change && \
 cargo test --package tests --test integrations raftstore::test_early_apply && \
 # Sometimes fails with double panic
-#cargo test --package tests --test integrations raftstore::test_hibernate && \
+cargo test --package tests --test integrations raftstore::test_hibernate && \
 cargo test --package tests --test integrations raftstore::test_joint_consensus && \
 # Sometimes fails with double panic
-#cargo test --package tests --test integrations raftstore::test_replica_read && \
+cargo test --package tests --test integrations raftstore::test_replica_read && \
 cargo test --package tests --test integrations raftstore::test_snap && \
 cargo test --package tests --test integrations raftstore::test_split_region && \
 cargo test --package tests --test integrations raftstore::test_stale_peer && \
