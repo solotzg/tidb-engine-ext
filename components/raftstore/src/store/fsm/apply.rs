@@ -1506,6 +1506,24 @@ where
         let requests = req.get_requests();
         let mut ssts = vec![];
         let mut cmds = WriteCmds::with_capacity(requests.len());
+        let resp = if cfg!(feature = "test-raftstore-proxy") {
+            let mut responses = Vec::with_capacity(requests.len());
+            for req in requests {
+                let mut r = Response::default();
+                r.set_cmd_type(req.get_cmd_type());
+                responses.push(r);
+            }
+
+            let mut resp = RaftCmdResponse::default();
+            if !req.get_header().get_uuid().is_empty() {
+                let uuid = req.get_header().get_uuid().to_vec();
+                resp.mut_header().set_uuid(uuid);
+            }
+            resp.set_responses(responses.into());
+            resp
+        } else {
+            RaftCmdResponse::new()
+        };
         for req in requests {
             let cmd_type = req.get_cmd_type();
             match cmd_type {
@@ -1581,11 +1599,7 @@ where
                         "pending_ssts" => ?self.pending_clean_ssts
                     );
 
-                    Ok((
-                        RaftCmdResponse::new(),
-                        ApplyResult::None,
-                        EngineStoreApplyRes::None,
-                    ))
+                    Ok((resp, ApplyResult::None, EngineStoreApplyRes::None))
                 }
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
                     ssts.append(&mut self.pending_clean_ssts);
@@ -1599,7 +1613,7 @@ where
                     );
                     ctx.delete_ssts.append(&mut ssts.clone());
                     Ok((
-                        RaftCmdResponse::new(),
+                        resp,
                         ApplyResult::Res(ExecResult::IngestSst { ssts }),
                         EngineStoreApplyRes::Persist,
                     ))
@@ -1616,7 +1630,7 @@ where
                     ),
                 )
             };
-            Ok((RaftCmdResponse::new(), ApplyResult::None, flash_res))
+            Ok((resp, ApplyResult::None, flash_res))
         };
     }
 }
