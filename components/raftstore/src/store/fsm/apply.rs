@@ -1546,10 +1546,6 @@ where
                         self.metrics.lock_cf_written_bytes += key.len() as u64;
                         self.metrics.lock_cf_written_bytes += value.len() as u64;
                     }
-                    debug!(
-                        "!!!! self.metrics.lock_cf_written_bytes {}",
-                        self.metrics.lock_cf_written_bytes
-                    );
                     cmds.push(key, value, WriteCmdType::Put, cf);
                 }
                 CmdType::Delete => {

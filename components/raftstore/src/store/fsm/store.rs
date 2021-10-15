@@ -2142,10 +2142,6 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             .stat
             .lock_cf_bytes_written
             .load(Ordering::SeqCst);
-        debug!(
-            "!!!! self.ctx.cfg.lock_cf_compact_bytes_threshold.0 {} lock_cf_bytes_written {}",
-            self.ctx.cfg.lock_cf_compact_bytes_threshold.0, lock_cf_bytes_written
-        );
         if lock_cf_bytes_written > self.ctx.cfg.lock_cf_compact_bytes_threshold.0 {
             self.ctx
                 .global_stat

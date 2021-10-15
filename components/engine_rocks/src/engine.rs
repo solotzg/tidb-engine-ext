@@ -79,9 +79,6 @@ impl KvEngine for RocksEngine {
     fn flush_metrics(&self, instance: &str) {
         for t in ENGINE_TICKER_TYPES {
             let v = self.db.get_and_reset_statistics_ticker_count(*t);
-            if *t as i32 == 82 {
-                tikv_util::debug!("!!!! CompactWriteBytes is {:?} v {}", t, v);
-            }
             flush_engine_ticker_metrics(*t, v, instance);
         }
         for t in ENGINE_HIST_TYPES {
