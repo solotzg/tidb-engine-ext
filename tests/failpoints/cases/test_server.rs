@@ -4,6 +4,22 @@ use pd_client::PdClient;
 use raft::eraftpb::MessageType;
 use test_raftstore::*;
 
+fn get_addr(pd_client: &std::sync::Arc<TestPdClient>, node_id: u64) -> String {
+    if cfg!(feature = "test-raftstore-proxy") {
+        pd_client
+            .get_store(node_id)
+            .unwrap()
+            .get_peer_address()
+            .to_string()
+    } else {
+        pd_client
+            .get_store(node_id)
+            .unwrap()
+            .get_address()
+            .to_string()
+    }
+}
+
 /// When encountering raft/batch_raft mismatch store id error, the service is expected
 /// to drop connections in order to let raft_client re-resolve store address from PD
 /// This will make the mismatch error be automatically corrected.
@@ -23,22 +39,9 @@ fn test_mismatch_store_node() {
     must_get_equal(&cluster.get_engine(node1_id), b"k1", b"v1");
     must_get_equal(&cluster.get_engine(node2_id), b"k1", b"v1");
     must_get_equal(&cluster.get_engine(node3_id), b"k1", b"v1");
-    let node1_addr = pd_client
-        .get_store(node1_id)
-        .unwrap()
-        .get_address()
-        .to_string();
-    let node2_addr = pd_client
-        .get_store(node2_id)
-        .unwrap()
-        .get_address()
-        .to_string();
-    let node3_addr = cluster
-        .pd_client
-        .get_store(node3_id)
-        .unwrap()
-        .get_address()
-        .to_string();
+    let node1_addr = get_addr(&pd_client, node1_id);
+    let node2_addr = get_addr(&pd_client, node2_id);
+    let node3_addr = get_addr(&pd_client, node3_id);
     cluster.stop_node(node2_id);
     cluster.stop_node(node3_id);
     // run node2
@@ -58,18 +61,9 @@ fn test_mismatch_store_node() {
     sleep_ms(600);
     fail::cfg("mock_store_refresh_interval_secs", "return(0)").unwrap();
     cluster.must_put(b"k2", b"v2");
-    assert_eq!(
-        node1_addr,
-        pd_client.get_store(node1_id).unwrap().get_address()
-    );
-    assert_eq!(
-        node3_addr,
-        pd_client.get_store(node2_id).unwrap().get_address()
-    );
-    assert_eq!(
-        node2_addr,
-        cluster.pd_client.get_store(node3_id).unwrap().get_address()
-    );
+    assert_eq!(node1_addr, get_addr(&pd_client, node1_id));
+    assert_eq!(node3_addr, get_addr(&pd_client, node2_id));
+    assert_eq!(node2_addr, get_addr(&pd_client, node3_id));
     must_get_equal(&cluster.get_engine(node3_id), b"k2", b"v2");
     must_get_equal(&cluster.get_engine(node2_id), b"k2", b"v2");
     fail::remove("mock_store_refresh_interval_secs");

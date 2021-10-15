@@ -342,7 +342,6 @@ impl<T: Simulator> Cluster<T> {
 
     pub fn start(&mut self) -> ServerResult<()> {
         self.make_global_ffi_helper_set();
-
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
