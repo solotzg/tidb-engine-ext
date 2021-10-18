@@ -13,7 +13,7 @@ if [[ $(uname -s) == "Darwin" ]]; then
   lib_suffix="dylib"
   # use the openssl 1.1 lib from system
   export OPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR:-$(brew --prefix openssl@1.1)}
-  echo "`OPENSSL_ROOT_DIR` is ${OPENSSL_ROOT_DIR}"
+  echo "OPENSSL_ROOT_DIR: ${OPENSSL_ROOT_DIR}"
   export OPENSSL_NO_VENDOR=1
   export OPENSSL_STATIC=1
 fi
