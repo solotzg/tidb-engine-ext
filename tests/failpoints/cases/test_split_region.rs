@@ -364,7 +364,7 @@ fn test_split_not_to_split_existing_tombstone_region() {
     fail::remove(before_check_snapshot_1_2_fp);
 
     // Wait for the logs
-    sleep_ms(1000);
+    sleep_ms(3000);
 
     // If left_peer_2 can be created, dropping all msg to make it exist.
     cluster.add_send_filter(IsolationFilterFactory::new(2));
