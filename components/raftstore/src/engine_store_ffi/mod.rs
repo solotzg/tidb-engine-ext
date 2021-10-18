@@ -531,6 +531,12 @@ impl RawCppPtr {
 impl Drop for RawCppPtr {
     fn drop(&mut self) {
         if !self.is_null() {
+            unsafe {
+                tikv_util::debug!(
+                    "!!!! ENGINE_STORE_SERVER_HELPER_PTR get is {}",
+                    crate::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR
+                );
+            }
             let helper = get_engine_store_server_helper();
             helper.gc_raw_cpp_ptr(self.ptr, self.type_);
             self.ptr = std::ptr::null_mut();
@@ -588,7 +594,8 @@ impl EngineStoreServerHelper {
     fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
-            (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
+            let f = (self.fn_gc_raw_cpp_ptr.into_inner());
+            f(ptr, tp);
         }
     }
 
@@ -809,5 +816,12 @@ impl From<usize> for ColumnFamilyType {
             2 => ColumnFamilyType::Default,
             _ => unreachable!(),
         }
+    }
+}
+
+impl Drop for EngineStoreServerHelper {
+    fn drop(&mut self) {
+        tikv_util::debug!("!!!! drop");
+        self.fn_gc_raw_cpp_ptr = None;
     }
 }

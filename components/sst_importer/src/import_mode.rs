@@ -108,10 +108,10 @@ impl ImportModeSwitcher {
                     switcher.next_check
                 };
 
-                let ok = GLOBAL_TIMER_HANDLE.delay(next_check).compat().await.is_ok();
+                let res = GLOBAL_TIMER_HANDLE.delay(next_check).compat().await;
 
-                if !ok {
-                    warn!("failed to delay with global timer");
+                if !res.is_ok() {
+                    warn!("failed to delay with global timer with err {:?}", res.err());
                 }
             }
         };

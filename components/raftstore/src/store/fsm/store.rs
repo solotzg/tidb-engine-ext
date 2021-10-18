@@ -1408,7 +1408,11 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
         fail_point!("after_shutdown_apply");
         self.system.shutdown();
         if let Some(h) = handle {
-            h.join().unwrap();
+            let res = h.join();
+            if res.is_err() {
+                let e = res.err();
+                debug!("!!!! shutdown with {:?}", e);
+            }
         }
         workers.coprocessor_host.shutdown();
         workers.cleanup_worker.stop();
