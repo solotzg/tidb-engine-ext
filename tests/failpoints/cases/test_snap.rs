@@ -90,7 +90,14 @@ fn test_server_snapshot_on_resolve_failure() {
     must_get_none(&engine2, b"k1");
 
     // If snapshot status is reported correctly, sending snapshot should be retried.
-    notify_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    #[cfg(feature = "test-raftstore-proxy")]
+    {
+        notify_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+    #[cfg(not(feature = "test-raftstore-proxy"))]
+    {
+        notify_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    }
 }
 
 #[test]
