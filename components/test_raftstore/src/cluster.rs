@@ -165,6 +165,7 @@ pub struct Cluster<T: Simulator> {
     pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
 }
 
+// TODO Change it to atomic
 pub static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
 
 impl<T: Simulator> Cluster<T> {
