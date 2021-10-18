@@ -25,11 +25,11 @@ cargo test --package tests --test failpoints -- cases::test_disk_full && \
 cargo test --package tests --test failpoints -- cases::test_stale_peer && \
 cargo test --package tests --test failpoints -- cases::test_import_service && \
 cargo test --package tests --test failpoints -- cases::test_split_region --skip test_report_approximate_size_after_split_check && \
-cargo test --package tests --test failpoints -- cases::test_snap && \
+#cargo test --package tests --test failpoints -- cases::test_snap && \
 cargo test --package tests --test failpoints -- cases::test_merge && \
 cargo test --package tests --test failpoints -- cases::test_replica_read && \
 #cargo test --package tests --test failpoints -- cases::test_replica_stale_read && \
-#cargo test --package tests --test failpoints -- cases::test_server && \
+cargo test --package tests --test failpoints -- cases::test_server
 
 cargo test --package tests --test integrations -- raftstore::test_bootstrap && \
 cargo test --package tests --test integrations -- raftstore::test_clear_stale_data && \
