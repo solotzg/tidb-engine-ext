@@ -167,6 +167,10 @@ pub struct Cluster<T: Simulator> {
 
 pub static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
 
+lazy_static! {
+    static ref GLOBAL_ENGINE_HELPER_SET2: EngineHelperSet = make_global_ffi_helper_set_no_bind().0;
+}
+
 pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     unsafe {
         let mut engine_store_server =
@@ -192,6 +196,18 @@ pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
             },
             ptr,
         )
+    }
+}
+
+pub fn init_global_ffi_helper_set() {
+    unsafe {
+        // TODO It is not secure here
+        if raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR == 0 {
+            let (set, ptr) = make_global_ffi_helper_set_no_bind();
+            tikv_util::debug!("!!!! ENGINE_STORE_SERVER_HELPER_PTR set is {:?}", ptr);
+            raftstore::engine_store_ffi::init_engine_store_server_helper(ptr);
+            GLOBAL_ENGINE_HELPER_SET = Some(set);
+        }
     }
 }
 
@@ -274,16 +290,7 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn make_global_ffi_helper_set(&mut self) {
-        unsafe {
-            // TODO It is not secure here
-
-            if raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR == 0 {
-                let (set, ptr) = make_global_ffi_helper_set_no_bind();
-                tikv_util::debug!("!!!! ENGINE_STORE_SERVER_HELPER_PTR set is {:?}", ptr);
-                raftstore::engine_store_ffi::init_engine_store_server_helper(ptr);
-                GLOBAL_ENGINE_HELPER_SET = Some(set);
-            }
-        }
+        init_global_ffi_helper_set();
     }
 
     pub fn make_ffi_helper_set_no_bind(
