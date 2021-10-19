@@ -704,8 +704,6 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             kv.put_cf(cf_name, &tikv_key, &v);
-            debug!("!!!! has value {:?} {:?}", tikv_key, v);
-            // kv.flush_cf(cf_name, true);
         }
     }
 }
@@ -741,17 +739,16 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             let tikv_key = keys::data_key(key.to_slice());
             let cf_name = cf_to_name((*snapshot).type_);
             kv.put_cf(cf_name, &tikv_key, &value.to_slice());
-            // kv.flush_cf(cf_name, true);
             sst_reader.next();
         }
     }
 
-    {
-        region.apply_state.mut_truncated_state().set_index(index);
-        region.apply_state.mut_truncated_state().set_term(term);
-        region.apply_state.set_applied_index(index);
-        persist_apply_state(region, kv, region_id, true, true, index, term);
-    }
+    // {
+    //     region.apply_state.mut_truncated_state().set_index(index);
+    //     region.apply_state.mut_truncated_state().set_term(term);
+    //     region.apply_state.set_applied_index(index);
+    //     persist_apply_state(region, kv, region_id, true, true, index, term);
+    // }
 
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
