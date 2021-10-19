@@ -175,17 +175,6 @@ impl EngineStoreServerWrap {
                             new_region
                                 .apply_state
                                 .set_applied_index(raftstore::store::RAFT_INIT_LOG_INDEX);
-                            {
-                                // persist_apply_state(
-                                //     &mut new_region,
-                                //     &mut engine_store_server.engines.as_mut().unwrap().kv,
-                                //     region_meta.id,
-                                //     true,
-                                //     true,
-                                //     header.index,
-                                //     header.term,
-                                // );
-                            }
 
                             // No need to split data because all KV are stored in the same RocksDB
 
@@ -215,15 +204,6 @@ impl EngineStoreServerWrap {
                     {
                         let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         region.apply_state.set_applied_index(header.index);
-                        // persist_apply_state(
-                        //     region,
-                        //     &mut engine_store_server.engines.as_mut().unwrap().kv,
-                        //     region_id,
-                        //     true,
-                        //     false,
-                        //     header.index,
-                        //     header.term,
-                        // );
                     }
                     // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
@@ -261,15 +241,6 @@ impl EngineStoreServerWrap {
 
                         {
                             target_region.apply_state.set_applied_index(header.index);
-                            // persist_apply_state(
-                            //     target_region,
-                            //     &mut engine_store_server.engines.as_mut().unwrap().kv,
-                            //     region_id,
-                            //     true,
-                            //     false,
-                            //     header.index,
-                            //     header.term,
-                            // );
                         }
                     }
                     {
@@ -281,18 +252,8 @@ impl EngineStoreServerWrap {
                     let region = (engine_store_server.kvstore.get_mut(&region_id).unwrap());
                     let region_meta = &mut region.region;
                     let new_version = region_meta.get_region_epoch().get_version() + 1;
-                    {
-                        region.apply_state.set_applied_index(header.index);
-                        // persist_apply_state(
-                        //     region,
-                        //     &mut engine_store_server.engines.as_mut().unwrap().kv,
-                        //     region_id,
-                        //     true,
-                        //     false,
-                        //     header.index,
-                        //     header.term,
-                        // );
-                    }
+
+                    region.apply_state.set_applied_index(header.index);
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeer
                     || req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeerV2
                 {
@@ -301,18 +262,7 @@ impl EngineStoreServerWrap {
                     let old_peer_id = {
                         let old_region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         old_region.region = new_region.clone();
-                        {
-                            old_region.apply_state.set_applied_index(header.index);
-                            persist_apply_state(
-                                old_region,
-                                &mut engine_store_server.engines.as_mut().unwrap().kv,
-                                region_id,
-                                true,
-                                false,
-                                header.index,
-                                header.term,
-                            );
-                        }
+                        old_region.apply_state.set_applied_index(header.index);
                         debug!(
                             "!!!! change peer at old region id {} peer_id {} new region {:?} id {} header {:?} me {}",
                             old_region.region.get_id(),
@@ -352,19 +302,8 @@ impl EngineStoreServerWrap {
                 .collect::<std::collections::HashSet<kvproto::raft_cmdpb::AdminCmdType>>()
                 .contains(&req.cmd_type)
                 {
-                    {
-                        let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
-                        region.apply_state.set_applied_index(header.index);
-                        // persist_apply_state(
-                        //     region,
-                        //     &mut engine_store_server.engines.as_mut().unwrap().kv,
-                        //     region_id,
-                        //     true,
-                        //     false,
-                        //     header.index,
-                        //     header.term,
-                        // );
-                    }
+                    let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
+                    region.apply_state.set_applied_index(header.index);
                 }
                 ffi_interfaces::EngineStoreApplyRes::Persist
             };

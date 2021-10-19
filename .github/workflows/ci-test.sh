@@ -28,6 +28,7 @@ cargo test --package tests --test failpoints -- cases::test_split_region --skip 
 cargo test --package tests --test failpoints -- cases::test_snap && \
 cargo test --package tests --test failpoints -- cases::test_merge && \
 cargo test --package tests --test failpoints -- cases::test_replica_read && \
+# TiFlash do not support stale read currently
 #cargo test --package tests --test failpoints -- cases::test_replica_stale_read && \
 cargo test --package tests --test failpoints -- cases::test_server
 
