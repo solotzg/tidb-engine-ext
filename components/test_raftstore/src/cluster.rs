@@ -166,10 +166,7 @@ pub struct Cluster<T: Simulator> {
 }
 
 pub static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
-
-lazy_static! {
-    static ref GLOBAL_ENGINE_HELPER_SET2: EngineHelperSet = make_global_ffi_helper_set_no_bind().0;
-}
+static START: std::sync::Once = std::sync::Once::new();
 
 pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     unsafe {
@@ -201,13 +198,15 @@ pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
 
 pub fn init_global_ffi_helper_set() {
     unsafe {
-        // TODO It is not secure here
-        if raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR == 0 {
+        START.call_once(|| {
+            assert_eq!(
+                raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR,
+                0
+            );
             let (set, ptr) = make_global_ffi_helper_set_no_bind();
-            tikv_util::debug!("!!!! ENGINE_STORE_SERVER_HELPER_PTR set is {:?}", ptr);
             raftstore::engine_store_ffi::init_engine_store_server_helper(ptr);
             GLOBAL_ENGINE_HELPER_SET = Some(set);
-        }
+        });
     }
 }
 
