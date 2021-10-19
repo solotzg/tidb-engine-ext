@@ -13,7 +13,7 @@ if [ ${GENERATE_COV:-0} -ne 0 ]; then
 fi
 
 cargo test --package tests --test failpoints -- cases::test_normal && \
-#cargo test --package tests --test failpoints -- cases::test_bootstrap && \
+cargo test --package tests --test failpoints -- cases::test_bootstrap && \
 cargo test --package tests --test failpoints -- cases::test_compact_log && \
 cargo test --package tests --test failpoints -- cases::test_early_apply && \
 cargo test --package tests --test failpoints -- cases::test_encryption && \
@@ -25,7 +25,7 @@ cargo test --package tests --test failpoints -- cases::test_disk_full && \
 cargo test --package tests --test failpoints -- cases::test_stale_peer && \
 cargo test --package tests --test failpoints -- cases::test_import_service && \
 cargo test --package tests --test failpoints -- cases::test_split_region --skip test_report_approximate_size_after_split_check && \
-#cargo test --package tests --test failpoints -- cases::test_snap && \
+cargo test --package tests --test failpoints -- cases::test_snap && \
 cargo test --package tests --test failpoints -- cases::test_merge && \
 cargo test --package tests --test failpoints -- cases::test_replica_read && \
 #cargo test --package tests --test failpoints -- cases::test_replica_stale_read && \
@@ -36,7 +36,7 @@ cargo test --package tests --test integrations -- raftstore::test_clear_stale_da
 cargo test --package tests --test integrations -- raftstore::test_compact_after_delete && \
 cargo test --package tests --test integrations -- raftstore::test_compact_log && \
 # Sometimes fails
-cargo test --package tests --test integrations -- raftstore::test_conf_change && \
+#cargo test --package tests --test integrations -- raftstore::test_conf_change && \
 cargo test --package tests --test integrations -- raftstore::test_early_apply && \
 # Sometimes fails with double panic
 cargo test --package tests --test integrations -- raftstore::test_hibernate && \

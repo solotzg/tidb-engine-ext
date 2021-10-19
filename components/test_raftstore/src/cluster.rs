@@ -165,8 +165,35 @@ pub struct Cluster<T: Simulator> {
     pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
 }
 
-// TODO Change it to atomic
 pub static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
+
+pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
+    unsafe {
+        let mut engine_store_server =
+            Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
+        let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+            &mut *engine_store_server,
+            None,
+            0,
+        ));
+        let engine_store_server_helper =
+            Box::new(mock_engine_store::gen_engine_store_server_helper(
+                std::pin::Pin::new(&*engine_store_server_wrap),
+            ));
+        let ptr = &*engine_store_server_helper
+            as *const raftstore::engine_store_ffi::EngineStoreServerHelper
+            as *mut u8;
+        // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
+        (
+            EngineHelperSet {
+                engine_store_server,
+                engine_store_server_wrap,
+                engine_store_server_helper,
+            },
+            ptr,
+        )
+    }
+}
 
 impl<T: Simulator> Cluster<T> {
     // Create the default Store cluster.
@@ -246,44 +273,17 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
-    pub fn make_global_ffi_helper_set_no_bind(cluster_ptr: isize) {
+    pub fn make_global_ffi_helper_set(&mut self) {
         unsafe {
-            if raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR == 0 {
-                let mut engine_store_server =
-                    Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
-                let engine_store_server_wrap =
-                    Box::new(mock_engine_store::EngineStoreServerWrap::new(
-                        &mut *engine_store_server,
-                        None,
-                        cluster_ptr,
-                    ));
-                let engine_store_server_helper =
-                    Box::new(mock_engine_store::gen_engine_store_server_helper(
-                        std::pin::Pin::new(&*engine_store_server_wrap),
-                    ));
+            // TODO It is not secure here
 
-                unsafe {
-                    raftstore::engine_store_ffi::init_engine_store_server_helper(
-                        &*engine_store_server_helper
-                            as *const raftstore::engine_store_ffi::EngineStoreServerHelper
-                            as *mut u8,
-                    );
-                    tikv_util::debug!(
-                        "!!!! ENGINE_STORE_SERVER_HELPER_PTR set is {}",
-                        raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR
-                    );
-                    GLOBAL_ENGINE_HELPER_SET = Some(EngineHelperSet {
-                        engine_store_server,
-                        engine_store_server_wrap,
-                        engine_store_server_helper,
-                    });
-                }
+            if raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR == 0 {
+                let (set, ptr) = make_global_ffi_helper_set_no_bind();
+                tikv_util::debug!("!!!! ENGINE_STORE_SERVER_HELPER_PTR set is {:?}", ptr);
+                raftstore::engine_store_ffi::init_engine_store_server_helper(ptr);
+                GLOBAL_ENGINE_HELPER_SET = Some(set);
             }
         }
-    }
-
-    pub fn make_global_ffi_helper_set(&mut self) {
-        Cluster::<T>::make_global_ffi_helper_set_no_bind(self as *const Cluster<T> as isize);
     }
 
     pub fn make_ffi_helper_set_no_bind(
