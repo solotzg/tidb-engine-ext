@@ -818,10 +818,3 @@ impl From<usize> for ColumnFamilyType {
         }
     }
 }
-
-impl Drop for EngineStoreServerHelper {
-    fn drop(&mut self) {
-        tikv_util::debug!("!!!! drop");
-        self.fn_gc_raw_cpp_ptr = None;
-    }
-}
