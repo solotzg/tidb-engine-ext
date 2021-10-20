@@ -694,7 +694,7 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         .unwrap();
 
     debug!(
-        "!!!! new_region {} applied by snapshot node_id {}",
+        "apply pre-handled snapshot on new_region {} at store {}",
         req_id, node_id
     );
 
@@ -768,10 +768,6 @@ fn persist_apply_state(
         .unwrap_or(None);
     if old_apply_state.is_none() {
         // Have not set apply_state, use ours
-        debug!(
-            "!!!! set origin applied index to {}",
-            region.apply_state.get_applied_index()
-        );
         kv.put_cf(
             engine_traits::CF_RAFT,
             &apply_key,

@@ -1684,7 +1684,6 @@ pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) -> isize {
 pub fn print_all_cluster(cluster: &mut Cluster<NodeCluster>, k: &str) {
     for id in cluster.engines.keys() {
         let tikv_key = keys::data_key(k.as_bytes());
-        debug!("!!!! Check engine node_id is {}", id);
         let kv = &cluster.engines[&id].kv;
         let db: &Arc<engine_rocks::raw::DB> = &kv.db;
         let r = db.c().get_value_cf("default", &tikv_key);
