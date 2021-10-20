@@ -364,12 +364,10 @@ impl EngineStoreServerWrap {
                             &tikv_key,
                             &val.to_slice().to_vec(),
                         );
-                        // kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         let tikv_key = keys::data_key(key.to_slice());
                         kv.delete_cf(cf_to_name(cf.to_owned().into()), &tikv_key);
-                        // kv.flush_cf(cf_to_name(cf.to_owned().into()), true);
                     }
                 }
             }
@@ -743,14 +741,11 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         }
     }
 
-    // {
-    //     region.apply_state.mut_truncated_state().set_index(index);
-    //     region.apply_state.mut_truncated_state().set_term(term);
-    //     region.apply_state.set_applied_index(index);
-    //     persist_apply_state(region, kv, region_id, true, true, index, term);
-    // }
-
-    ffi_interfaces::EngineStoreApplyRes::Persist
+    if snaps.len > 0 {
+        ffi_interfaces::EngineStoreApplyRes::Persist
+    } else {
+        ffi_interfaces::EngineStoreApplyRes::None
+    }
 }
 
 fn persist_apply_state(

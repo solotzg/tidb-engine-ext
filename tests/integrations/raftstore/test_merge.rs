@@ -596,6 +596,7 @@ fn test_node_merge_brain_split() {
 
 /// Test whether approximate size and keys are updated after merge
 #[test]
+#[cfg(not(feature = "test-raftstore-proxy"))]
 fn test_merge_approximate_size_and_keys() {
     let mut cluster = new_node_cluster(0, 3);
     cluster.cfg.raft_store.split_region_check_tick_interval = ReadableDuration::millis(20);
