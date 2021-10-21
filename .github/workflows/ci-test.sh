@@ -1,3 +1,4 @@
+cargo clean
 rustup component list | grep "llvm-tools-preview-x86_64-unknown-linux-gnu (installed)"
 if [ $? -ne 0 ]; then
   rustup component add llvm-tools-preview
