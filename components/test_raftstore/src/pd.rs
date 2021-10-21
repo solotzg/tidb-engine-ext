@@ -1088,6 +1088,10 @@ impl TestPdClient {
             } else {
                 return;
             }
+            #[cfg(feature = "test-raftstore-proxy")]
+            {
+                sleep_ms(100);
+            }
             sleep_ms(10);
         }
     }
