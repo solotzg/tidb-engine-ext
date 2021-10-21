@@ -55,6 +55,8 @@ fn set_new_region_peer(new_region: &mut Region, store_id: u64) {
         .find(|&peer| peer.get_store_id() == store_id)
     {
         new_region.peer = peer.clone();
+    } else {
+        // This happens when region is not found.
     }
 }
 

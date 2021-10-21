@@ -1093,7 +1093,7 @@ impl TestPdClient {
     }
 
     pub fn region_leader_must_be(&self, region_id: u64, peer: metapb::Peer) {
-        for _ in 0..500 {
+        for _ in 0..1000 {
             sleep_ms(10);
             if let Some(p) = self.cluster.rl().leaders.get(&region_id) {
                 if *p == peer {

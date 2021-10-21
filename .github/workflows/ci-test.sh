@@ -55,6 +55,8 @@ cargo test --package tests --test integrations -- raftstore::test_transfer_leade
 cargo test --package tests --test integrations -- raftstore::test_single && \
 # Sometimes fails
 cargo test --package tests --test integrations -- raftstore::test_merge && \
+cargo test --package tests --test integrations -- raftstore::test_tombstone && \
+
 
 if [ ${GENERATE_COV:-0} -ne 0 ]; then
   grcov . --binary-path target/debug/ . -t html --branch --ignore-not-existing -o ./coverage/
