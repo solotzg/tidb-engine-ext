@@ -66,13 +66,12 @@ pub struct EngineStoreServer {
 
 impl EngineStoreServer {
     pub fn new(id: u64, engines: Option<Engines<RocksEngine, RocksEngine>>) -> Self {
-        let mut server = EngineStoreServer {
+        // The first region is added in cluster.rs
+        EngineStoreServer {
             id,
             engines,
             kvstore: Default::default(),
-        };
-        // The first region is added in cluster.rs
-        server
+        }
     }
 }
 
@@ -263,15 +262,6 @@ impl EngineStoreServerWrap {
                         let old_region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         old_region.region = new_region.clone();
                         old_region.apply_state.set_applied_index(header.index);
-                        debug!(
-                            "!!!! change peer at old region id {} peer_id {} new region {:?} id {} header {:?} me {}",
-                            old_region.region.get_id(),
-                            old_region.peer.get_id(),
-                            new_region,
-                            region_id,
-                            header,
-                            node_id
-                        );
                         old_region.peer.get_id()
                     };
 

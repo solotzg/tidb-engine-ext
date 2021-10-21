@@ -1411,8 +1411,7 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
             if cfg!(feature = "test-raftstore-proxy") {
                 let res = h.join();
                 if res.is_err() {
-                    let e = res.err();
-                    debug!("thread shutdown with error {:?}", e);
+                    debug!("thread shutdown with error {:?}", res.err());
                 }
             } else {
                 h.join().unwrap();

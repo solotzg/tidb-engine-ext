@@ -383,7 +383,6 @@ fn test_split_not_to_split_existing_tombstone_region() {
     cluster.clear_send_filters();
 
     pd_client.must_add_peer(left.get_id(), new_peer(2, 4));
-    print_all_cluster(&mut cluster, "k1");
 
     must_get_equal(&cluster.get_engine(2), b"k1", b"v1");
 }

@@ -200,7 +200,7 @@ pub fn init_global_ffi_helper_set() {
     unsafe {
         START.call_once(|| {
             assert_eq!(
-                raftstore::engine_store_ffi::ENGINE_STORE_SERVER_HELPER_PTR,
+                raftstore::engine_store_ffi::get_engine_store_server_helper_ptr(),
                 0
             );
             let (set, ptr) = make_global_ffi_helper_set_no_bind();
@@ -1679,31 +1679,4 @@ pub fn gen_cluster(cluster_ptr: isize) -> Option<&'static Cluster<NodeCluster>> 
 
 pub unsafe fn init_cluster_ptr(cluster_ptr: &Cluster<NodeCluster>) -> isize {
     cluster_ptr as *const Cluster<NodeCluster> as isize
-}
-
-pub fn print_all_cluster(cluster: &mut Cluster<NodeCluster>, k: &str) {
-    for id in cluster.engines.keys() {
-        let tikv_key = keys::data_key(k.as_bytes());
-        let kv = &cluster.engines[&id].kv;
-        let db: &Arc<engine_rocks::raw::DB> = &kv.db;
-        let r = db.c().get_value_cf("default", &tikv_key);
-        match r {
-            Ok(v) => {
-                if v.is_some() {
-                    debug!(
-                        "!!!! print_all_cluster node_id {} kv get {} is {:?}",
-                        id,
-                        k,
-                        v.unwrap()
-                    );
-                } else {
-                    debug!("!!!! print_all_cluster node_id {} kv get {} is None", id, k);
-                }
-            }
-            Err(e) => debug!(
-                "!!!! print_all_cluster node_id {} kv get {} is Error",
-                id, k
-            ),
-        }
-    }
 }

@@ -19,7 +19,6 @@ fn test_normal() {
     let k = b"k1";
     let v = b"v1";
     cluster.must_put(k, v);
-    print_all_cluster(&mut cluster, "k1");
     for id in cluster.engines.keys() {
         must_get_equal(&cluster.get_engine(*id), k, v);
         // must_get_equal(db, k, v);
