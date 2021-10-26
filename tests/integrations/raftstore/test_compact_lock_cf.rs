@@ -17,7 +17,14 @@ fn flush_then_check<T: Simulator>(cluster: &mut Cluster<T>, interval: u64, writt
     flush(cluster);
 
     // Wait for compaction.
-    sleep_ms(interval * 3);
+    sleep_ms(
+        interval
+            * if cfg!(feature = "test_raftstore-proxy") {
+                3
+            } else {
+                2
+            },
+    );
     for engines in cluster.engines.values() {
         let compact_write_bytes = engines
             .kv
