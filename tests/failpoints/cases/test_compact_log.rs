@@ -58,7 +58,7 @@ fn test_evict_entry_cache() {
     fail::cfg("needs_evict_entry_cache", "return").unwrap();
     fail::cfg("on_raft_gc_log_tick_1", "off").unwrap();
 
-    sleep_ms(if cfg!(feature = "test_raftstore-proxy") {
+    sleep_ms(if cfg!(feature = "test-raftstore-proxy") {
         700
     } else {
         500

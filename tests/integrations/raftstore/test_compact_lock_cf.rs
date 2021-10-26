@@ -19,7 +19,7 @@ fn flush_then_check<T: Simulator>(cluster: &mut Cluster<T>, interval: u64, writt
     // Wait for compaction.
     sleep_ms(
         interval
-            * if cfg!(feature = "test_raftstore-proxy") {
+            * if cfg!(feature = "test-raftstore-proxy") {
                 3
             } else {
                 2
