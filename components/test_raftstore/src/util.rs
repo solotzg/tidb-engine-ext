@@ -64,7 +64,13 @@ pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
         if value.is_none() && res.is_none() {
             return;
         }
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(
+            if cfg!(feature = "test-raftstore-proxy") {
+                30
+            } else {
+                20
+            },
+        ));
     }
     debug!(
         "last try to get {} cf {}",
