@@ -23,6 +23,12 @@ enum DataLost {
     AllLost,
 }
 
+static duration: u64 = if cfg!(feature = "test-raftstore-proxy") {
+    5
+} else {
+    3
+};
+
 fn test<A, C>(cluster: &mut Cluster<NodeCluster>, action: A, check: C, mode: DataLost)
 where
     A: FnOnce(&mut Cluster<NodeCluster>),
@@ -39,14 +45,14 @@ where
     cluster.add_send_filter(CloneFilterFactory(filter));
     let last_index = cluster.raft_local_state(1, 1).get_last_index();
     action(cluster);
-    cluster.wait_last_index(1, 1, last_index + 1, Duration::from_secs(3));
+    cluster.wait_last_index(1, 1, last_index + 1, Duration::from_secs(duration));
     let mut snaps = vec![];
     snaps.push((1, RocksSnapshot::new(cluster.get_raft_engine(1))));
 
     if mode == DataLost::AllLost {
-        cluster.wait_last_index(1, 2, last_index + 1, Duration::from_secs(3));
+        cluster.wait_last_index(1, 2, last_index + 1, Duration::from_secs(duration));
         snaps.push((2, RocksSnapshot::new(cluster.get_raft_engine(2))));
-        cluster.wait_last_index(1, 3, last_index + 1, Duration::from_secs(3));
+        cluster.wait_last_index(1, 3, last_index + 1, Duration::from_secs(duration));
         snaps.push((3, RocksSnapshot::new(cluster.get_raft_engine(3))));
     }
     cluster.clear_send_filters();
@@ -155,7 +161,7 @@ fn test_update_internal_apply_index() {
     cluster.async_put(b"k2", b"v2").unwrap();
     let mut snaps = vec![];
     for i in 1..3 {
-        cluster.wait_last_index(1, i, last_index + 2, Duration::from_secs(3));
+        cluster.wait_last_index(1, i, last_index + 2, Duration::from_secs(duration));
         snaps.push((i, RocksSnapshot::new(cluster.get_raft_engine(1))));
     }
     cluster.clear_send_filters();
