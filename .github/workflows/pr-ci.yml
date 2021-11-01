@@ -55,4 +55,4 @@ jobs:
           # export RUSTC_WRAPPER=~/.cargo/bin/sccache
           # make test
           # make debug
-          GENERATE_COV=0 sh .github/workflows/ci-test.sh
+          CLEAN=1 GENERATE_COV=0 sh .github/workflows/ci-test.sh
