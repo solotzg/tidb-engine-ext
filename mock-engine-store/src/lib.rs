@@ -217,10 +217,14 @@ impl EngineStoreServerWrap {
                         let source_at_left = if source_region.get_start_key().is_empty() {
                             true
                         } else {
-                            compare_vec(
-                                source_region.get_end_key(),
-                                target_region_meta.get_start_key(),
-                            ) == std::cmp::Ordering::Equal
+                            // compare_vec(
+                            //     source_region.get_end_key(),
+                            //     target_region_meta.get_start_key(),
+                            // ) == std::cmp::Ordering::Equal
+                            source_region
+                                .get_end_key()
+                                .cmp(target_region_meta.get_start_key())
+                                == std::cmp::Ordering::Equal
                         };
 
                         if source_at_left {
@@ -613,15 +617,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
             region.apply_state.mut_truncated_state().set_term(term);
             {
                 region.apply_state.set_applied_index(index);
-                persist_apply_state(
-                    &mut region,
-                    &mut (*store.engine_store_server).engines.as_mut().unwrap().kv,
-                    req_id,
-                    true,
-                    true,
-                    index,
-                    term,
-                );
             }
         }
 

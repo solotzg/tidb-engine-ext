@@ -46,6 +46,7 @@ fn test_region_meta_endpoint() {
 
     let mut status_server = unsafe {
         let helperset = &test_raftstore::get_global_engine_helper_set()
+            .as_ref()
             .unwrap()
             .engine_store_server_helper;
         StatusServer::new(
