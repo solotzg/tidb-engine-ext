@@ -119,6 +119,7 @@ impl EngineStoreServerWrap {
         let region_id = header.region_id;
         let node_id = (*self.engine_store_server).id;
         info!("handle admin raft cmd"; "request"=>?req, "response"=>?resp, "index"=>header.index, "region-id"=>header.region_id);
+        let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
         let do_handle_admin_raft_cmd =
             move |region: &mut Region, engine_store_server: &mut EngineStoreServer| {
                 if region.apply_state.get_applied_index() >= header.index {
@@ -168,21 +169,23 @@ impl EngineStoreServerWrap {
                         }
                     }
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::PrepareMerge {
-                    let target = req.prepare_merge.as_ref().unwrap().target.as_ref();
+                    let tikv_region = resp.get_split().get_left();
 
+                    let target = req.prepare_merge.as_ref().unwrap().target.as_ref();
                     let region_meta = &mut (engine_store_server
                         .kvstore
                         .get_mut(&region_id)
                         .unwrap()
                         .region);
-
                     let region_epoch = region_meta.region_epoch.as_mut().unwrap();
 
                     let new_version = region_epoch.version + 1;
                     region_epoch.set_version(new_version);
+                    assert_eq!(tikv_region.get_region_epoch().get_version(), new_version);
 
                     let conf_version = region_epoch.conf_ver + 1;
                     region_epoch.set_conf_ver(conf_version);
+                    assert_eq!(tikv_region.get_region_epoch().get_conf_ver(), conf_version);
 
                     {
                         let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
@@ -198,14 +201,13 @@ impl EngineStoreServerWrap {
                         let target_version = target_region_meta.get_region_epoch().get_version();
                         let source_region = req.get_commit_merge().get_source();
                         let source_version = source_region.get_region_epoch().get_version();
-                        let new_version = std::cmp::max(source_version, target_version) + 1;
 
+                        let new_version = std::cmp::max(source_version, target_version) + 1;
                         target_region_meta
                             .mut_region_epoch()
                             .set_version(new_version);
 
                         // No need to merge data
-
                         let source_at_left = if source_region.get_start_key().is_empty() {
                             true
                         } else {

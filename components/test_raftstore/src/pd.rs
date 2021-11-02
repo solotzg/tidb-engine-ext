@@ -1101,7 +1101,11 @@ impl TestPdClient {
 
     pub fn region_leader_must_be(&self, region_id: u64, peer: metapb::Peer) {
         for _ in 0..1000 {
-            sleep_ms(10);
+            if cfg!(feature = "test-raftstore-proxy") {
+                sleep_ms(30);
+            } else {
+                sleep_ms(10);
+            }
             if let Some(p) = self.cluster.rl().leaders.get(&region_id) {
                 if *p == peer {
                     return;
