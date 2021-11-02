@@ -24,7 +24,7 @@ enum DataLost {
 }
 
 static DURATION: u64 = if cfg!(feature = "test-raftstore-proxy") {
-    5
+    8
 } else {
     3
 };

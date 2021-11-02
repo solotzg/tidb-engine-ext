@@ -1,18 +1,18 @@
 if [ ${CLEAN:-0} -ne 0 ]; then
   cargo clean
 fi
-rustup component list | grep "llvm-tools-preview-x86_64-unknown-linux-gnu (installed)"
-if [ $? -ne 0 ]; then
-  rustup component add llvm-tools-preview
-fi
-cargo install --list | grep grcov
-if [ $? -ne 0 ]; then
-  cargo install grcov
-fi
 
 if [ ${GENERATE_COV:-0} -ne 0 ]; then
   export RUSTFLAGS="-Zinstrument-coverage"
   export LLVM_PROFILE_FILE="tidb-engine-ext-%p-%m.profraw"
+  rustup component list | grep "llvm-tools-preview-x86_64-unknown-linux-gnu (installed)"
+  if [ $? -ne 0 ]; then
+    rustup component add llvm-tools-preview
+  fi
+  cargo install --list | grep grcov
+  if [ $? -ne 0 ]; then
+    cargo install grcov
+  fi
 fi
 
 cargo test --package tests --test failpoints -- cases::test_normal && \

@@ -25,20 +25,12 @@ pub struct Region {
     apply_state: kvproto::raft_serverpb::RaftApplyState,
 }
 
-pub fn make_new_region_meta() -> kvproto::metapb::Region {
-    let mut region = kvproto::metapb::Region {
-        region_epoch: Some(kvproto::metapb::RegionEpoch::default()).into(),
-        ..Default::default()
-    };
-    region
-}
-
 pub fn make_new_region(
     maybe_region: Option<kvproto::metapb::Region>,
     maybe_store_id: Option<u64>,
 ) -> Region {
     let mut region = Region {
-        region: maybe_region.unwrap_or(make_new_region_meta()),
+        region: maybe_region.unwrap_or(Default::default()),
         ..Default::default()
     };
     if let Some(store_id) = maybe_store_id {
@@ -92,7 +84,7 @@ pub fn compare_vec<T: Ord>(a: &[T], b: &[T]) -> std::cmp::Ordering {
         .unwrap_or(a.len().cmp(&b.len()))
 }
 
-fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStoreServer) -> bool {
+fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStoreServer) {
     if region_id == 1 {
         // In some tests, region 1 is not created on all nodes after store is started.
         // We need to double check rocksdb before we are sure there are no region 1.
@@ -101,7 +93,7 @@ fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStor
             .get_msg_cf(engine_traits::CF_RAFT, &keys::region_state_key(1))
             .unwrap_or(None);
         if local_state.is_none() {
-            return false;
+            panic!("Can find region 1 in storage");
         }
         engine_store_server.kvstore.insert(
             region_id,
@@ -110,9 +102,7 @@ fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStor
                 Some(engine_store_server.id),
             )),
         );
-        return true;
     }
-    return false;
 }
 
 impl EngineStoreServerWrap {

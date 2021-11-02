@@ -165,10 +165,14 @@ pub struct Cluster<T: Simulator> {
     pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
 }
 
-pub static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
+static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
 static START: std::sync::Once = std::sync::Once::new();
 
-pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
+pub unsafe fn get_global_engine_helper_set() -> &'static Option<EngineHelperSet> {
+    &GLOBAL_ENGINE_HELPER_SET
+}
+
+fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     unsafe {
         let mut engine_store_server =
             Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
@@ -288,10 +292,6 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
-    pub fn make_global_ffi_helper_set(&mut self) {
-        init_global_ffi_helper_set();
-    }
-
     pub fn make_ffi_helper_set_no_bind(
         id: u64,
         engines: Engines<RocksEngine, RocksEngine>,
@@ -354,7 +354,7 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn start(&mut self) -> ServerResult<()> {
-        self.make_global_ffi_helper_set();
+        init_global_ffi_helper_set();
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
