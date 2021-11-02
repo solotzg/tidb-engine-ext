@@ -194,10 +194,11 @@ impl EngineStoreServerWrap {
                     // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
                     {
+                        let tikv_region = resp.get_split().get_left();
+
                         let target_region =
                             &mut (engine_store_server.kvstore.get_mut(&region_id).unwrap());
                         let target_region_meta = &mut target_region.region;
-
                         let target_version = target_region_meta.get_region_epoch().get_version();
                         let source_region = req.get_commit_merge().get_source();
                         let source_version = source_region.get_region_epoch().get_version();
@@ -206,10 +207,13 @@ impl EngineStoreServerWrap {
                         target_region_meta
                             .mut_region_epoch()
                             .set_version(new_version);
+                        assert_eq!(tikv_region.get_region_epoch().get_version(), new_version);
 
                         // No need to merge data
                         let source_at_left = if source_region.get_start_key().is_empty() {
                             true
+                        } else if target_region_meta.get_start_key().is_empty() {
+                            false
                         } else {
                             source_region
                                 .get_end_key()
@@ -220,8 +224,13 @@ impl EngineStoreServerWrap {
                         if source_at_left {
                             target_region_meta
                                 .set_start_key(source_region.get_start_key().to_vec());
+                            assert_eq!(
+                                tikv_region.get_start_key(),
+                                target_region_meta.get_start_key()
+                            );
                         } else {
                             target_region_meta.set_end_key(source_region.get_end_key().to_vec());
+                            assert_eq!(tikv_region.get_end_key(), target_region_meta.get_end_key());
                         }
 
                         {
