@@ -76,14 +76,6 @@ pub struct EngineStoreServerWrap {
     pub cluster_ptr: isize,
 }
 
-pub fn compare_vec<T: Ord>(a: &[T], b: &[T]) -> std::cmp::Ordering {
-    a.iter()
-        .zip(b)
-        .map(|(x, y)| x.cmp(y))
-        .find(|&ord| ord != std::cmp::Ordering::Equal)
-        .unwrap_or(a.len().cmp(&b.len()))
-}
-
 fn hacked_is_real_no_region(region_id: u64, engine_store_server: &mut EngineStoreServer) {
     if region_id == 1 {
         // In some tests, region 1 is not created on all nodes after store is started.
@@ -217,10 +209,6 @@ impl EngineStoreServerWrap {
                         let source_at_left = if source_region.get_start_key().is_empty() {
                             true
                         } else {
-                            // compare_vec(
-                            //     source_region.get_end_key(),
-                            //     target_region_meta.get_start_key(),
-                            // ) == std::cmp::Ordering::Equal
                             source_region
                                 .get_end_key()
                                 .cmp(target_region_meta.get_start_key())
