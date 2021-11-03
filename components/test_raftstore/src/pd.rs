@@ -1483,7 +1483,7 @@ impl PdClient for TestPdClient {
             let mut id = pdpb::SplitId::default();
             id.set_new_region_id(self.alloc_id().unwrap());
 
-            for peer in region.get_peers() {
+            for _peer in region.get_peers() {
                 let rid = self.alloc_id().unwrap();
                 id.mut_new_peer_ids().push(rid);
             }

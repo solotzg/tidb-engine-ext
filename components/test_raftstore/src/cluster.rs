@@ -40,11 +40,9 @@ use tikv_util::HandyRwLock;
 use super::*;
 use mock_engine_store::make_new_region;
 use mock_engine_store::EngineStoreServerWrap;
-use std::sync::atomic::{AtomicBool, AtomicU8};
+use std::sync::atomic::AtomicU8;
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
-
-use protobuf::Message;
 
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id

@@ -4,7 +4,7 @@ use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
 use engine_store_ffi::UnwrapExternCFunc;
 use engine_traits::Peekable;
-use engine_traits::{Engines, Iterable, MiscExt, SyncMutable};
+use engine_traits::{Engines, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use kvproto::raft_serverpb::{
     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
@@ -347,7 +347,8 @@ impl EngineStoreServerWrap {
                             cf_to_name(cf.to_owned().into()),
                             &tikv_key,
                             &val.to_slice().to_vec(),
-                        );
+                        )
+                        .map_err(std::convert::identity);
                     }
                     engine_store_ffi::WriteCmdType::Del => {
                         let tikv_key = keys::data_key(key.to_slice());
@@ -592,14 +593,14 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
     let kvstore = &mut (*store.engine_store_server).kvstore;
 
-    let mut req = kvproto::metapb::Region::default();
+    let mut region_meta = kvproto::metapb::Region::default();
     assert_ne!(region_buff.data, std::ptr::null());
     assert_ne!(region_buff.len, 0);
-    req.merge_from_bytes(region_buff.to_slice()).unwrap();
+    region_meta
+        .merge_from_bytes(region_buff.to_slice())
+        .unwrap();
 
-    let req_id = req.id;
-
-    let mut region = make_new_region(Some(req), Some(node_id));
+    let mut region = make_new_region(Some(region_meta), Some(node_id));
 
     debug!(
         "prehandle snapshot with len {} node_id {} peer_id {}",
@@ -622,8 +623,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
             let key = sst_reader.key();
             let value = sst_reader.value();
 
-            let cf_index = (*snapshot).type_ as u8;
-            let data = &mut region.data[cf_index as usize];
+            let cf_index = (*snapshot).type_ as usize;
+            let data = &mut region.data[cf_index];
             let _ = data.insert(key.to_slice().to_vec(), value.to_slice().to_vec());
 
             sst_reader.next();
@@ -677,7 +678,8 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         for (k, v) in std::mem::take(region.data.as_mut().get_mut(cf).unwrap()).into_iter() {
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
-            kv.put_cf(cf_name, &tikv_key, &v);
+            kv.put_cf(cf_name, &tikv_key, &v)
+                .map_err(std::convert::identity);
         }
     }
 }
@@ -696,23 +698,18 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
     let region = kvstore.get_mut(&region_id).unwrap().as_mut();
 
-    let index = header.index;
-    let term = header.term;
-
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views.add(i as usize);
+        let snapshot = snaps.views.add(i as usize);
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
 
         while sst_reader.remained() {
             let key = sst_reader.key();
             let value = sst_reader.value();
-
-            let cf_index = (*snapshot).type_ as u8;
-
             let tikv_key = keys::data_key(key.to_slice());
             let cf_name = cf_to_name((*snapshot).type_);
-            kv.put_cf(cf_name, &tikv_key, &value.to_slice());
+            kv.put_cf(cf_name, &tikv_key, &value.to_slice())
+                .map_err(std::convert::identity);
             sst_reader.next();
         }
     }
@@ -743,7 +740,8 @@ fn persist_apply_state(
             engine_traits::CF_RAFT,
             &apply_key,
             &region.apply_state.write_to_bytes().unwrap(),
-        );
+        )
+        .map_err(std::convert::identity);
     } else {
         let old_apply_state = old_apply_state.as_mut().unwrap();
         if persist_apply_index {
@@ -770,7 +768,8 @@ fn persist_apply_state(
                 engine_traits::CF_RAFT,
                 &apply_key,
                 &old_apply_state.write_to_bytes().unwrap(),
-            );
+            )
+            .map_err(std::convert::identity);
         }
     }
 }
