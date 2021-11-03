@@ -136,7 +136,6 @@ impl EngineStoreServerWrap {
                             engine_store_server
                                 .kvstore
                                 .get_mut(&region_meta.id)
-                                .as_mut()
                                 .unwrap()
                                 .region = region_meta.clone();
                         } else {
