@@ -193,7 +193,7 @@ impl EngineStoreServerWrap {
                     // We don't handle MergeState and PeerState here
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::CommitMerge {
                     {
-                        let tikv_region = resp.get_split().get_left();
+                        let tikv_region_meta = resp.get_split().get_left();
 
                         let target_region =
                             &mut (engine_store_server.kvstore.get_mut(&region_id).unwrap());
@@ -206,7 +206,10 @@ impl EngineStoreServerWrap {
                         target_region_meta
                             .mut_region_epoch()
                             .set_version(new_version);
-                        assert_eq!(tikv_region.get_region_epoch().get_version(), new_version);
+                        assert_eq!(
+                            target_region_meta.get_region_epoch().get_version(),
+                            new_version
+                        );
 
                         // No need to merge data
                         let source_at_left = if source_region.get_start_key().is_empty() {
@@ -224,12 +227,15 @@ impl EngineStoreServerWrap {
                             target_region_meta
                                 .set_start_key(source_region.get_start_key().to_vec());
                             assert_eq!(
-                                tikv_region.get_start_key(),
+                                tikv_region_meta.get_start_key(),
                                 target_region_meta.get_start_key()
                             );
                         } else {
                             target_region_meta.set_end_key(source_region.get_end_key().to_vec());
-                            assert_eq!(tikv_region.get_end_key(), target_region_meta.get_end_key());
+                            assert_eq!(
+                                tikv_region_meta.get_end_key(),
+                                target_region_meta.get_end_key()
+                            );
                         }
 
                         {
@@ -250,17 +256,17 @@ impl EngineStoreServerWrap {
                 } else if req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeer
                     || req.cmd_type == kvproto::raft_cmdpb::AdminCmdType::ChangePeerV2
                 {
-                    let new_region = resp.get_change_peer().get_region();
+                    let new_region_meta = resp.get_change_peer().get_region();
 
                     let old_peer_id = {
                         let old_region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
-                        old_region.region = new_region.clone();
+                        old_region.region = new_region_meta.clone();
                         old_region.apply_state.set_applied_index(header.index);
                         old_region.peer.get_id()
                     };
 
                     let mut do_remove = true;
-                    for peer in new_region.get_peers() {
+                    for peer in new_region_meta.get_peers() {
                         if peer.get_id() == old_peer_id {
                             // Should not remove region
                             do_remove = false;
@@ -696,7 +702,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let region_id = header.region_id;
     let kvstore = &mut (*store.engine_store_server).kvstore;
     let kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
-    let region = kvstore.get_mut(&region_id).unwrap().as_mut();
+    let region = kvstore.get_mut(&region_id).unwrap();
 
     for i in 0..snaps.len {
         let snapshot = snaps.views.add(i as usize);
