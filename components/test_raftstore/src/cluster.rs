@@ -173,31 +173,26 @@ pub unsafe fn get_global_engine_helper_set() -> &'static Option<EngineHelperSet>
 }
 
 fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
-    unsafe {
-        let mut engine_store_server =
-            Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
-        let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
-            &mut *engine_store_server,
-            None,
-            0,
-        ));
-        let engine_store_server_helper =
-            Box::new(mock_engine_store::gen_engine_store_server_helper(
-                std::pin::Pin::new(&*engine_store_server_wrap),
-            ));
-        let ptr = &*engine_store_server_helper
-            as *const raftstore::engine_store_ffi::EngineStoreServerHelper
-            as *mut u8;
-        // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
-        (
-            EngineHelperSet {
-                engine_store_server,
-                engine_store_server_wrap,
-                engine_store_server_helper,
-            },
-            ptr,
-        )
-    }
+    let mut engine_store_server = Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
+    let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+        &mut *engine_store_server,
+        None,
+        0,
+    ));
+    let engine_store_server_helper = Box::new(mock_engine_store::gen_engine_store_server_helper(
+        std::pin::Pin::new(&*engine_store_server_wrap),
+    ));
+    let ptr = &*engine_store_server_helper
+        as *const raftstore::engine_store_ffi::EngineStoreServerHelper as *mut u8;
+    // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
+    (
+        EngineHelperSet {
+            engine_store_server,
+            engine_store_server_wrap,
+            engine_store_server_helper,
+        },
+        ptr,
+    )
 }
 
 pub fn init_global_ffi_helper_set() {
