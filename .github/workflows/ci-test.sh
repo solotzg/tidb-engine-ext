@@ -59,7 +59,8 @@ cargo test --package tests --test integrations -- raftstore::test_single && \
 # Sometimes fails
 cargo test --package tests --test integrations -- raftstore::test_merge && \
 cargo test --package tests --test integrations -- raftstore::test_tombstone && \
-
+cargo test --package tests --test integrations -- server::kv_service::test_read_index_check_memory_locks && \
+cargo test --package tests --test integrations -- raftstore::test_batch_read_index && \
 
 if [ ${GENERATE_COV:-0} -ne 0 ]; then
   grcov . --binary-path target/debug/ . -t html --branch --ignore-not-existing -o ./coverage/
