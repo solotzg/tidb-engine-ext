@@ -11,6 +11,12 @@ use raft::eraftpb::{ConfChangeType, MessageType};
 use test_raftstore::*;
 use tikv_util::HandyRwLock;
 
+const INTERVAL_TIMES: u32 = if cfg!(feature = "test-raftstore-proxy") {
+    5
+} else {
+    2
+};
+
 #[test]
 fn test_proposal_prevent_sleep() {
     let mut cluster = new_node_cluster(0, 3);
@@ -299,7 +305,7 @@ fn test_inconsistent_configuration() {
             }))
             .when(filter.clone()),
     ));
-    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * 2);
+    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * INTERVAL_TIMES);
     assert!(!awakened.load(Ordering::SeqCst));
 
     // Simulate rolling disable hibernate region in followers
@@ -317,7 +323,7 @@ fn test_inconsistent_configuration() {
     );
     awakened.store(false, Ordering::SeqCst);
     filter.store(true, Ordering::SeqCst);
-    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * 2);
+    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * INTERVAL_TIMES);
     // Leader should keep awake as peer 3 won't agree to sleep.
     assert!(awakened.load(Ordering::SeqCst));
     cluster.reset_leader_of_region(1);
@@ -396,7 +402,7 @@ fn test_hibernate_feature_gate() {
     );
     awakened.store(false, Ordering::SeqCst);
     filter.store(true, Ordering::SeqCst);
-    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * 2);
+    thread::sleep(cluster.cfg.raft_store.raft_heartbeat_interval() * INTERVAL_TIMES);
     // Leader can go to sleep as version requirement is met.
     assert!(!awakened.load(Ordering::SeqCst));
 }

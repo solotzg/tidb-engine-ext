@@ -1538,9 +1538,14 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn try_merge(&mut self, source: u64, target: u64) -> RaftCmdResponse {
+        let duration = if cfg!(feature = "test-raftstore-proxy") {
+            15
+        } else {
+            5
+        };
         self.call_command_on_leader(
             self.new_prepare_merge(source, target),
-            Duration::from_secs(5),
+            Duration::from_secs(duration),
         )
         .unwrap()
     }

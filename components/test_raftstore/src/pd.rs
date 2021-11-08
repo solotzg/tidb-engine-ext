@@ -1100,9 +1100,14 @@ impl TestPdClient {
     }
 
     pub fn region_leader_must_be(&self, region_id: u64, peer: metapb::Peer) {
-        for _ in 0..1000 {
+        let num = if cfg!(feature = "test-raftstore-proxy") {
+            3000
+        } else {
+            1000
+        };
+        for _ in 0..num {
             if cfg!(feature = "test-raftstore-proxy") {
-                sleep_ms(30);
+                sleep_ms(20);
             } else {
                 sleep_ms(10);
             }
