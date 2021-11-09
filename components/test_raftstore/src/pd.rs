@@ -1073,7 +1073,7 @@ impl TestPdClient {
         self.check_merged_timeout(
             from,
             Duration::from_secs(if cfg!(feature = "test-raftstore-proxy") {
-                40
+                60
             } else {
                 15
             }),
