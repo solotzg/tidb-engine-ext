@@ -1085,11 +1085,16 @@ impl TestPdClient {
     }
 
     pub fn check_merged_timeout(&self, from: u64, duration: Duration) {
+        let duration2 = if cfg!(feature = "test-raftstore-proxy") {
+            Duration::from_millis((duration.as_millis() as u64) * 5 as u64)
+        } else {
+            duration
+        };
         let timer = Instant::now();
         loop {
             let region = block_on(self.get_region_by_id(from)).unwrap();
             if let Some(r) = region {
-                if timer.elapsed() > duration {
+                if timer.elapsed() > duration2 {
                     panic!("region {:?} is still not merged.", r);
                 }
             } else {
