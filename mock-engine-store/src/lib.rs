@@ -305,7 +305,10 @@ impl EngineStoreServerWrap {
                 do_handle_admin_raft_cmd(o.get_mut(), &mut (*self.engine_store_server))
             }
             std::collections::hash_map::Entry::Vacant(v) => {
-                warn!("handle_admin_raft_cmd region {} not found at node {}", region_id, node_id);
+                warn!(
+                    "handle_admin_raft_cmd region {} not found at node {}",
+                    region_id, node_id
+                );
 
                 do_handle_admin_raft_cmd(
                     v.insert(Box::new(make_new_region(None, Some(node_id)))),
@@ -384,7 +387,10 @@ impl EngineStoreServerWrap {
                 do_handle_write_raft_cmd(o.get_mut())
             }
             std::collections::hash_map::Entry::Vacant(v) => {
-                warn!("handle_write_raft_cmd region {} not found at node {}", region_id, node_id);
+                warn!(
+                    "handle_write_raft_cmd region {} not found at node {}",
+                    region_id, node_id
+                );
                 // do_handle_write_raft_cmd(v.insert(Box::new(make_new_region(None, Some(node_id)))))
                 ffi_interfaces::EngineStoreApplyRes::NotFound
             }
