@@ -1112,7 +1112,7 @@ impl TestPdClient {
         };
         for _ in 0..num {
             if cfg!(feature = "test-raftstore-proxy") {
-                sleep_ms(20);
+                sleep_ms(30);
             } else {
                 sleep_ms(10);
             }
