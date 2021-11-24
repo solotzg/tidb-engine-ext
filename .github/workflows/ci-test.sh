@@ -66,7 +66,7 @@ cargo test --package tests --test integrations -- raftstore::test_merge $TEST_TH
 cargo test --package tests --test integrations -- raftstore::test_tombstone $TEST_THREAD && \
 cargo test --package tests --test integrations -- server::kv_service::test_read_index_check_memory_locks $TEST_THREAD && \
 cargo test --package tests --test integrations -- raftstore::test_batch_read_index $TEST_THREAD && \
-cargo test --package tests --test integrations -- import::test_upload_sst $TEST_THREAD && \
+cargo test --package tests --test integrations -- import::test_sst_service::test_upload_sst $TEST_THREAD && \
 
 
 if [ ${GENERATE_COV:-0} -ne 0 ]; then

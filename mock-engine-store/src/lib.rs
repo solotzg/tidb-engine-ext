@@ -310,11 +310,11 @@ impl EngineStoreServerWrap {
                     region_id, node_id
                 );
 
-                do_handle_admin_raft_cmd(
-                    v.insert(Box::new(make_new_region(None, Some(node_id)))),
-                    &mut (*self.engine_store_server),
-                )
-                // ffi_interfaces::EngineStoreApplyRes::NotFound
+                // do_handle_admin_raft_cmd(
+                //     v.insert(Box::new(make_new_region(None, Some(node_id)))),
+                //     &mut (*self.engine_store_server),
+                // )
+                ffi_interfaces::EngineStoreApplyRes::NotFound
             }
         }
     }
