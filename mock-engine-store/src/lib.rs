@@ -726,11 +726,8 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         }
     }
 
-    if snaps.len > 0 {
-        ffi_interfaces::EngineStoreApplyRes::Persist
-    } else {
-        ffi_interfaces::EngineStoreApplyRes::None
-    }
+    // Since tics#1811, Br/Lightning will always ingest both WRITE and DEFAULT, so we can always persist, rather than wait.
+    ffi_interfaces::EngineStoreApplyRes::Persist
 }
 
 fn persist_apply_state(
