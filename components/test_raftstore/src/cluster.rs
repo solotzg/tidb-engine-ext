@@ -1472,7 +1472,16 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn wait_region_split(&mut self, region: &metapb::Region) {
-        self.wait_region_split_max_cnt(region, 20, 250, true);
+        self.wait_region_split_max_cnt(
+            region,
+            20,
+            if cfg!(feature = "test-raftstore-proxy") {
+                250
+            } else {
+                400
+            },
+            true,
+        );
     }
 
     pub fn wait_region_split_max_cnt(
