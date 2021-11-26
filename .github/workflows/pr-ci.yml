@@ -9,7 +9,7 @@ on:
       - 'raftstore-proxy*'
 
 jobs:
-  build-check-test:
+  build-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
