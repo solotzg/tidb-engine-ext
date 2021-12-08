@@ -778,6 +778,11 @@ impl EngineStoreServerHelper {
         let config = unsafe { (self.fn_get_config.into_inner())(self.inner, full.into()) };
         config.view.to_slice().to_vec()
     }
+
+    pub fn set_store_id(&self, store_id: u64) {
+        debug_assert!(self.fn_set_store_id.is_some());
+        unsafe { (self.fn_set_store_id.into_inner())(self.inner, store_id) }
+    }
 }
 
 impl Clone for SSTReaderPtr {

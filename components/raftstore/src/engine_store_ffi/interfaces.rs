@@ -363,8 +363,11 @@ pub mod root {
                     full: u8,
                 ) -> root::DB::CppStrWithView,
             >,
+            pub fn_set_store_id: ::std::option::Option<
+                unsafe extern "C" fn(arg1: *mut root::DB::EngineStoreServerWrap, store_id: u64),
+            >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 17680868848344786018;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 15480525282142118203;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
