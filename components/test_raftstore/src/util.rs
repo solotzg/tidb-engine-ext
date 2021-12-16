@@ -607,7 +607,7 @@ pub fn must_error_read_on_peer<T: Simulator>(
 
 pub fn must_contains_error(resp: &RaftCmdResponse, msg: &str) {
     let header = resp.get_header();
-    assert!(header.has_error());
+    assert!(header.has_error(), "should have err {}", msg);
     let err_msg = header.get_error().get_message();
     assert!(err_msg.contains(msg), "{:?}", resp);
 }
