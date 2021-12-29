@@ -779,9 +779,10 @@ impl EngineStoreServerHelper {
         config.view.to_slice().to_vec()
     }
 
-    pub fn set_store_id(&self, store_id: u64) {
-        debug_assert!(self.fn_set_store_id.is_some());
-        unsafe { (self.fn_set_store_id.into_inner())(self.inner, store_id) }
+    pub fn set_store(&self, store: metapb::Store) {
+        debug_assert!(self.fn_set_store.is_some());
+        let store = ProtoMsgBaseBuff::new(&store);
+        unsafe { (self.fn_set_store.into_inner())(self.inner, Pin::new(&store).into()) }
     }
 }
 
