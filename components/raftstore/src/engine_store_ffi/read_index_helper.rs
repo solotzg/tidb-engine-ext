@@ -4,21 +4,29 @@ use engine_rocks::RocksEngine;
 use engine_traits::RaftEngine;
 use futures::executor::block_on;
 use futures_util::compat::Future01CompatExt;
+use futures_util::future::BoxFuture;
 use kvproto::kvrpcpb::{ReadIndexRequest, ReadIndexResponse};
 use kvproto::raft_cmdpb::{CmdType, RaftCmdRequest, RaftRequestHeader, Request as RaftRequest};
+use std::future::Future;
 use std::time::{Duration, Instant};
 use tikv_util::future::paired_future_callback;
+use tikv_util::{debug, error};
 use txn_types::Key;
 
-use std::future::Future;
-use tikv_util::{debug, error};
+pub type ArcNotifyWaker = std::sync::Arc<NotifyWaker>;
 
 pub trait ReadIndex: Sync + Send {
-    fn batch_read_index(
+    fn batch_read_index(    // To remove
         &self,
         req: Vec<ReadIndexRequest>,
         timeout: Duration,
     ) -> Vec<(ReadIndexResponse, u64)>;
+    fn make_read_index_task(&self, req: ReadIndexRequest) -> Option<ReadIndexTask>;
+    fn poll_read_index_task(
+        &self,
+        task: &mut ReadIndexTask,
+        waker: Option<&ArcNotifyWaker>,
+    ) -> Option<ReadIndexResponse>;
 }
 
 pub struct ReadIndexClient<ER: RaftEngine> {
@@ -129,7 +137,7 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
 
             futures::pin_mut!(read_index_fut);
             let deadline = Instant::now() + timeout;
-            let delay = tikv_util::timer::READ_INDEX_TIMER_HANDLE
+            let delay = tikv_util::timer::PROXY_TIMER_HANDLE
                 .delay(deadline)
                 .compat();
             let ret = futures::future::select(read_index_fut, delay);
@@ -163,5 +171,93 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
         assert_eq!(req_vec.len(), read_index_res.len());
         debug!("batch_read_index success"; "response"=>?read_index_res);
         read_index_res
+    }
+
+    fn make_read_index_task(&self, req: ReadIndexRequest) -> Option<ReadIndexTask> {
+        let fut = {
+            let region_id = req.get_context().get_region_id();
+            let mut cmd = RaftCmdRequest::default();
+            {
+                let mut header = RaftRequestHeader::default();
+                let mut inner_req = RaftRequest::default();
+                inner_req.set_cmd_type(CmdType::ReadIndex);
+                inner_req.mut_read_index().set_start_ts(req.get_start_ts());
+                for r in req.get_ranges() {
+                    let mut range = kvproto::kvrpcpb::KeyRange::default();
+                    range.set_start_key(Key::from_raw(r.get_start_key()).into_encoded());
+                    range.set_end_key(Key::from_raw(r.get_end_key()).into_encoded());
+                    inner_req.mut_read_index().mut_key_ranges().push(range);
+                }
+                header.set_region_id(region_id);
+                header.set_peer(req.get_context().get_peer().clone());
+                header.set_region_epoch(req.get_context().get_region_epoch().clone());
+                cmd.set_header(header);
+                cmd.set_requests(vec![inner_req].into());
+            }
+
+            let (cb, f) = paired_future_callback();
+
+            if let Err(_) = self.routers[region_id as usize % self.routers.len()]
+                .lock()
+                .unwrap()
+                .send_command(cmd, Callback::Read(cb))
+            {
+                return None;
+            } else {
+                Some(f)
+            }
+        };
+
+        let async_task = async {
+            let res = match fut {
+                None => None,
+                Some(fut) => match fut.await {
+                    Err(_) => None,
+                    Ok(e) => Some(e),
+                },
+            };
+            return into_read_index_response(res);
+        };
+
+        Some(ReadIndexTask {
+            future: Box::pin(async_task),
+        })
+    }
+
+    fn poll_read_index_task(
+        &self,
+        task: &mut ReadIndexTask,
+        waker: Option<&ArcNotifyWaker>,
+    ) -> Option<ReadIndexResponse> {
+        let mut func = |cx: &mut std::task::Context| {
+            let fut = &mut task.future;
+            match fut.as_mut().poll(cx) {
+                std::task::Poll::Pending => None,
+                std::task::Poll::Ready(e) => Some(e),
+            }
+        };
+        if let Some(waker) = waker {
+            let waker = futures::task::waker_ref(waker);
+            let cx = &mut std::task::Context::from_waker(&*waker);
+            func(cx)
+        } else {
+            let waker = futures::task::noop_waker();
+            let cx = &mut std::task::Context::from_waker(&waker);
+            func(cx)
+        }
+    }
+}
+
+pub struct ReadIndexTask {
+    future: BoxFuture<'static, ReadIndexResponse>,
+}
+
+pub struct NotifyWaker {
+    pub inner: Box<dyn Fn() + Send + Sync>,
+}
+
+impl futures::task::ArcWake for NotifyWaker {
+    fn wake_by_ref(arc_self: &std::sync::Arc<Self>) {
+        (arc_self.inner)();
     }
 }
