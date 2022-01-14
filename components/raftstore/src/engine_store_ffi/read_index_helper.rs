@@ -16,7 +16,8 @@ use txn_types::Key;
 pub type ArcNotifyWaker = std::sync::Arc<NotifyWaker>;
 
 pub trait ReadIndex: Sync + Send {
-    fn batch_read_index(    // To remove
+    // To remove
+    fn batch_read_index(
         &self,
         req: Vec<ReadIndexRequest>,
         timeout: Duration,

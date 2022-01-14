@@ -16,7 +16,7 @@ fn test_normal() {
     }
 
     // Try to start this node, return after persisted some keys.
-    let result = cluster.start();
+    let _ = cluster.start();
 
     let k = b"k1";
     let v = b"v1";

@@ -176,7 +176,7 @@ pub extern "C" fn ffi_gc_rust_ptr(
         RawRustPtrType::ArcFutureWaker => unsafe {
             Box::from_raw(data as *mut read_index_helper::ArcNotifyWaker);
         },
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -214,6 +214,8 @@ pub extern "C" fn ffi_make_async_waker(
     wake_fn: Option<unsafe extern "C" fn(RawVoidPtr)>,
     data: RawCppPtr,
 ) -> RawRustPtr {
+    debug_assert!(wake_fn.is_some());
+
     struct RawCppPtrWrap(RawCppPtr);
     // This pointer should be thread safe, just wrap it.
     unsafe impl Sync for RawCppPtrWrap {}
@@ -977,6 +979,8 @@ impl Clone for RaftStoreProxyPtr {
         };
     }
 }
+
+impl Copy for RaftStoreProxyPtr {}
 
 impl From<usize> for ColumnFamilyType {
     fn from(i: usize) -> Self {
