@@ -2,9 +2,6 @@
 
 use std::sync::{Arc, RwLock};
 
-use engine_traits::{IterOptions, Iterable, Iterator, Peekable};
-use kvproto::{metapb, raft_serverpb};
-use mock_engine_store;
 use test_raftstore::*;
 #[test]
 fn test_normal() {

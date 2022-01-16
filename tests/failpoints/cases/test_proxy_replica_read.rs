@@ -89,7 +89,7 @@ impl Waker {
     }
 }
 
-fn single_blocked_read_index(
+fn blocked_read_index(
     req: &kvproto::kvrpcpb::ReadIndexRequest,
     ffi_helper: &raftstore::engine_store_ffi::RaftStoreProxyFFIHelper,
     waker: Option<&Waker>,
@@ -99,19 +99,19 @@ fn single_blocked_read_index(
         ptr: std::ptr::null_mut(),
         type_: 0,
     };
-    let mut tasks = std::collections::LinkedList::new();
+    let mut task;
     let mut resp = kvproto::kvrpcpb::ReadIndexResponse::default();
 
     if 0 != ffi_make_read_index_task(ffi_helper.proxy_ptr, Pin::new(&req).into(), &mut ptr) {
         GC_MONITOR.add(&ptr, 1);
-        tasks.push_back(ReadIndexFutureTask {
+        task = Some(ReadIndexFutureTask {
             ptr: RawRustPtrWrap(ptr),
         });
     } else {
         return None;
     }
-    while !tasks.is_empty() {
-        let t = tasks.front().unwrap();
+    while task.is_some() {
+        let t = task.as_ref().unwrap();
         let waker_ptr = match waker {
             None => std::ptr::null_mut(),
             Some(w) => w.get_raw_waker(),
@@ -122,7 +122,7 @@ fn single_blocked_read_index(
             &mut resp as *mut _ as RawVoidPtr,
             waker_ptr,
         ) {
-            tasks.pop_front().unwrap();
+            task = None;
         } else {
             if let Some(w) = waker {
                 w.wait_for(Duration::from_secs(5));
@@ -175,7 +175,7 @@ fn test_duplicate_read_index_ctx() {
             context.set_region_epoch(region.get_region_epoch().clone());
         }
         let w = if *f { Some(&waker) } else { None };
-        let resp = single_blocked_read_index(&request, &*ffi_helper.proxy_helper, w).unwrap();
+        let resp = blocked_read_index(&request, &*ffi_helper.proxy_helper, w).unwrap();
         assert!(resp.get_read_index() != 0);
         assert!(!resp.has_region_error());
         assert!(!resp.has_locked());
