@@ -81,7 +81,6 @@ impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_handle_get_proxy_status(proxy_ptr: RaftStoreProxyPtr) -> RaftProxyStatus {
     unsafe {
         let r = proxy_ptr.as_ref().status.load(Ordering::SeqCst);
@@ -89,12 +88,10 @@ pub extern "C" fn ffi_handle_get_proxy_status(proxy_ptr: RaftStoreProxyPtr) -> R
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_is_encryption_enabled(proxy_ptr: RaftStoreProxyPtr) -> u8 {
     unsafe { proxy_ptr.as_ref().key_manager.is_some().into() }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_encryption_method(
     proxy_ptr: RaftStoreProxyPtr,
 ) -> interfaces::root::DB::EncryptionMethod {
@@ -108,7 +105,6 @@ pub extern "C" fn ffi_encryption_method(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
@@ -160,7 +156,6 @@ impl Into<u32> for RawRustPtrType {
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_gc_rust_ptr(
     data: RawVoidPtr,
     type_: crate::engine_store_ffi::interfaces::root::DB::RawRustPtrType,
@@ -180,7 +175,6 @@ pub extern "C" fn ffi_gc_rust_ptr(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_make_read_index_task(
     proxy_ptr: RaftStoreProxyPtr,
     req_view: BaseBuffView,
@@ -209,7 +203,6 @@ pub extern "C" fn ffi_make_read_index_task(
     };
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_make_async_waker(
     wake_fn: Option<unsafe extern "C" fn(RawVoidPtr)>,
     data: RawCppPtr,
@@ -235,7 +228,6 @@ pub extern "C" fn ffi_make_async_waker(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_poll_read_index_task(
     proxy_ptr: RaftStoreProxyPtr,
     task_ptr: RawVoidPtr,
@@ -302,7 +294,6 @@ impl FileEncryptionInfoRaw {
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_handle_get_file(
     proxy_ptr: RaftStoreProxyPtr,
     name: BaseBuffView,
@@ -327,7 +318,6 @@ pub extern "C" fn ffi_handle_get_file(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_handle_new_file(
     proxy_ptr: RaftStoreProxyPtr,
     name: BaseBuffView,
@@ -352,7 +342,6 @@ pub extern "C" fn ffi_handle_new_file(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_handle_delete_file(
     proxy_ptr: RaftStoreProxyPtr,
     name: BaseBuffView,
@@ -378,7 +367,6 @@ pub extern "C" fn ffi_handle_delete_file(
     }
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_handle_link_file(
     proxy_ptr: RaftStoreProxyPtr,
     src: BaseBuffView,
@@ -423,7 +411,6 @@ impl From<RawVoidPtr> for SSTReaderPtr {
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_make_sst_reader(
     view: SSTView,
     proxy_ptr: RaftStoreProxyPtr,
@@ -438,7 +425,6 @@ unsafe extern "C" fn ffi_make_sst_reader(
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_sst_reader_remained(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
@@ -449,7 +435,6 @@ unsafe extern "C" fn ffi_sst_reader_remained(
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_sst_reader_key(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
@@ -460,7 +445,6 @@ unsafe extern "C" fn ffi_sst_reader_key(
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_sst_reader_val(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
@@ -471,7 +455,6 @@ unsafe extern "C" fn ffi_sst_reader_val(
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_sst_reader_next(mut reader: SSTReaderPtr, type_: ColumnFamilyType) {
     match type_ {
         ColumnFamilyType::Lock => reader.as_mut_lock().ffi_next(),
@@ -479,7 +462,6 @@ unsafe extern "C" fn ffi_sst_reader_next(mut reader: SSTReaderPtr, type_: Column
     }
 }
 
-#[no_mangle]
 unsafe extern "C" fn ffi_gc_sst_reader(reader: SSTReaderPtr, type_: ColumnFamilyType) {
     match type_ {
         ColumnFamilyType::Lock => {
