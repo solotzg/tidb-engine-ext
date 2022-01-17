@@ -134,7 +134,6 @@ fn single_blocked_read_index(
     Some(resp)
 }
 
-#[no_mangle]
 extern "C" fn ffi_wake(data: RawVoidPtr) {
     let notifier = unsafe { &mut *(data as *mut mock_engine_store::ProxyNotifier) };
     notifier.wake()
