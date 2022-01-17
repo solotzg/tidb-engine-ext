@@ -147,8 +147,7 @@ struct RaftStoreProxyFFIHelper {
   SSTReaderInterfaces sst_reader_interfaces;
 
   uint32_t (*fn_server_info)(RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
-  uint8_t (*fn_make_read_index_task)(RaftStoreProxyPtr, BaseBuffView,
-                                     RawRustPtr *);
+  RawRustPtr (*fn_make_read_index_task)(RaftStoreProxyPtr, BaseBuffView);
   RawRustPtr (*fn_make_async_waker)(void (*wake_fn)(RawVoidPtr),
                                     RawCppPtr data);
   uint8_t (*fn_poll_read_index_task)(RaftStoreProxyPtr, RawVoidPtr task,

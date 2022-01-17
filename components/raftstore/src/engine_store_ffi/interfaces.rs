@@ -277,8 +277,7 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
                     arg2: root::DB::BaseBuffView,
-                    arg3: *mut root::DB::RawRustPtr,
-                ) -> u8,
+                ) -> root::DB::RawRustPtr,
             >,
             pub fn_make_async_waker: ::std::option::Option<
                 unsafe extern "C" fn(
@@ -404,7 +403,7 @@ pub mod root {
                 ),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 10136504463948668656;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 7978323995266829656;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

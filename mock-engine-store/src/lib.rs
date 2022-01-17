@@ -265,7 +265,7 @@ impl ProxyNotifier {
     pub fn blocked_wait_for(&self, timeout: Duration) {
         // if flag from false to false, wait for notification.
         // if flag from true to false, do nothing.
-        if !self.flag.swap(false, std::sync::atomic::Ordering::Acquire) {
+        if !self.flag.swap(false, std::sync::atomic::Ordering::AcqRel) {
             {
                 let lock = self.mutex.lock().unwrap();
                 if !self.flag.load(std::sync::atomic::Ordering::Acquire) {
@@ -279,7 +279,7 @@ impl ProxyNotifier {
     pub fn wake(&self) {
         // if flag from false -> true, then wake up.
         // if flag from true -> true, do nothing.
-        if !self.flag.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        if !self.flag.swap(true, std::sync::atomic::Ordering::AcqRel) {
             let _ = self.mutex.lock().unwrap();
             self.cv.notify_one();
         }

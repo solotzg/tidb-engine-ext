@@ -94,22 +94,21 @@ fn blocked_read_index(
     ffi_helper: &raftstore::engine_store_ffi::RaftStoreProxyFFIHelper,
     waker: Option<&Waker>,
 ) -> Option<kvproto::kvrpcpb::ReadIndexResponse> {
-    let req = ProtoMsgBaseBuff::new(req);
-    let mut ptr = RawRustPtr {
-        ptr: std::ptr::null_mut(),
-        type_: 0,
-    };
-    let mut task;
     let mut resp = kvproto::kvrpcpb::ReadIndexResponse::default();
 
-    if 0 != ffi_make_read_index_task(ffi_helper.proxy_ptr, Pin::new(&req).into(), &mut ptr) {
-        GC_MONITOR.add(&ptr, 1);
-        task = Some(ReadIndexFutureTask {
-            ptr: RawRustPtrWrap(ptr),
-        });
-    } else {
-        return None;
-    }
+    let mut task = {
+        let req = ProtoMsgBaseBuff::new(req);
+        let ptr = ffi_make_read_index_task(ffi_helper.proxy_ptr, Pin::new(&req).into());
+        if ptr.is_null() {
+            return None;
+        } else {
+            GC_MONITOR.add(&ptr, 1);
+            Some(ReadIndexFutureTask {
+                ptr: RawRustPtrWrap(ptr),
+            })
+        }
+    };
+
     while task.is_some() {
         let t = task.as_ref().unwrap();
         let waker_ptr = match waker {

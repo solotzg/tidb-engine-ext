@@ -175,11 +175,25 @@ pub extern "C" fn ffi_gc_rust_ptr(
     }
 }
 
+impl Default for RawRustPtr {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            type_: RawRustPtrType::None.into(),
+        }
+    }
+}
+
+impl RawRustPtr {
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
 pub extern "C" fn ffi_make_read_index_task(
     proxy_ptr: RaftStoreProxyPtr,
     req_view: BaseBuffView,
-    res: *mut RawRustPtr,
-) -> u8 {
+) -> RawRustPtr {
     assert!(!proxy_ptr.is_null());
     let mut req = kvrpcpb::ReadIndexRequest::default();
     req.merge_from_bytes(req_view.to_slice()).unwrap();
@@ -191,14 +205,13 @@ pub extern "C" fn ffi_make_read_index_task(
     };
     return match task {
         None => {
-            0 // Full or Disconnected
+            RawRustPtr::default() // Full or Disconnected
         }
         Some(task) => unsafe {
-            *res = RawRustPtr {
+            RawRustPtr {
                 ptr: Box::into_raw(Box::new(task)) as *mut _,
                 type_: RawRustPtrType::ReadIndexTask.into(),
-            };
-            1
+            }
         },
     };
 }
