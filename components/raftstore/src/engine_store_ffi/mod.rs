@@ -207,11 +207,9 @@ pub extern "C" fn ffi_make_read_index_task(
         None => {
             RawRustPtr::default() // Full or Disconnected
         }
-        Some(task) => unsafe {
-            RawRustPtr {
-                ptr: Box::into_raw(Box::new(task)) as *mut _,
-                type_: RawRustPtrType::ReadIndexTask.into(),
-            }
+        Some(task) => RawRustPtr {
+            ptr: Box::into_raw(Box::new(task)) as *mut _,
+            type_: RawRustPtrType::ReadIndexTask.into(),
         },
     };
 }
