@@ -16,7 +16,7 @@ fn test_normal() {
     }
 
     // Try to start this node, return after persisted some keys.
-    let result = cluster.start();
+    let _ = cluster.start();
 
     let k = b"k1";
     let v = b"v1";
@@ -24,6 +24,13 @@ fn test_normal() {
     for id in cluster.engines.keys() {
         must_get_equal(&cluster.get_engine(*id), k, v);
         // must_get_equal(db, k, v);
+    }
+    let region_id = cluster.get_region(k).get_id();
+    unsafe {
+        for (k, ffi_set) in cluster.ffi_helper_set.iter() {
+            let f = ffi_set.proxy_helper.fn_get_region_peer_state.unwrap();
+            assert_eq!(f(ffi_set.proxy_helper.proxy_ptr.clone(), region_id), 0);
+        }
     }
 
     cluster.shutdown();

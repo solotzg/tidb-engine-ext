@@ -141,6 +141,7 @@ struct RaftStoreProxyFFIHelper {
   SSTReaderInterfaces sst_reader_interfaces;
 
   uint32_t (*fn_server_info)(RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
+  int32_t (*fn_get_region_peer_state)(RaftStoreProxyPtr, uint64_t region_id);
 };
 
 struct EngineStoreServerHelper {

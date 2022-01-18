@@ -146,6 +146,7 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
                     tikv.router.clone(),
                     SysQuota::cpu_cores_quota() as usize * 2,
                 )),
+                kv_engine: None,
             };
 
             let proxy_helper = {
@@ -177,6 +178,7 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             let (engines, engines_info) = tikv.init_raw_engines(Some(limiter.clone()));
             limiter.set_low_priority_io_adjustor_if_needed(Some(engines_info.clone()));
             tikv.init_engines(engines.clone());
+            proxy.kv_engine = Some(engines.kv.clone());
             let server_config = tikv.init_servers();
             tikv.register_services();
             tikv.init_metrics_flusher(fetcher, engines_info);

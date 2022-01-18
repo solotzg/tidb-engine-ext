@@ -7,8 +7,8 @@ use encryption::DataKeyManager;
 use engine_rocks::encryption::get_env;
 use engine_rocks::{RocksSstIterator, RocksSstReader};
 use engine_traits::{
-    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, SeekKey, SstReader,
-    CF_DEFAULT, CF_LOCK, CF_WRITE,
+    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, Peekable, SeekKey,
+    SstReader, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use protobuf::Message;
@@ -56,6 +56,7 @@ pub struct RaftStoreProxy {
     pub status: AtomicU8,
     pub key_manager: Option<Arc<DataKeyManager>>,
     pub read_index_client: Box<dyn read_index_helper::ReadIndex>,
+    pub kv_engine: Option<engine_rocks::RocksEngine>,
 }
 
 impl RaftStoreProxy {
@@ -77,6 +78,30 @@ impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
     fn from(ptr: &RaftStoreProxy) -> Self {
         Self {
             inner: ptr as *const _ as ConstRawVoidPtr,
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_get_region_peer_state(proxy_ptr: RaftStoreProxyPtr, region_id: u64) -> i32 {
+    unsafe {
+        assert!(!proxy_ptr.is_null());
+        let region_state_key = keys::region_state_key(region_id);
+        match proxy_ptr.as_ref().kv_engine.as_ref() {
+            None => -1,
+            Some(kv) => {
+                let region_state = kv.get_msg_cf::<kvproto::raft_serverpb::RegionLocalState>(
+                    engine_traits::CF_RAFT,
+                    &region_state_key,
+                );
+                match region_state {
+                    Err(e) => -1,
+                    Ok(r) => match r {
+                        Some(v) => v.get_state() as i32,
+                        None => -1,
+                    },
+                }
+            }
         }
     }
 }
@@ -379,6 +404,7 @@ impl RaftStoreProxyFFIHelper {
                 fn_gc: Some(ffi_gc),
             },
             fn_server_info: None,
+            fn_get_region_peer_state: Some(ffi_get_region_peer_state),
         }
     }
 }
