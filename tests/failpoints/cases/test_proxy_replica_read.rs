@@ -30,7 +30,7 @@ impl GcMonitor {
         let data = &*self.data.lock().unwrap();
         for (k, v) in data {
             if *v != 0 {
-                println!("GcMonitor::valid_clean failed at {}:{}", k, v);
+                error!("GcMonitor::valid_clean failed at {}:{}", k, v);
                 return false;
             }
         }
