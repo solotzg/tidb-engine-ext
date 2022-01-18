@@ -153,6 +153,8 @@ struct RaftStoreProxyFFIHelper {
   uint8_t (*fn_poll_read_index_task)(RaftStoreProxyPtr, RawVoidPtr task,
                                      RawVoidPtr resp, RawVoidPtr waker);
   void (*fn_gc_rust_ptr)(RawVoidPtr, RawRustPtrType);
+  RawRustPtr (*fn_make_timer_task)(uint64_t millis);
+  uint8_t (*fn_poll_timer_task)(RawVoidPtr task, RawVoidPtr waker);
 };
 
 struct EngineStoreServerHelper {

@@ -296,6 +296,11 @@ pub mod root {
             pub fn_gc_rust_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawRustPtrType),
             >,
+            pub fn_make_timer_task:
+                ::std::option::Option<unsafe extern "C" fn(millis: u64) -> root::DB::RawRustPtr>,
+            pub fn_poll_timer_task: ::std::option::Option<
+                unsafe extern "C" fn(task: root::DB::RawVoidPtr, waker: root::DB::RawVoidPtr) -> u8,
+            >,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -403,7 +408,7 @@ pub mod root {
                 ),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 7978323995266829656;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 7432805842186575727;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

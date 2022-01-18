@@ -13,7 +13,7 @@ use tikv_util::future::paired_future_callback;
 use tikv_util::{debug, error};
 use txn_types::Key;
 
-pub type ArcNotifyWaker = std::sync::Arc<NotifyWaker>;
+use super::utils::ArcNotifyWaker;
 
 pub trait ReadIndex: Sync + Send {
     // To remove
@@ -251,14 +251,4 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
 
 pub struct ReadIndexTask {
     future: BoxFuture<'static, ReadIndexResponse>,
-}
-
-pub struct NotifyWaker {
-    pub inner: Box<dyn Fn() + Send + Sync>,
-}
-
-impl futures::task::ArcWake for NotifyWaker {
-    fn wake_by_ref(arc_self: &std::sync::Arc<Self>) {
-        (arc_self.inner)();
-    }
 }

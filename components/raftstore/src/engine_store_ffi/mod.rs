@@ -2,6 +2,7 @@
 pub mod interfaces;
 
 mod read_index_helper;
+mod utils;
 
 use encryption::DataKeyManager;
 use engine_rocks::encryption::get_env;
@@ -30,7 +31,7 @@ use crate::engine_store_ffi::interfaces::root::DB::{
 };
 use crate::store::LockCFFileReader;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time;
 
 impl From<&[u8]> for BaseBuffView {
     fn from(s: &[u8]) -> Self {
@@ -128,7 +129,7 @@ pub extern "C" fn ffi_batch_read_index(
         let resp = proxy_ptr
             .as_ref()
             .read_index_client
-            .batch_read_index(req_vec, Duration::from_millis(timeout_ms));
+            .batch_read_index(req_vec, time::Duration::from_millis(timeout_ms));
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
             get_engine_store_server_helper().insert_batch_read_index_resp(res, r, *region_id);
@@ -142,6 +143,7 @@ pub enum RawRustPtrType {
     None = 0,
     ReadIndexTask = 1,
     ArcFutureWaker = 2,
+    TimerTask = 3,
 }
 
 impl From<u32> for RawRustPtrType {
@@ -169,7 +171,10 @@ pub extern "C" fn ffi_gc_rust_ptr(
             Box::from_raw(data as *mut read_index_helper::ReadIndexTask);
         },
         RawRustPtrType::ArcFutureWaker => unsafe {
-            Box::from_raw(data as *mut read_index_helper::ArcNotifyWaker);
+            Box::from_raw(data as *mut utils::ArcNotifyWaker);
+        },
+        RawRustPtrType::TimerTask => unsafe {
+            Box::from_raw(data as *mut utils::TimerTask);
         },
         _ => unreachable!(),
     }
@@ -225,8 +230,8 @@ pub extern "C" fn ffi_make_async_waker(
     unsafe impl Sync for RawCppPtrWrap {}
 
     let data = RawCppPtrWrap(data);
-    let res: read_index_helper::ArcNotifyWaker = (|| {
-        Arc::new(read_index_helper::NotifyWaker {
+    let res: utils::ArcNotifyWaker = (|| {
+        Arc::new(utils::NotifyWaker {
             inner: Box::new(move || unsafe {
                 wake_fn.into_inner()(data.0.ptr);
             }),
@@ -252,7 +257,7 @@ pub extern "C" fn ffi_poll_read_index_task(
     let waker = if std::ptr::null_mut() == waker {
         None
     } else {
-        Some(unsafe { &*(waker as *mut read_index_helper::ArcNotifyWaker) })
+        Some(unsafe { &*(waker as *mut utils::ArcNotifyWaker) })
     };
     return if let Some(res) = unsafe {
         proxy_ptr
@@ -509,6 +514,8 @@ impl RaftStoreProxyFFIHelper {
             fn_make_async_waker: Some(ffi_make_async_waker),
             fn_poll_read_index_task: Some(ffi_poll_read_index_task),
             fn_gc_rust_ptr: Some(ffi_gc_rust_ptr),
+            fn_make_timer_task: Some(ffi_make_timer_task),
+            fn_poll_timer_task: Some(ffi_poll_timer_task),
         }
     }
 }
@@ -984,4 +991,26 @@ impl From<usize> for ColumnFamilyType {
             _ => unreachable!(),
         }
     }
+}
+
+pub extern "C" fn ffi_make_timer_task(millis: u64) -> RawRustPtr {
+    let task = utils::make_timer_task(millis);
+    RawRustPtr {
+        ptr: Box::into_raw(Box::new(task)) as *mut _,
+        type_: RawRustPtrType::TimerTask.into(),
+    }
+}
+
+pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoidPtr) -> u8 {
+    let task = &mut *(task_ptr as *mut utils::TimerTask);
+    let waker = if std::ptr::null_mut() == waker {
+        None
+    } else {
+        Some(&*(waker as *mut utils::ArcNotifyWaker))
+    };
+    return if let Some(_) = { utils::poll_timer_task(task, waker) } {
+        1
+    } else {
+        0
+    };
 }

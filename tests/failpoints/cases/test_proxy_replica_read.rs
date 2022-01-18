@@ -1,7 +1,7 @@
 use raftstore::engine_store_ffi::interfaces::root::DB::RawRustPtr;
 use raftstore::engine_store_ffi::{
-    ffi_gc_rust_ptr, ffi_make_async_waker, ffi_make_read_index_task, ffi_poll_read_index_task,
-    ProtoMsgBaseBuff, RawVoidPtr,
+    ffi_gc_rust_ptr, ffi_make_async_waker, ffi_make_read_index_task, ffi_make_timer_task,
+    ffi_poll_read_index_task, ffi_poll_timer_task, ProtoMsgBaseBuff, RawVoidPtr,
 };
 use std::collections::hash_map::Entry;
 use std::pin::Pin;
@@ -28,8 +28,9 @@ impl GcMonitor {
     }
     fn valid_clean(&self) -> bool {
         let data = &*self.data.lock().unwrap();
-        for (_, v) in data {
+        for (k, v) in data {
             if *v != 0 {
+                println!("GcMonitor::valid_clean failed at {}:{}", k, v);
                 return false;
             }
         }
@@ -46,6 +47,13 @@ lazy_static! {
 }
 
 struct RawRustPtrWrap(RawRustPtr);
+
+impl RawRustPtrWrap {
+    fn new(ptr: RawRustPtr) -> Self {
+        GC_MONITOR.add(&ptr, 1);
+        Self(ptr)
+    }
+}
 
 impl Drop for RawRustPtrWrap {
     fn drop(&mut self) {
@@ -68,9 +76,8 @@ impl Waker {
         let notifier = mock_engine_store::ProxyNotifier::new_raw();
         let ptr = notifier.ptr;
         let notifier = ffi_make_async_waker(Some(ffi_wake), notifier);
-        GC_MONITOR.add(&notifier, 1);
         Self {
-            _inner: RawRustPtrWrap(notifier),
+            _inner: RawRustPtrWrap::new(notifier),
             notifier: ptr,
         }
     }
@@ -102,9 +109,8 @@ fn blocked_read_index(
         if ptr.is_null() {
             return None;
         } else {
-            GC_MONITOR.add(&ptr, 1);
             Some(ReadIndexFutureTask {
-                ptr: RawRustPtrWrap(ptr),
+                ptr: RawRustPtrWrap::new(ptr),
             })
         }
     };
@@ -138,8 +144,7 @@ extern "C" fn ffi_wake(data: RawVoidPtr) {
     notifier.wake()
 }
 
-#[test]
-fn test_duplicate_read_index_ctx() {
+fn test_read_index() {
     // Initialize cluster
     let mut cluster = new_node_cluster(0, 3);
     configure_for_lease_read(&mut cluster, Some(50), Some(10_000));
@@ -185,4 +190,30 @@ fn test_duplicate_read_index_ctx() {
         assert!(!GC_MONITOR.is_empty());
         assert!(GC_MONITOR.valid_clean());
     }
+}
+
+fn test_util() {
+    // test timer
+    {
+        let timeout = 128;
+        let task = RawRustPtrWrap::new(ffi_make_timer_task(timeout));
+        assert!(0 == unsafe { ffi_poll_timer_task(task.0.ptr, std::ptr::null_mut(),) });
+        std::thread::sleep(Duration::from_millis(timeout + 20));
+        assert!(unsafe { ffi_poll_timer_task(task.0.ptr, std::ptr::null_mut()) } != 0);
+
+        let task = RawRustPtrWrap::new(ffi_make_timer_task(timeout));
+        let waker = Waker::new();
+        assert!(0 == unsafe { ffi_poll_timer_task(task.0.ptr, waker.get_raw_waker()) });
+        let now = std::time::Instant::now();
+        waker.wait_for(Duration::from_secs(256));
+        assert!(0 != unsafe { ffi_poll_timer_task(task.0.ptr, waker.get_raw_waker()) });
+        assert!(now.elapsed() < Duration::from_secs(256));
+    }
+    assert!(GC_MONITOR.valid_clean());
+}
+
+#[test]
+fn test_proxy() {
+    test_read_index();
+    test_util();
 }
