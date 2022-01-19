@@ -267,7 +267,11 @@ pub mod root {
                 ) -> u32,
             >,
             pub fn_get_region_peer_state: ::std::option::Option<
-                unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, region_id: u64) -> i32,
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                    region_id: u64,
+                    arg2: *mut i32,
+                ) -> u8,
             >,
         }
         #[repr(C)]
@@ -373,7 +377,7 @@ pub mod root {
                 ),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 11139201650575501933;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 5622458399296350332;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

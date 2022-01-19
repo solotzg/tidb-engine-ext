@@ -29,7 +29,12 @@ fn test_normal() {
     unsafe {
         for (k, ffi_set) in cluster.ffi_helper_set.iter() {
             let f = ffi_set.proxy_helper.fn_get_region_peer_state.unwrap();
-            assert_eq!(f(ffi_set.proxy_helper.proxy_ptr.clone(), region_id), 0);
+            let mut r = 0;
+            assert_eq!(
+                f(ffi_set.proxy_helper.proxy_ptr.clone(), region_id, &mut r),
+                1
+            );
+            assert_eq!(r, 0);
         }
     }
 

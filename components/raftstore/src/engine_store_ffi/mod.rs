@@ -83,26 +83,31 @@ impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
 }
 
 #[no_mangle]
-pub extern "C" fn ffi_get_region_peer_state(proxy_ptr: RaftStoreProxyPtr, region_id: u64) -> i32 {
+pub extern "C" fn ffi_get_region_peer_state(
+    proxy_ptr: RaftStoreProxyPtr,
+    region_id: u64,
+    res: *mut i32,
+) -> u8 {
     unsafe {
         assert!(!proxy_ptr.is_null());
         let region_state_key = keys::region_state_key(region_id);
-        match proxy_ptr.as_ref().kv_engine.as_ref() {
-            None => -1,
+        let (ret, res) = match proxy_ptr.as_ref().kv_engine.as_ref() {
+            None => (0u8, -1),
             Some(kv) => {
                 let region_state = kv.get_msg_cf::<kvproto::raft_serverpb::RegionLocalState>(
                     engine_traits::CF_RAFT,
                     &region_state_key,
                 );
                 match region_state {
-                    Err(e) => -1,
+                    Err(e) => (0u8, -1),
                     Ok(r) => match r {
-                        Some(v) => v.get_state() as i32,
-                        None => -1,
+                        Some(v) => (1u8, v.get_state() as i32),
+                        None => (0u8, -1),
                     },
                 }
             }
-        }
+        };
+        ret
     }
 }
 
