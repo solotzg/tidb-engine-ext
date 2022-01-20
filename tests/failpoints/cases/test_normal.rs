@@ -27,7 +27,7 @@ fn test_normal() {
     }
     let region_id = cluster.get_region(k).get_id();
     unsafe {
-        for (k, ffi_set) in cluster.ffi_helper_set.iter() {
+        for (_, ffi_set) in cluster.ffi_helper_set.iter() {
             let f = ffi_set.proxy_helper.fn_get_region_peer_state.unwrap();
             let mut r = 0;
             assert_eq!(

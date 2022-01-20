@@ -63,6 +63,9 @@ impl RaftStoreProxy {
     pub fn set_status(&mut self, s: RaftProxyStatus) {
         self.status.store(s as u8, Ordering::SeqCst);
     }
+    pub fn get_status(&self) -> RaftProxyStatus {
+        unsafe { std::mem::transmute(self.status.load(Ordering::SeqCst)) }
+    }
 }
 
 impl RaftStoreProxyPtr {
@@ -82,8 +85,7 @@ impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn ffi_get_region_peer_state(
+extern "C" fn ffi_get_region_peer_state(
     proxy_ptr: RaftStoreProxyPtr,
     region_id: u64,
     res: *mut i32,
@@ -91,20 +93,18 @@ pub extern "C" fn ffi_get_region_peer_state(
     unsafe {
         assert!(!proxy_ptr.is_null());
         let region_state_key = keys::region_state_key(region_id);
-        let (ret, res) = match proxy_ptr.as_ref().kv_engine.as_ref() {
-            None => (0u8, -1),
-            Some(kv) => {
-                let region_state = kv.get_msg_cf::<kvproto::raft_serverpb::RegionLocalState>(
-                    engine_traits::CF_RAFT,
-                    &region_state_key,
-                );
-                match region_state {
-                    Err(e) => (0u8, -1),
-                    Ok(r) => match r {
-                        Some(v) => (1u8, v.get_state() as i32),
-                        None => (0u8, -1),
-                    },
-                }
+        let kv = proxy_ptr.as_ref().kv_engine.as_ref().unwrap();
+        let (ret, res) = {
+            let region_state = kv.get_msg_cf::<kvproto::raft_serverpb::RegionLocalState>(
+                engine_traits::CF_RAFT,
+                &region_state_key,
+            );
+            match region_state {
+                Err(_) => (0u8, -1),
+                Ok(r) => match r {
+                    Some(v) => (1u8, v.get_state() as i32),
+                    None => (0u8, -1),
+                },
             }
         };
         ret
