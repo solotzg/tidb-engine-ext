@@ -445,7 +445,7 @@ where
     /// So, for now, we only allow the x86_64 architecture to perform real profiling, other
     /// architectures will directly return an error until we fix the seg-fault in backtrace.
     #[cfg(not(target_arch = "x86_64"))]
-    pub async fn dump_rsperf_to_resp(req: Request<Body>) -> hyper::Result<Response<Body>> {
+    pub async fn dump_rsperf_to_resp(_req: Request<Body>) -> hyper::Result<Response<Body>> {
         Ok(StatusServer::err_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "unsupported arch".to_string(),
@@ -1643,4 +1643,3 @@ mod tests {
         status_server.stop();
     }
 }
-
