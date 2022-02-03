@@ -11,7 +11,6 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use tikv_util::future::paired_future_callback;
 use tikv_util::{debug, error};
-use txn_types::Key;
 
 use super::utils::ArcNotifyWaker;
 
@@ -77,6 +76,30 @@ fn into_read_index_response<S: engine_traits::Snapshot>(
     resp
 }
 
+fn gen_read_index_raft_cmd_req(req: &mut ReadIndexRequest) -> RaftCmdRequest {
+    let region_id = req.get_context().get_region_id();
+    let mut cmd = RaftCmdRequest::default();
+    {
+        let mut header = RaftRequestHeader::default();
+        let mut inner_req = RaftRequest::default();
+        inner_req.set_cmd_type(CmdType::ReadIndex);
+        inner_req.mut_read_index().set_start_ts(req.get_start_ts());
+        if !req.get_ranges().is_empty() {
+            let r = &mut req.mut_ranges()[0];
+            let mut range = kvproto::kvrpcpb::KeyRange::default();
+            range.set_start_key(r.take_start_key());
+            range.set_end_key(r.take_end_key());
+            inner_req.mut_read_index().mut_key_ranges().push(range);
+        }
+        header.set_region_id(region_id);
+        header.set_peer(req.mut_context().take_peer());
+        header.set_region_epoch(req.mut_context().take_region_epoch());
+        cmd.set_header(header);
+        cmd.set_requests(vec![inner_req].into());
+    }
+    cmd
+}
+
 impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
     fn batch_read_index(
         &self,
@@ -85,26 +108,12 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
     ) -> Vec<(ReadIndexResponse, u64)> {
         debug!("batch_read_index start"; "size"=>req_vec.len(), "request"=>?req_vec);
         let mut router_cbs = std::collections::LinkedList::new();
-        for req in &req_vec {
+        let req_vec_len = req_vec.len();
+        let mut read_index_res = Vec::with_capacity(req_vec_len);
+
+        for mut req in req_vec {
             let region_id = req.get_context().get_region_id();
-            let mut cmd = RaftCmdRequest::default();
-            {
-                let mut header = RaftRequestHeader::default();
-                let mut inner_req = RaftRequest::default();
-                inner_req.set_cmd_type(CmdType::ReadIndex);
-                inner_req.mut_read_index().set_start_ts(req.get_start_ts());
-                for r in req.get_ranges() {
-                    let mut range = kvproto::kvrpcpb::KeyRange::default();
-                    range.set_start_key(Key::from_raw(r.get_start_key()).into_encoded());
-                    range.set_end_key(Key::from_raw(r.get_end_key()).into_encoded());
-                    inner_req.mut_read_index().mut_key_ranges().push(range);
-                }
-                header.set_region_id(region_id);
-                header.set_peer(req.get_context().get_peer().clone());
-                header.set_region_epoch(req.get_context().get_region_epoch().clone());
-                cmd.set_header(header);
-                cmd.set_requests(vec![inner_req].into());
-            }
+            let cmd = gen_read_index_raft_cmd_req(&mut req);
 
             let (cb, f) = paired_future_callback();
 
@@ -119,7 +128,6 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
             }
         }
 
-        let mut read_index_res = Vec::with_capacity(req_vec.len());
         let finished = {
             let read_index_res = &mut read_index_res;
             let read_index_fut = async {
@@ -169,32 +177,15 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
                 router_cbs.pop_front();
             }
         }
-        assert_eq!(req_vec.len(), read_index_res.len());
+        assert_eq!(req_vec_len, read_index_res.len());
         debug!("batch_read_index success"; "response"=>?read_index_res);
         read_index_res
     }
 
-    fn make_read_index_task(&self, req: ReadIndexRequest) -> Option<ReadIndexTask> {
+    fn make_read_index_task(&self, mut req: ReadIndexRequest) -> Option<ReadIndexTask> {
         let fut = {
             let region_id = req.get_context().get_region_id();
-            let mut cmd = RaftCmdRequest::default();
-            {
-                let mut header = RaftRequestHeader::default();
-                let mut inner_req = RaftRequest::default();
-                inner_req.set_cmd_type(CmdType::ReadIndex);
-                inner_req.mut_read_index().set_start_ts(req.get_start_ts());
-                for r in req.get_ranges() {
-                    let mut range = kvproto::kvrpcpb::KeyRange::default();
-                    range.set_start_key(Key::from_raw(r.get_start_key()).into_encoded());
-                    range.set_end_key(Key::from_raw(r.get_end_key()).into_encoded());
-                    inner_req.mut_read_index().mut_key_ranges().push(range);
-                }
-                header.set_region_id(region_id);
-                header.set_peer(req.get_context().get_peer().clone());
-                header.set_region_epoch(req.get_context().get_region_epoch().clone());
-                cmd.set_header(header);
-                cmd.set_requests(vec![inner_req].into());
-            }
+            let cmd = gen_read_index_raft_cmd_req(&mut req);
 
             let (cb, f) = paired_future_callback();
 
