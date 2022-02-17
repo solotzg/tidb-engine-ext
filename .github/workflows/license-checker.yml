@@ -1,12 +1,9 @@
 name: License checker
 
 on:
-  push:
-    branches:
-      - master
   pull_request:
     branches:
-      - master
+      - 'raftstore-proxy*'
 
 jobs:
   check-license:
