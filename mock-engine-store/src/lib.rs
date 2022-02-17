@@ -148,7 +148,6 @@ impl EngineStoreServerWrap {
     }
 }
 
-#[no_mangle]
 extern "C" fn ffi_set_read_index_resp(
     data: ffi_interfaces::RawVoidPtr,
     view: ffi_interfaces::BaseBuffView,
@@ -244,7 +243,6 @@ impl Into<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
     }
 }
 
-#[no_mangle]
 extern "C" fn ffi_gen_cpp_string(s: ffi_interfaces::BaseBuffView) -> ffi_interfaces::RawCppPtr {
     let str = Box::new(Vec::from(s.to_slice()));
     let ptr = Box::into_raw(str);
@@ -299,7 +297,6 @@ impl ProxyNotifier {
     }
 }
 
-#[no_mangle]
 extern "C" fn ffi_gc_raw_cpp_ptr(
     ptr: ffi_interfaces::RawVoidPtr,
     tp: ffi_interfaces::RawCppPtrType,
