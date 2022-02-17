@@ -190,6 +190,14 @@ fn test_node_merge_with_slow_learner() {
 #[cfg(feature = "protobuf-codec")]
 #[test]
 fn test_node_merge_prerequisites_check() {
+    let get_global = if cfg!(feature = "test-raftstore-proxy") {
+        // This test can print too much log, so disable log here
+        let get_global = ::slog_global::get_global();
+        ::slog_global::clear_global();
+        Some(get_global)
+    } else {
+        None
+    };
     let mut cluster = new_node_cluster(0, 3);
     configure_for_merge(&mut cluster);
     let pd_client = Arc::clone(&cluster.pd_client);
@@ -265,6 +273,10 @@ fn test_node_merge_prerequisites_check() {
     cluster.clear_send_filters();
     cluster.must_put(b"k24", b"v24");
     must_get_equal(&cluster.get_engine(3), b"k24", b"v24");
+
+    if cfg!(feature = "test-raftstore-proxy") {
+        ::slog_global::set_global((*(get_global.unwrap())).clone());
+    }
 }
 
 /// Test if stale peer will be handled properly after merge.
@@ -584,6 +596,7 @@ fn test_node_merge_brain_split() {
 
 /// Test whether approximate size and keys are updated after merge
 #[test]
+#[cfg(not(feature = "test-raftstore-proxy"))]
 fn test_merge_approximate_size_and_keys() {
     let mut cluster = new_node_cluster(0, 3);
     cluster.cfg.raft_store.split_region_check_tick_interval = ReadableDuration::millis(20);

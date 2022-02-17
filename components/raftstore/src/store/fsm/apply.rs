@@ -932,6 +932,14 @@ where
                 break;
             }
 
+            if cfg!(feature = "test-raftstore-proxy") {
+                // Since `expect_index != entry.get_index()` may occasionally fail, add this log to gather log if it fails.
+                debug!(
+                    "currently apply_state is {:?} entry index {}",
+                    self.apply_state,
+                    entry.get_index()
+                );
+            }
             let expect_index = self.apply_state.get_applied_index() + 1;
             if expect_index != entry.get_index() {
                 panic!(
@@ -1494,10 +1502,35 @@ where
         ApplyResult<EK::Snapshot>,
         EngineStoreApplyRes,
     )> {
+        fail_point!(
+            "on_apply_write_cmd",
+            cfg!(release) || self.id() == 3,
+            |_| {
+                unimplemented!();
+            }
+        );
         const NONE_STR: &str = "";
         let requests = req.get_requests();
         let mut ssts = vec![];
         let mut cmds = WriteCmds::with_capacity(requests.len());
+        let resp = if cfg!(feature = "test-raftstore-proxy") {
+            let mut responses = Vec::with_capacity(requests.len());
+            for req in requests {
+                let mut r = Response::default();
+                r.set_cmd_type(req.get_cmd_type());
+                responses.push(r);
+            }
+
+            let mut resp = RaftCmdResponse::default();
+            if !req.get_header().get_uuid().is_empty() {
+                let uuid = req.get_header().get_uuid().to_vec();
+                resp.mut_header().set_uuid(uuid);
+            }
+            resp.set_responses(responses.into());
+            resp
+        } else {
+            RaftCmdResponse::new()
+        };
         for req in requests {
             let cmd_type = req.get_cmd_type();
             match cmd_type {
@@ -1509,6 +1542,9 @@ where
                         self.metrics.size_diff_hint += key.len() as i64 + value.len() as i64;
                         self.metrics.written_bytes += key.len() as u64 + value.len() as u64;
                         self.metrics.written_keys += 1;
+                    } else {
+                        self.metrics.lock_cf_written_bytes += key.len() as u64;
+                        self.metrics.lock_cf_written_bytes += value.len() as u64;
                     }
                     cmds.push(key, value, WriteCmdType::Put, cf);
                 }
@@ -1521,6 +1557,8 @@ where
                         self.metrics.delete_keys_hint += 1;
                         self.metrics.written_bytes += key.len() as u64;
                         self.metrics.written_keys += 1;
+                    } else {
+                        self.metrics.lock_cf_written_bytes += key.len() as u64;
                     }
                     cmds.push(key, NONE_STR.as_ref(), WriteCmdType::Del, cf);
                 }
@@ -1564,11 +1602,7 @@ where
                         "pending_ssts" => ?self.pending_clean_ssts
                     );
 
-                    Ok((
-                        RaftCmdResponse::new(),
-                        ApplyResult::None,
-                        EngineStoreApplyRes::None,
-                    ))
+                    Ok((resp, ApplyResult::None, EngineStoreApplyRes::None))
                 }
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
                     ssts.append(&mut self.pending_clean_ssts);
@@ -1582,7 +1616,7 @@ where
                     );
                     ctx.delete_ssts.append(&mut ssts.clone());
                     Ok((
-                        RaftCmdResponse::new(),
+                        resp,
                         ApplyResult::Res(ExecResult::IngestSst { ssts }),
                         EngineStoreApplyRes::Persist,
                     ))
@@ -1599,7 +1633,7 @@ where
                     ),
                 )
             };
-            Ok((RaftCmdResponse::new(), ApplyResult::None, flash_res))
+            Ok((resp, ApplyResult::None, flash_res))
         };
     }
 }
@@ -1883,14 +1917,14 @@ where
 
         match change_type {
             ConfChangeType::AddNode => {
-                let add_ndoe_fp = || {
+                let add_node_fp = || {
                     fail_point!(
                         "apply_on_add_node_1_2",
                         self.id == 2 && self.region_id() == 1,
                         |_| {}
                     )
                 };
-                add_ndoe_fp();
+                add_node_fp();
 
                 PEER_ADMIN_CMD_COUNTER_VEC
                     .with_label_values(&["add_peer", "all"])

@@ -58,7 +58,11 @@ fn test_evict_entry_cache() {
     fail::cfg("needs_evict_entry_cache", "return").unwrap();
     fail::cfg("on_raft_gc_log_tick_1", "off").unwrap();
 
-    sleep_ms(500); // Wait to trigger a raft log compaction.
+    sleep_ms(if cfg!(feature = "test-raftstore-proxy") {
+        700
+    } else {
+        500
+    }); // Wait to trigger a raft log compaction.
     let entry_cache_size = MEMTRACE_ENTRY_CACHE.sum();
     // Entries on store 1 will be evict even if they are still in life time.
     assert!(entry_cache_size < 50 * 1024);

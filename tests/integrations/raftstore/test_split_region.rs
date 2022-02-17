@@ -213,9 +213,15 @@ fn test_auto_split_region<T: Simulator>(cluster: &mut Cluster<T>) {
 
     let epoch = left.get_region_epoch().clone();
     let get = new_request(left.get_id(), epoch, vec![new_get_cmd(&max_key)], false);
-    let resp = cluster
-        .call_command_on_leader(get, Duration::from_secs(5))
-        .unwrap();
+    let resp = if cfg!(feature = "test-raftstore-proxy") {
+        cluster
+            .call_command_on_leader(get, Duration::from_secs(10))
+            .unwrap()
+    } else {
+        cluster
+            .call_command_on_leader(get, Duration::from_secs(5))
+            .unwrap()
+    };
     assert!(resp.get_header().has_error());
     assert!(resp.get_header().get_error().has_key_not_in_region());
 }

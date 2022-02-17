@@ -444,6 +444,7 @@ fn test_node_snapshot_with_append() {
 }
 
 #[test]
+// #[cfg(not(feature = "test-raftstore-proxy"))]
 fn test_server_snapshot_with_append() {
     let mut cluster = new_server_cluster(0, 4);
     test_snapshot_with_append(&mut cluster);

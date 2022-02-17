@@ -54,7 +54,11 @@ use into_other::IntoOther;
 use tikv_util::time::ThreadReadId;
 
 pub const SEEK_BOUND: u64 = 8;
-const DEFAULT_TIMEOUT_SECS: u64 = 5;
+const DEFAULT_TIMEOUT_SECS: u64 = if cfg!(feature = "test-raftstore-proxy") {
+    15
+} else {
+    5
+};
 
 pub type Callback<T> = Box<dyn FnOnce((CbContext, Result<T>)) + Send>;
 pub type ExtCallback = Box<dyn FnOnce() + Send>;

@@ -45,14 +45,12 @@ fn test_region_meta_endpoint() {
     assert!(router.is_some());
 
     let mut status_server = unsafe {
-        let helperset = &*cluster
-            .global_engine_helper_set
+        let helperset = &test_raftstore::get_global_engine_helper_set()
             .as_ref()
             .unwrap()
             .engine_store_server_helper;
-        let helperptr = helperset as *const EngineStoreServerHelper;
         StatusServer::new(
-            &*helperptr,
+            &*helperset,
             1,
             None,
             ConfigController::default(),

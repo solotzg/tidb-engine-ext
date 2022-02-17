@@ -5,6 +5,8 @@ use engine_traits::{MiscExt, CF_LOCK};
 use test_raftstore::*;
 use tikv_util::config::*;
 
+use engine_traits::KvEngine;
+
 fn flush<T: Simulator>(cluster: &mut Cluster<T>) {
     for engines in cluster.engines.values() {
         engines.kv.flush_cf(CF_LOCK, true).unwrap();
@@ -13,8 +15,16 @@ fn flush<T: Simulator>(cluster: &mut Cluster<T>) {
 
 fn flush_then_check<T: Simulator>(cluster: &mut Cluster<T>, interval: u64, written: bool) {
     flush(cluster);
+
     // Wait for compaction.
-    sleep_ms(interval * 2);
+    sleep_ms(
+        interval
+            * if cfg!(feature = "test-raftstore-proxy") {
+                3
+            } else {
+                2
+            },
+    );
     for engines in cluster.engines.values() {
         let compact_write_bytes = engines
             .kv

@@ -36,11 +36,12 @@ fn test_bootstrap_idempotent<T: Simulator>(cluster: &mut Cluster<T>) {
 
 #[test]
 fn test_node_bootstrap_with_prepared_data() {
+    test_raftstore::init_global_ffi_helper_set();
     // create a node
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let cfg = new_tikv_config(0);
 
-    let (_, system) = fsm::create_raft_batch_system(&cfg.raft_store);
+    let (router, system) = fsm::create_raft_batch_system(&cfg.raft_store);
     let simulate_trans = SimulateTransport::new(ChannelTransport::new());
     let tmp_path = Builder::new().prefix("test_cluster").tempdir().unwrap();
     let engine = Arc::new(
@@ -55,6 +56,14 @@ fn test_node_bootstrap_with_prepared_data() {
     let engines = Engines::new(
         RocksEngine::from_db(Arc::clone(&engine)),
         RocksEngine::from_db(Arc::clone(&raft_engine)),
+    );
+    let (ffi_helper_set, cfg) = Cluster::<NodeCluster>::make_ffi_helper_set_no_bind(
+        0,
+        engines.clone(),
+        &None,
+        &router,
+        cfg,
+        0,
     );
     let tmp_mgr = Builder::new().prefix("test_cluster").tempdir().unwrap();
     let bg_worker = WorkerBuilder::new("background").thread_count(2).create();

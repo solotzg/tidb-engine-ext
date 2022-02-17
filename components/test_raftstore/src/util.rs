@@ -64,7 +64,13 @@ pub fn must_get(engine: &Arc<DB>, cf: &str, key: &[u8], value: Option<&[u8]>) {
         if value.is_none() && res.is_none() {
             return;
         }
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(
+            if cfg!(feature = "test-raftstore-proxy") {
+                40
+            } else {
+                20
+            },
+        ));
     }
     debug!(
         "last try to get {} cf {}",
@@ -601,7 +607,7 @@ pub fn must_error_read_on_peer<T: Simulator>(
 
 pub fn must_contains_error(resp: &RaftCmdResponse, msg: &str) {
     let header = resp.get_header();
-    assert!(header.has_error());
+    assert!(header.has_error(), "should have err {}", msg);
     let err_msg = header.get_error().get_message();
     assert!(err_msg.contains(msg), "{:?}", resp);
 }

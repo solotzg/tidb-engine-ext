@@ -304,7 +304,7 @@ impl Simulator for ServerCluster {
         let check_leader_runner = CheckLeaderRunner::new(store_meta.clone());
         let check_leader_scheduler = bg_worker.start("check-leader", check_leader_runner);
 
-        let mut lock_mgr = LockManager::new();
+        let lock_mgr = LockManager::new();
         let store = create_raft_storage(
             engine,
             &cfg.storage,
@@ -429,7 +429,7 @@ impl Simulator for ServerCluster {
         let simulate_trans = SimulateTransport::new(trans);
         let server_cfg = Arc::new(VersionTrack::new(cfg.server.clone()));
 
-        let pessimistic_txn_cfg = cfg.pessimistic_txn;
+        let _pessimistic_txn_cfg = cfg.pessimistic_txn;
 
         let split_check_runner =
             SplitCheckRunner::new(engines.kv.clone(), router.clone(), coprocessor_host.clone());

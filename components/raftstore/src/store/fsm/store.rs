@@ -1408,7 +1408,14 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
         fail_point!("after_shutdown_apply");
         self.system.shutdown();
         if let Some(h) = handle {
-            h.join().unwrap();
+            if cfg!(feature = "test-raftstore-proxy") {
+                let res = h.join();
+                if res.is_err() {
+                    debug!("thread shutdown with error {:?}", res.err());
+                }
+            } else {
+                h.join().unwrap();
+            }
         }
         workers.coprocessor_host.shutdown();
         workers.cleanup_worker.stop();

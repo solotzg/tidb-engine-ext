@@ -65,7 +65,7 @@ impl RaftStoreProxy {
 }
 
 impl RaftStoreProxyPtr {
-    unsafe fn as_ref(&self) -> &RaftStoreProxy {
+    pub unsafe fn as_ref(&self) -> &RaftStoreProxy {
         &*(self.inner as *const RaftStoreProxy)
     }
     pub fn is_null(&self) -> bool {
@@ -542,6 +542,11 @@ static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
 fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
+}
+
+#[cfg(feature = "test-raftstore-proxy")]
+pub fn get_engine_store_server_helper_ptr() -> isize {
+    unsafe { ENGINE_STORE_SERVER_HELPER_PTR }
 }
 
 pub fn gen_engine_store_server_helper(

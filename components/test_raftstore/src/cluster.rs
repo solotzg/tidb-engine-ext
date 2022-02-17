@@ -38,8 +38,9 @@ use tikv_util::thread_group::GroupProperties;
 use tikv_util::HandyRwLock;
 
 use super::*;
+use mock_engine_store::make_new_region;
 use mock_engine_store::EngineStoreServerWrap;
-use std::sync::atomic::{AtomicBool, AtomicU8};
+use std::sync::atomic::AtomicU8;
 use tikv_util::sys::SysQuota;
 use tikv_util::time::ThreadReadId;
 
@@ -160,7 +161,50 @@ pub struct Cluster<T: Simulator> {
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
     pub ffi_helper_set: HashMap<u64, FFIHelperSet>,
-    pub global_engine_helper_set: Option<EngineHelperSet>,
+}
+
+static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
+static START: std::sync::Once = std::sync::Once::new();
+
+pub unsafe fn get_global_engine_helper_set() -> &'static Option<EngineHelperSet> {
+    &GLOBAL_ENGINE_HELPER_SET
+}
+
+fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
+    let mut engine_store_server = Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
+    let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
+        &mut *engine_store_server,
+        None,
+        0,
+    ));
+    let engine_store_server_helper = Box::new(mock_engine_store::gen_engine_store_server_helper(
+        std::pin::Pin::new(&*engine_store_server_wrap),
+    ));
+    let ptr = &*engine_store_server_helper
+        as *const raftstore::engine_store_ffi::EngineStoreServerHelper as *mut u8;
+    // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
+    (
+        EngineHelperSet {
+            engine_store_server,
+            engine_store_server_wrap,
+            engine_store_server_helper,
+        },
+        ptr,
+    )
+}
+
+pub fn init_global_ffi_helper_set() {
+    unsafe {
+        START.call_once(|| {
+            assert_eq!(
+                raftstore::engine_store_ffi::get_engine_store_server_helper_ptr(),
+                0
+            );
+            let (set, ptr) = make_global_ffi_helper_set_no_bind();
+            raftstore::engine_store_ffi::init_engine_store_server_helper(ptr);
+            GLOBAL_ENGINE_HELPER_SET = Some(set);
+        });
+    }
 }
 
 impl<T: Simulator> Cluster<T> {
@@ -188,7 +232,6 @@ impl<T: Simulator> Cluster<T> {
             sim,
             pd_client,
             ffi_helper_set: HashMap::default(),
-            global_engine_helper_set: None,
         }
     }
 
@@ -242,40 +285,13 @@ impl<T: Simulator> Cluster<T> {
         }
     }
 
-    pub fn make_global_ffi_helper_set(&mut self) {
-        let mut engine_store_server =
-            Box::new(mock_engine_store::EngineStoreServer::new(99999, None));
-        let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
-            &mut *engine_store_server,
-            None,
-            self as *const Cluster<T> as isize,
-        ));
-        let engine_store_server_helper =
-            Box::new(mock_engine_store::gen_engine_store_server_helper(
-                std::pin::Pin::new(&*engine_store_server_wrap),
-            ));
-
-        unsafe {
-            raftstore::engine_store_ffi::init_engine_store_server_helper(
-                &*engine_store_server_helper
-                    as *const raftstore::engine_store_ffi::EngineStoreServerHelper
-                    as *mut u8,
-            );
-        }
-
-        self.global_engine_helper_set = Some(EngineHelperSet {
-            engine_store_server,
-            engine_store_server_wrap,
-            engine_store_server_helper,
-        });
-    }
-
-    pub fn make_ffi_helper_set(
-        &mut self,
+    pub fn make_ffi_helper_set_no_bind(
         id: u64,
         engines: Engines<RocksEngine, RocksEngine>,
         key_mgr: &Option<Arc<DataKeyManager>>,
         router: &RaftRouter<RocksEngine, RocksEngine>,
+        mut node_cfg: TiKvConfig,
+        cluster_id: isize,
     ) -> (FFIHelperSet, TiKvConfig) {
         let proxy = Box::new(raftstore::engine_store_ffi::RaftStoreProxy {
             status: AtomicU8::new(raftstore::engine_store_ffi::RaftProxyStatus::Idle as u8),
@@ -294,14 +310,13 @@ impl<T: Simulator> Cluster<T> {
         let engine_store_server_wrap = Box::new(mock_engine_store::EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
-            self as *const Cluster<T> as isize,
+            cluster_id,
         ));
         let engine_store_server_helper =
             Box::new(mock_engine_store::gen_engine_store_server_helper(
                 std::pin::Pin::new(&*engine_store_server_wrap),
             ));
 
-        let mut node_cfg = self.cfg.clone();
         let helper_sz = &*engine_store_server_helper as *const _ as isize;
         node_cfg.raft_store.engine_store_server_helper = helper_sz;
         let ffi_helper_set = FFIHelperSet {
@@ -314,9 +329,25 @@ impl<T: Simulator> Cluster<T> {
         (ffi_helper_set, node_cfg)
     }
 
-    pub fn start(&mut self) -> ServerResult<()> {
-        self.make_global_ffi_helper_set();
+    pub fn make_ffi_helper_set(
+        &mut self,
+        id: u64,
+        engines: Engines<RocksEngine, RocksEngine>,
+        key_mgr: &Option<Arc<DataKeyManager>>,
+        router: &RaftRouter<RocksEngine, RocksEngine>,
+    ) -> (FFIHelperSet, TiKvConfig) {
+        Cluster::<T>::make_ffi_helper_set_no_bind(
+            id,
+            engines,
+            key_mgr,
+            router,
+            self.cfg.clone(),
+            self as *const Cluster<T> as isize,
+        )
+    }
 
+    pub fn start(&mut self) -> ServerResult<()> {
+        init_global_ffi_helper_set();
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
@@ -335,7 +366,7 @@ impl<T: Simulator> Cluster<T> {
             let props = GroupProperties::default();
             tikv_util::thread_group::set_properties(Some(props.clone()));
 
-            let (mut ffi_helper_set, mut node_cfg) =
+            let (mut ffi_helper_set, node_cfg) =
                 self.make_ffi_helper_set(0, self.dbs.last().unwrap().clone(), &key_mgr, &router);
 
             let mut sim = self.sim.wl();
@@ -1069,10 +1100,8 @@ impl<T: Simulator> Cluster<T> {
     pub fn must_put_cf(&mut self, cf: &str, key: &[u8], value: &[u8]) {
         match self.batch_put(key, vec![new_put_cf_cmd(cf, key, value)]) {
             Ok(resp) => {
-                if cfg!(feature = "test-raftstore-proxy") {
-                    assert_eq!(resp.get_responses().len(), 1);
-                    assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Put);
-                }
+                assert_eq!(resp.get_responses().len(), 1);
+                assert_eq!(resp.get_responses()[0].get_cmd_type(), CmdType::Put);
             }
             Err(e) => {
                 panic!("has error: {:?}", e);
@@ -1192,6 +1221,7 @@ impl<T: Simulator> Cluster<T> {
 
     pub fn apply_state(&self, region_id: u64, store_id: u64) -> RaftApplyState {
         let key = keys::apply_state_key(region_id);
+
         self.get_engine(store_id)
             .c()
             .get_msg_cf::<RaftApplyState>(engine_traits::CF_RAFT, &key)
@@ -1442,7 +1472,16 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn wait_region_split(&mut self, region: &metapb::Region) {
-        self.wait_region_split_max_cnt(region, 20, 250, true);
+        self.wait_region_split_max_cnt(
+            region,
+            20,
+            if cfg!(feature = "test-raftstore-proxy") {
+                250
+            } else {
+                400
+            },
+            true,
+        );
     }
 
     pub fn wait_region_split_max_cnt(
@@ -1508,9 +1547,14 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn try_merge(&mut self, source: u64, target: u64) -> RaftCmdResponse {
+        let duration = if cfg!(feature = "test-raftstore-proxy") {
+            15
+        } else {
+            5
+        };
         self.call_command_on_leader(
             self.new_prepare_merge(source, target),
-            Duration::from_secs(5),
+            Duration::from_secs(duration),
         )
         .unwrap()
     }

@@ -1070,7 +1070,14 @@ impl TestPdClient {
     pub fn must_merge(&self, from: u64, target: u64) {
         self.merge_region(from, target);
 
-        self.check_merged_timeout(from, Duration::from_secs(5));
+        self.check_merged_timeout(
+            from,
+            Duration::from_secs(if cfg!(feature = "test-raftstore-proxy") {
+                60
+            } else {
+                15
+            }),
+        );
     }
 
     pub fn check_merged(&self, from: u64) -> bool {
@@ -1078,11 +1085,16 @@ impl TestPdClient {
     }
 
     pub fn check_merged_timeout(&self, from: u64, duration: Duration) {
+        let duration2 = if cfg!(feature = "test-raftstore-proxy") {
+            Duration::from_millis((duration.as_millis() as u64) * 5 as u64)
+        } else {
+            duration
+        };
         let timer = Instant::now();
         loop {
             let region = block_on(self.get_region_by_id(from)).unwrap();
             if let Some(r) = region {
-                if timer.elapsed() > duration {
+                if timer.elapsed() > duration2 {
                     panic!("region {:?} is still not merged.", r);
                 }
             } else {
@@ -1093,8 +1105,17 @@ impl TestPdClient {
     }
 
     pub fn region_leader_must_be(&self, region_id: u64, peer: metapb::Peer) {
-        for _ in 0..500 {
-            sleep_ms(10);
+        let num = if cfg!(feature = "test-raftstore-proxy") {
+            3000
+        } else {
+            1000
+        };
+        for _ in 0..num {
+            if cfg!(feature = "test-raftstore-proxy") {
+                sleep_ms(30);
+            } else {
+                sleep_ms(10);
+            }
             if let Some(p) = self.cluster.rl().leaders.get(&region_id) {
                 if *p == peer {
                     return;
@@ -1472,7 +1493,7 @@ impl PdClient for TestPdClient {
             let mut id = pdpb::SplitId::default();
             id.set_new_region_id(self.alloc_id().unwrap());
 
-            for peer in region.get_peers() {
+            for _peer in region.get_peers() {
                 let rid = self.alloc_id().unwrap();
                 id.mut_new_peer_ids().push(rid);
             }

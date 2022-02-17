@@ -127,6 +127,7 @@ fn test_node_delete() {
     test_delete(&mut cluster);
 }
 
+#[cfg(not(feature = "test-raftstore-proxy"))]
 #[test]
 fn test_node_use_delete_range() {
     let mut cluster = new_node_cluster(0, 1);
@@ -137,6 +138,7 @@ fn test_node_use_delete_range() {
     test_delete_range(&mut cluster, CF_WRITE);
 }
 
+#[cfg(not(feature = "test-raftstore-proxy"))]
 #[test]
 fn test_node_not_use_delete_range() {
     let mut cluster = new_node_cluster(0, 1);
@@ -192,11 +194,15 @@ fn test_node_apply_no_op() {
     let timer = Instant::now();
     loop {
         let state = cluster.apply_state(1, 1);
+        // When new leader is elected, should apply one no-op entry
         if state.get_applied_index() > RAFT_INIT_LOG_INDEX {
             break;
         }
         if timer.elapsed() > Duration::from_secs(3) {
-            panic!("apply no-op log not finish after 3 seconds");
+            panic!(
+                "apply no-op log not finish after 3 seconds, now {}",
+                state.get_applied_index()
+            );
         }
         sleep_ms(10);
     }
