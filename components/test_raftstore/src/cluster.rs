@@ -284,6 +284,7 @@ impl<T: Simulator> Cluster<T> {
                 router.clone(),
                 SysQuota::cpu_cores_quota() as usize * 2,
             )),
+            kv_engine: std::sync::RwLock::new(Some(engines.kv.clone())),
         });
 
         let mut proxy_helper = Box::new(raftstore::engine_store_ffi::RaftStoreProxyFFIHelper::new(

@@ -131,6 +131,12 @@ struct SSTReaderInterfaces {
   void (*fn_gc)(SSTReaderPtr, ColumnFamilyType);
 };
 
+enum class MsgPBType : uint32_t {
+  ReadIndexResponse = 0,
+  ServerInfoResponse,
+  RegionLocalState,
+};
+
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);
@@ -142,8 +148,10 @@ struct RaftStoreProxyFFIHelper {
                                                  BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
-  void (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
-                                     RawVoidPtr, uint64_t);  // To remove
+  void (*fn_handle_batch_read_index)(
+      RaftStoreProxyPtr, CppStrVecView, RawVoidPtr, uint64_t,
+      void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,
+                                              uint64_t));  // To remove
   SSTReaderInterfaces sst_reader_interfaces;
 
   uint32_t (*fn_server_info)(RaftStoreProxyPtr, BaseBuffView, RawVoidPtr);
@@ -155,6 +163,9 @@ struct RaftStoreProxyFFIHelper {
   void (*fn_gc_rust_ptr)(RawVoidPtr, RawRustPtrType);
   RawRustPtr (*fn_make_timer_task)(uint64_t millis);
   uint8_t (*fn_poll_timer_task)(RawVoidPtr task, RawVoidPtr waker);
+  uint8_t (*fn_get_region_local_state)(RaftStoreProxyPtr, uint64_t region_id,
+                                       RawVoidPtr data,
+                                       RawCppStringPtr *error_msg);
 };
 
 struct EngineStoreServerHelper {
@@ -188,11 +199,9 @@ struct EngineStoreServerHelper {
                                            BaseBuffView body);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
   void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
-  void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,
-                                          uint64_t);  // To remove
-  void (*fn_set_read_index_resp)(RawVoidPtr, BaseBuffView);
-  void (*fn_set_server_info_resp)(BaseBuffView, RawVoidPtr);
   CppStrWithView (*fn_get_config)(EngineStoreServerWrap *, uint8_t full);
   void (*fn_set_store)(EngineStoreServerWrap *, BaseBuffView);
+  void (*fn_set_pb_msg_by_bytes)(MsgPBType type, RawVoidPtr ptr,
+                                 BaseBuffView buff);
 };
 }  // namespace DB

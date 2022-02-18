@@ -148,12 +148,22 @@ impl EngineStoreServerWrap {
     }
 }
 
-extern "C" fn ffi_set_read_index_resp(
-    data: ffi_interfaces::RawVoidPtr,
-    view: ffi_interfaces::BaseBuffView,
+unsafe extern "C" fn ffi_set_pb_msg_by_bytes(
+    type_: ffi_interfaces::MsgPBType,
+    ptr: ffi_interfaces::RawVoidPtr,
+    buff: ffi_interfaces::BaseBuffView,
 ) {
-    let data = unsafe { &mut *(data as *mut kvproto::kvrpcpb::ReadIndexResponse) };
-    data.merge_from_bytes(view.to_slice()).unwrap();
+    match type_ {
+        ffi_interfaces::MsgPBType::ReadIndexResponse => {
+            let v = &mut *(ptr as *mut kvproto::kvrpcpb::ReadIndexResponse);
+            v.merge_from_bytes(buff.to_slice());
+        }
+        ffi_interfaces::MsgPBType::ServerInfoResponse => todo!(),
+        ffi_interfaces::MsgPBType::RegionLocalState => {
+            let v = &mut *(ptr as *mut kvproto::raft_serverpb::RegionLocalState);
+            v.merge_from_bytes(buff.to_slice());
+        }
+    }
 }
 
 pub fn gen_engine_store_server_helper(
@@ -176,11 +186,9 @@ pub fn gen_engine_store_server_helper(
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
-        fn_insert_batch_read_index_resp: None,
-        fn_set_read_index_resp: Some(ffi_set_read_index_resp),
-        fn_set_server_info_resp: None,
         fn_get_config: None,
         fn_set_store: None,
+        fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
     }
 }
 
