@@ -1,8 +1,10 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-use raftstore::engine_store_ffi::interfaces::root::DB::RawCppStringPtr;
+use raftstore::engine_store_ffi::KVGetStatus;
+use raftstore::engine_store_ffi::RawCppStringPtr;
 use std::sync::{Arc, RwLock};
 use test_raftstore::*;
+
 #[test]
 fn test_normal() {
     let pd_client = Arc::new(TestPdClient::new(0, false));
@@ -33,9 +35,9 @@ fn test_normal() {
                     ffi_set.proxy_helper.proxy_ptr,
                     region_id,
                     &mut state as *mut _ as _,
-                    &mut error_msg
+                    &mut error_msg,
                 ),
-                1
+                KVGetStatus::Ok
             );
             assert!(state.has_region());
             assert_eq!(state.get_state(), kvproto::raft_serverpb::PeerState::Normal);
@@ -47,9 +49,9 @@ fn test_normal() {
                     ffi_set.proxy_helper.proxy_ptr,
                     0, // not exist
                     &mut state as *mut _ as _,
-                    &mut error_msg
+                    &mut error_msg,
                 ),
-                1
+                KVGetStatus::NotFound
             );
             assert!(!state.has_region());
             assert_eq!(error_msg, std::ptr::null_mut());
@@ -59,6 +61,12 @@ fn test_normal() {
                 .get_value_cf("none_cf", "123".as_bytes(), |value| {
                     let error_msg = value.unwrap_err();
                     assert_eq!(error_msg, "Storage Engine cf none_cf not found");
+                });
+            ffi_set
+                .proxy
+                .get_value_cf("raft", "123".as_bytes(), |value| {
+                    let res = value.unwrap();
+                    assert!(res.is_none());
                 });
         }
     }

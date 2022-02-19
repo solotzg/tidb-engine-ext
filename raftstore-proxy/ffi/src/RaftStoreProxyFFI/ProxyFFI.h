@@ -137,6 +137,12 @@ enum class MsgPBType : uint32_t {
   RegionLocalState,
 };
 
+enum class KVGetStatus : uint32_t {
+  Ok = 0,
+  Error,
+  NotFound,
+};
+
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);
@@ -163,9 +169,9 @@ struct RaftStoreProxyFFIHelper {
   void (*fn_gc_rust_ptr)(RawVoidPtr, RawRustPtrType);
   RawRustPtr (*fn_make_timer_task)(uint64_t millis);
   uint8_t (*fn_poll_timer_task)(RawVoidPtr task, RawVoidPtr waker);
-  uint8_t (*fn_get_region_local_state)(RaftStoreProxyPtr, uint64_t region_id,
-                                       RawVoidPtr data,
-                                       RawCppStringPtr *error_msg);
+  KVGetStatus (*fn_get_region_local_state)(RaftStoreProxyPtr,
+                                           uint64_t region_id, RawVoidPtr data,
+                                           RawCppStringPtr *error_msg);
 };
 
 struct EngineStoreServerHelper {

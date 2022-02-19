@@ -222,6 +222,13 @@ pub mod root {
             ServerInfoResponse = 1,
             RegionLocalState = 2,
         }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum KVGetStatus {
+            Ok = 0,
+            Error = 1,
+            NotFound = 2,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct RaftStoreProxyFFIHelper {
@@ -321,7 +328,7 @@ pub mod root {
                     region_id: u64,
                     data: root::DB::RawVoidPtr,
                     error_msg: *mut root::DB::RawCppStringPtr,
-                ) -> u8,
+                ) -> root::DB::KVGetStatus,
             >,
         }
         #[repr(C)]
@@ -424,7 +431,7 @@ pub mod root {
                 ),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 11902507286540916446;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 1236987175086361028;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

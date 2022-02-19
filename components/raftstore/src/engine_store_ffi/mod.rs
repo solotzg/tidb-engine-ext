@@ -21,12 +21,12 @@ pub use read_index_helper::ReadIndexClient;
 pub use crate::engine_store_ffi::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
     EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
-    RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr, RawVoidPtr, SSTReaderPtr,
-    StoreStats, WriteCmdType, WriteCmdsView,
+    KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
+    RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use crate::engine_store_ffi::interfaces::root::DB::{
-    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawCppStringPtr,
-    RawRustPtr, SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
+    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
+    SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
     RAFT_STORE_PROXY_VERSION,
 };
 use crate::store::LockCFFileReader;
@@ -113,11 +113,11 @@ unsafe extern "C" fn ffi_get_region_local_state(
     region_id: u64,
     data: RawVoidPtr,
     error_msg: *mut RawCppStringPtr,
-) -> u8 {
+) -> KVGetStatus {
     assert!(!proxy_ptr.is_null());
 
     let region_state_key = keys::region_state_key(region_id);
-    let mut res = 1u8;
+    let mut res = KVGetStatus::NotFound;
     proxy_ptr
         .as_ref()
         .get_value_cf(engine_traits::CF_RAFT, &region_state_key, |value| {
@@ -129,13 +129,15 @@ unsafe extern "C" fn ffi_get_region_local_state(
                             data,
                             buff.into(),
                         );
+                        res = KVGetStatus::Ok;
+                    } else {
+                        res = KVGetStatus::NotFound;
                     }
-                    res = 1;
                 }
                 Err(e) => {
                     let msg = get_engine_store_server_helper().gen_cpp_string(e.as_ref());
                     *error_msg = msg;
-                    res = 0;
+                    res = KVGetStatus::Error;
                 }
             };
         });
