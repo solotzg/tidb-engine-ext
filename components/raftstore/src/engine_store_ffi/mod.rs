@@ -54,18 +54,47 @@ impl<T> UnwrapExternCFunc<T> for std::option::Option<T> {
 }
 
 pub struct RaftStoreProxy {
-    pub status: AtomicU8,
-    pub key_manager: Option<Arc<DataKeyManager>>,
-    pub read_index_client: Box<dyn read_index_helper::ReadIndex>,
-    pub kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+    status: AtomicU8,
+    key_manager: Option<Arc<DataKeyManager>>,
+    read_index_client: Box<dyn read_index_helper::ReadIndex>,
+    kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+}
+
+pub trait RaftStoreProxyFFI: Sync {
+    fn set_status(&mut self, s: RaftProxyStatus);
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnMut(Result<Option<&[u8]>, String>);
+    fn set_kv_engine(&mut self, kv_engine: engine_rocks::RocksEngine);
 }
 
 impl RaftStoreProxy {
-    pub fn set_status(&mut self, s: RaftProxyStatus) {
+    pub fn new(
+        status: AtomicU8,
+        key_manager: Option<Arc<DataKeyManager>>,
+        read_index_client: Box<dyn read_index_helper::ReadIndex>,
+        kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+    ) -> Self {
+        RaftStoreProxy {
+            status,
+            key_manager,
+            read_index_client,
+            kv_engine,
+        }
+    }
+}
+
+impl RaftStoreProxyFFI for RaftStoreProxy {
+    fn set_kv_engine(&mut self, kv_engine: engine_rocks::RocksEngine) {
+        let mut lock = self.kv_engine.write().unwrap();
+        *lock = Some(kv_engine);
+    }
+
+    fn set_status(&mut self, s: RaftProxyStatus) {
         self.status.store(s as u8, Ordering::SeqCst);
     }
 
-    pub fn get_value_cf<F>(&self, cf: &str, key: &[u8], mut cb: F)
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], mut cb: F)
     where
         F: FnMut(Result<Option<&[u8]>, String>),
     {

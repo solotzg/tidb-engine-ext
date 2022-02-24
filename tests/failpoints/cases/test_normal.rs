@@ -1,7 +1,6 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-use raftstore::engine_store_ffi::KVGetStatus;
-use raftstore::engine_store_ffi::RawCppStringPtr;
+use raftstore::engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI, RawCppStringPtr};
 use std::sync::{Arc, RwLock};
 use test_raftstore::*;
 
