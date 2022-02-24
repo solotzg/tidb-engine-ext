@@ -64,7 +64,7 @@ pub trait RaftStoreProxyFFI: Sync {
     fn set_status(&mut self, s: RaftProxyStatus);
     fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
     where
-        F: FnMut(Result<Option<&[u8]>, String>);
+        F: FnOnce(Result<Option<&[u8]>, String>);
     fn set_kv_engine(&mut self, kv_engine: engine_rocks::RocksEngine);
 }
 
@@ -94,9 +94,9 @@ impl RaftStoreProxyFFI for RaftStoreProxy {
         self.status.store(s as u8, Ordering::SeqCst);
     }
 
-    fn get_value_cf<F>(&self, cf: &str, key: &[u8], mut cb: F)
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
     where
-        F: FnMut(Result<Option<&[u8]>, String>),
+        F: FnOnce(Result<Option<&[u8]>, String>),
     {
         let kv_engine_lock = self.kv_engine.read().unwrap();
         let kv_engine = kv_engine_lock.as_ref();
