@@ -1,6 +1,7 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-use raftstore::engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI, RawCppStringPtr};
+use mock_engine_store;
+use raftstore::engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 use std::sync::{Arc, RwLock};
 use test_raftstore::*;
 
@@ -25,22 +26,23 @@ fn test_normal() {
     }
     let region_id = cluster.get_region(k).get_id();
     unsafe {
-        for (_, ffi_set) in cluster.ffi_helper_set.iter() {
+        for (_, ffi_set) in cluster.ffi_helper_set.iter_mut() {
             let f = ffi_set.proxy_helper.fn_get_region_local_state.unwrap();
             let mut state = kvproto::raft_serverpb::RegionLocalState::default();
-            let mut error_msg: RawCppStringPtr = std::ptr::null_mut();
+            let mut error_msg = mock_engine_store::RawCppStringPtrGuard::default();
+
             assert_eq!(
                 f(
                     ffi_set.proxy_helper.proxy_ptr,
                     region_id,
                     &mut state as *mut _ as _,
-                    &mut error_msg,
+                    error_msg.as_mut(),
                 ),
                 KVGetStatus::Ok
             );
             assert!(state.has_region());
             assert_eq!(state.get_state(), kvproto::raft_serverpb::PeerState::Normal);
-            assert_eq!(error_msg, std::ptr::null_mut());
+            assert!(error_msg.as_ref().is_null());
 
             let mut state = kvproto::raft_serverpb::RegionLocalState::default();
             assert_eq!(
@@ -48,18 +50,18 @@ fn test_normal() {
                     ffi_set.proxy_helper.proxy_ptr,
                     0, // not exist
                     &mut state as *mut _ as _,
-                    &mut error_msg,
+                    error_msg.as_mut(),
                 ),
                 KVGetStatus::NotFound
             );
             assert!(!state.has_region());
-            assert_eq!(error_msg, std::ptr::null_mut());
+            assert!(error_msg.as_ref().is_null());
 
             ffi_set
                 .proxy
                 .get_value_cf("none_cf", "123".as_bytes(), |value| {
-                    let error_msg = value.unwrap_err();
-                    assert_eq!(error_msg, "Storage Engine cf none_cf not found");
+                    let msg = value.unwrap_err();
+                    assert_eq!(msg, "Storage Engine cf none_cf not found");
                 });
             ffi_set
                 .proxy
@@ -67,6 +69,20 @@ fn test_normal() {
                     let res = value.unwrap();
                     assert!(res.is_none());
                 });
+
+            ffi_set.proxy.set_kv_engine(None);
+            let res = ffi_set.proxy_helper.fn_get_region_local_state.unwrap()(
+                ffi_set.proxy_helper.proxy_ptr,
+                region_id,
+                &mut state as *mut _ as _,
+                error_msg.as_mut(),
+            );
+            assert_eq!(res, KVGetStatus::Error);
+            assert!(!error_msg.as_ref().is_null());
+            assert_eq!(
+                error_msg.as_str(),
+                "KV engine is not initialized".as_bytes()
+            );
         }
     }
 

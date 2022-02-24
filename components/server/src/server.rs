@@ -179,7 +179,7 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             limiter.set_low_priority_io_adjustor_if_needed(Some(engines_info.clone()));
             tikv.init_engines(engines.clone());
             {
-                proxy.set_kv_engine(engines.kv.clone());
+                proxy.set_kv_engine(Some(engines.kv.clone()));
             }
             let server_config = tikv.init_servers();
             tikv.register_services();

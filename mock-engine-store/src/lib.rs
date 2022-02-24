@@ -1,4 +1,4 @@
-use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
+use engine_rocks::RocksEngine;
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
@@ -7,14 +7,13 @@ use engine_traits::{Engines, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
 use raftstore::engine_store_ffi;
-use raftstore::engine_store_ffi::interfaces::root::DB::RawRustPtr;
 use raftstore::engine_store_ffi::RawCppPtr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::Duration;
-use tikv_util::{debug, error, info, warn};
+use tikv_util::{debug, info, warn};
 // use kvproto::raft_serverpb::{
 //     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
 // };
@@ -257,6 +256,41 @@ extern "C" fn ffi_gen_cpp_string(s: ffi_interfaces::BaseBuffView) -> ffi_interfa
     ffi_interfaces::RawCppPtr {
         ptr: ptr as *mut _,
         type_: RawCppPtrTypeImpl::String.into(),
+    }
+}
+
+pub struct RawCppStringPtrGuard(ffi_interfaces::RawCppStringPtr);
+
+impl Default for RawCppStringPtrGuard {
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+impl std::convert::AsRef<ffi_interfaces::RawCppStringPtr> for RawCppStringPtrGuard {
+    fn as_ref(&self) -> &ffi_interfaces::RawCppStringPtr {
+        &self.0
+    }
+}
+impl std::convert::AsMut<ffi_interfaces::RawCppStringPtr> for RawCppStringPtrGuard {
+    fn as_mut(&mut self) -> &mut ffi_interfaces::RawCppStringPtr {
+        &mut self.0
+    }
+}
+
+impl Drop for RawCppStringPtrGuard {
+    fn drop(&mut self) {
+        ffi_interfaces::RawCppPtr {
+            ptr: self.0 as *mut _,
+            type_: RawCppPtrTypeImpl::String.into(),
+        };
+    }
+}
+
+impl RawCppStringPtrGuard {
+    pub fn as_str(&self) -> &[u8] {
+        let s = self.0 as *mut Vec<u8>;
+        unsafe { &*s }
     }
 }
 
