@@ -155,12 +155,15 @@ unsafe extern "C" fn ffi_set_pb_msg_by_bytes(
     match type_ {
         ffi_interfaces::MsgPBType::ReadIndexResponse => {
             let v = &mut *(ptr as *mut kvproto::kvrpcpb::ReadIndexResponse);
-            v.merge_from_bytes(buff.to_slice());
+            v.merge_from_bytes(buff.to_slice()).unwrap();
         }
-        ffi_interfaces::MsgPBType::ServerInfoResponse => todo!(),
+        ffi_interfaces::MsgPBType::ServerInfoResponse => {
+            let v = &mut *(ptr as *mut kvproto::diagnosticspb::ServerInfoResponse);
+            v.merge_from_bytes(buff.to_slice()).unwrap();
+        }
         ffi_interfaces::MsgPBType::RegionLocalState => {
             let v = &mut *(ptr as *mut kvproto::raft_serverpb::RegionLocalState);
-            v.merge_from_bytes(buff.to_slice());
+            v.merge_from_bytes(buff.to_slice()).unwrap();
         }
     }
 }

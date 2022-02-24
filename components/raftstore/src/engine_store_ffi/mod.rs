@@ -958,7 +958,7 @@ impl EngineStoreServerHelper {
     fn set_read_index_resp(&self, ptr: RawVoidPtr, r: &kvrpcpb::ReadIndexResponse) {
         let buff = ProtoMsgBaseBuff::new(r);
         self.set_pb_msg_by_bytes(
-            interfaces::root::DB::MsgPBType::ServerInfoResponse,
+            interfaces::root::DB::MsgPBType::ReadIndexResponse,
             ptr,
             Pin::new(&buff).into(),
         )
