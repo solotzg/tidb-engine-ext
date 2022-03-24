@@ -7,7 +7,6 @@ use protobuf::Message;
 use raftstore::engine_store_ffi::interfaces::root::DB::{
     BaseBuffView, RaftStoreProxyPtr, RawVoidPtr,
 };
-use std::pin::Pin;
 use std::time::{Duration, Instant};
 use tikv::server::service::diagnostics::sys;
 use tikv::server::service::diagnostics::{ioload, SYS_INFO};
@@ -60,7 +59,6 @@ fn server_info_for_ffi(req: ServerInfoRequest) -> ServerInfoResponse {
     block_on(collect)
 }
 
-#[no_mangle]
 pub extern "C" fn ffi_server_info(
     proxy_ptr: RaftStoreProxyPtr,
     view: BaseBuffView,
@@ -73,7 +71,6 @@ pub extern "C" fn ffi_server_info(
     req.merge_from_bytes(view.to_slice()).unwrap();
 
     let resp = server_info_for_ffi(req);
-    let r = raftstore::engine_store_ffi::ProtoMsgBaseBuff::new(&resp);
-    raftstore::engine_store_ffi::set_server_info_resp(Pin::new(&r).into(), res);
+    raftstore::engine_store_ffi::set_server_info_resp(&resp, res);
     0
 }

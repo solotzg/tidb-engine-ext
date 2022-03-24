@@ -1,4 +1,4 @@
-use engine_rocks::{Compat, RocksEngine, RocksSnapshot};
+use engine_rocks::RocksEngine;
 use engine_store_ffi::interfaces::root::DB as ffi_interfaces;
 use engine_store_ffi::EngineStoreServerHelper;
 use engine_store_ffi::RaftStoreProxyFFIHelper;
@@ -7,10 +7,13 @@ use engine_traits::{Engines, SyncMutable};
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use protobuf::Message;
 use raftstore::engine_store_ffi;
+use raftstore::engine_store_ffi::RawCppPtr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::pin::Pin;
-use tikv_util::{debug, error, info, warn};
+use std::sync::Mutex;
+use std::time::Duration;
+use tikv_util::{debug, info, warn};
 // use kvproto::raft_serverpb::{
 //     MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
 // };
@@ -144,6 +147,27 @@ impl EngineStoreServerWrap {
     }
 }
 
+unsafe extern "C" fn ffi_set_pb_msg_by_bytes(
+    type_: ffi_interfaces::MsgPBType,
+    ptr: ffi_interfaces::RawVoidPtr,
+    buff: ffi_interfaces::BaseBuffView,
+) {
+    match type_ {
+        ffi_interfaces::MsgPBType::ReadIndexResponse => {
+            let v = &mut *(ptr as *mut kvproto::kvrpcpb::ReadIndexResponse);
+            v.merge_from_bytes(buff.to_slice()).unwrap();
+        }
+        ffi_interfaces::MsgPBType::ServerInfoResponse => {
+            let v = &mut *(ptr as *mut kvproto::diagnosticspb::ServerInfoResponse);
+            v.merge_from_bytes(buff.to_slice()).unwrap();
+        }
+        ffi_interfaces::MsgPBType::RegionLocalState => {
+            let v = &mut *(ptr as *mut kvproto::raft_serverpb::RegionLocalState);
+            v.merge_from_bytes(buff.to_slice()).unwrap();
+        }
+    }
+}
+
 pub fn gen_engine_store_server_helper(
     wrap: Pin<&EngineStoreServerWrap>,
 ) -> EngineStoreServerHelper {
@@ -164,10 +188,9 @@ pub fn gen_engine_store_server_helper(
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
-        fn_insert_batch_read_index_resp: None,
-        fn_set_server_info_resp: None,
         fn_get_config: None,
         fn_set_store: None,
+        fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
     }
 }
 
@@ -204,6 +227,7 @@ enum RawCppPtrTypeImpl {
     None = 0,
     String,
     PreHandledSnapshotWithBlock,
+    WakerNotifier,
 }
 
 impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
@@ -212,6 +236,7 @@ impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
             0 => RawCppPtrTypeImpl::None,
             1 => RawCppPtrTypeImpl::String,
             2 => RawCppPtrTypeImpl::PreHandledSnapshotWithBlock,
+            3 => RawCppPtrTypeImpl::WakerNotifier,
             _ => unreachable!(),
         }
     }
@@ -223,11 +248,11 @@ impl Into<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
             RawCppPtrTypeImpl::None => 0,
             RawCppPtrTypeImpl::String => 1,
             RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => 2,
+            RawCppPtrTypeImpl::WakerNotifier => 3,
         }
     }
 }
 
-#[no_mangle]
 extern "C" fn ffi_gen_cpp_string(s: ffi_interfaces::BaseBuffView) -> ffi_interfaces::RawCppPtr {
     let str = Box::new(Vec::from(s.to_slice()));
     let ptr = Box::into_raw(str);
@@ -237,7 +262,86 @@ extern "C" fn ffi_gen_cpp_string(s: ffi_interfaces::BaseBuffView) -> ffi_interfa
     }
 }
 
-#[no_mangle]
+pub struct RawCppStringPtrGuard(ffi_interfaces::RawCppStringPtr);
+
+impl Default for RawCppStringPtrGuard {
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+impl std::convert::AsRef<ffi_interfaces::RawCppStringPtr> for RawCppStringPtrGuard {
+    fn as_ref(&self) -> &ffi_interfaces::RawCppStringPtr {
+        &self.0
+    }
+}
+impl std::convert::AsMut<ffi_interfaces::RawCppStringPtr> for RawCppStringPtrGuard {
+    fn as_mut(&mut self) -> &mut ffi_interfaces::RawCppStringPtr {
+        &mut self.0
+    }
+}
+
+impl Drop for RawCppStringPtrGuard {
+    fn drop(&mut self) {
+        ffi_interfaces::RawCppPtr {
+            ptr: self.0 as *mut _,
+            type_: RawCppPtrTypeImpl::String.into(),
+        };
+    }
+}
+
+impl RawCppStringPtrGuard {
+    pub fn as_str(&self) -> &[u8] {
+        let s = self.0 as *mut Vec<u8>;
+        unsafe { &*s }
+    }
+}
+
+pub struct ProxyNotifier {
+    cv: std::sync::Condvar,
+    mutex: Mutex<()>,
+    // multi notifiers single receiver model. use another flag to avoid waiting until timeout.
+    flag: std::sync::atomic::AtomicBool,
+}
+
+impl ProxyNotifier {
+    pub fn blocked_wait_for(&self, timeout: Duration) {
+        // if flag from false to false, wait for notification.
+        // if flag from true to false, do nothing.
+        if !self.flag.swap(false, std::sync::atomic::Ordering::AcqRel) {
+            {
+                let lock = self.mutex.lock().unwrap();
+                if !self.flag.load(std::sync::atomic::Ordering::Acquire) {
+                    self.cv.wait_timeout(lock, timeout);
+                }
+            }
+            self.flag.store(false, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    pub fn wake(&self) {
+        // if flag from false -> true, then wake up.
+        // if flag from true -> true, do nothing.
+        if !self.flag.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            let _ = self.mutex.lock().unwrap();
+            self.cv.notify_one();
+        }
+    }
+
+    pub fn new_raw() -> RawCppPtr {
+        let notifier = Box::new(Self {
+            cv: Default::default(),
+            mutex: Mutex::new(()),
+            flag: std::sync::atomic::AtomicBool::new(false),
+        });
+
+        RawCppPtr {
+            ptr: Box::into_raw(notifier) as _,
+            type_: RawCppPtrTypeImpl::WakerNotifier.into(),
+        }
+    }
+}
+
 extern "C" fn ffi_gc_raw_cpp_ptr(
     ptr: ffi_interfaces::RawVoidPtr,
     tp: ffi_interfaces::RawCppPtrType,
@@ -249,6 +353,9 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         },
         RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
             Box::<PrehandledSnapshot>::from_raw(ptr as *mut _);
+        },
+        RawCppPtrTypeImpl::WakerNotifier => unsafe {
+            Box::from_raw(ptr as *mut ProxyNotifier);
         },
     }
 }
@@ -269,10 +376,10 @@ unsafe extern "C" fn ffi_handle_destroy(
     (*store.engine_store_server).kvstore.remove(&arg2);
 }
 
-type TiFlashRaftProxyHelper = RaftStoreProxyFFIHelper;
+type MockRaftProxyHelper = RaftStoreProxyFFIHelper;
 
 pub struct SSTReader<'a> {
-    proxy_helper: &'a TiFlashRaftProxyHelper,
+    proxy_helper: &'a MockRaftProxyHelper,
     inner: ffi_interfaces::SSTReaderPtr,
     type_: ffi_interfaces::ColumnFamilyType,
 }
@@ -290,7 +397,7 @@ impl<'a> Drop for SSTReader<'a> {
 
 impl<'a> SSTReader<'a> {
     pub unsafe fn new(
-        proxy_helper: &'a TiFlashRaftProxyHelper,
+        proxy_helper: &'a MockRaftProxyHelper,
         view: &'a ffi_interfaces::SSTView,
     ) -> Self {
         SSTReader {

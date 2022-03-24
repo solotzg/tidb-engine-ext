@@ -5,6 +5,12 @@ pub mod root {
         use self::super::super::root;
         pub type ConstRawVoidPtr = *const ::std::os::raw::c_void;
         pub type RawVoidPtr = *mut ::std::os::raw::c_void;
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppString {
+            _unused: [u8; 0],
+        }
+        pub type RawCppStringPtr = *mut root::DB::RawCppString;
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum ColumnFamilyType {
@@ -12,12 +18,6 @@ pub mod root {
             Write = 1,
             Default = 2,
         }
-        #[repr(C)]
-        #[derive(Debug)]
-        pub struct RawCppString {
-            _unused: [u8; 0],
-        }
-        pub type RawCppStringPtr = *mut root::DB::RawCppString;
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum FileEncryptionRes {
@@ -116,6 +116,13 @@ pub mod root {
             Terminated = 3,
         }
         pub type RawCppPtrType = u32;
+        pub type RawRustPtrType = u32;
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawRustPtr {
+            pub ptr: root::DB::RawVoidPtr,
+            pub type_: root::DB::RawRustPtrType,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct RawCppPtr {
@@ -208,6 +215,20 @@ pub mod root {
                 ),
             >,
         }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum MsgPBType {
+            ReadIndexResponse = 0,
+            ServerInfoResponse = 1,
+            RegionLocalState = 2,
+        }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum KVGetStatus {
+            Ok = 0,
+            Error = 1,
+            NotFound = 2,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct RaftStoreProxyFFIHelper {
@@ -256,6 +277,13 @@ pub mod root {
                     arg2: root::DB::CppStrVecView,
                     arg3: root::DB::RawVoidPtr,
                     arg4: u64,
+                    fn_insert_batch_read_index_resp: ::std::option::Option<
+                        unsafe extern "C" fn(
+                            arg1: root::DB::RawVoidPtr,
+                            arg2: root::DB::BaseBuffView,
+                            arg3: u64,
+                        ),
+                    >,
                 ),
             >,
             pub sst_reader_interfaces: root::DB::SSTReaderInterfaces,
@@ -265,6 +293,42 @@ pub mod root {
                     arg2: root::DB::BaseBuffView,
                     arg3: root::DB::RawVoidPtr,
                 ) -> u32,
+            >,
+            pub fn_make_read_index_task: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                    arg2: root::DB::BaseBuffView,
+                ) -> root::DB::RawRustPtr,
+            >,
+            pub fn_make_async_waker: ::std::option::Option<
+                unsafe extern "C" fn(
+                    wake_fn: ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr)>,
+                    data: root::DB::RawCppPtr,
+                ) -> root::DB::RawRustPtr,
+            >,
+            pub fn_poll_read_index_task: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                    task: root::DB::RawVoidPtr,
+                    resp: root::DB::RawVoidPtr,
+                    waker: root::DB::RawVoidPtr,
+                ) -> u8,
+            >,
+            pub fn_gc_rust_ptr: ::std::option::Option<
+                unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawRustPtrType),
+            >,
+            pub fn_make_timer_task:
+                ::std::option::Option<unsafe extern "C" fn(millis: u64) -> root::DB::RawRustPtr>,
+            pub fn_poll_timer_task: ::std::option::Option<
+                unsafe extern "C" fn(task: root::DB::RawVoidPtr, waker: root::DB::RawVoidPtr) -> u8,
+            >,
+            pub fn_get_region_local_state: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                    region_id: u64,
+                    data: root::DB::RawVoidPtr,
+                    error_msg: *mut root::DB::RawCppStringPtr,
+                ) -> root::DB::KVGetStatus,
             >,
         }
         #[repr(C)]
@@ -347,16 +411,6 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
-            pub fn_insert_batch_read_index_resp: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: root::DB::RawVoidPtr,
-                    arg2: root::DB::BaseBuffView,
-                    arg3: u64,
-                ),
-            >,
-            pub fn_set_server_info_resp: ::std::option::Option<
-                unsafe extern "C" fn(arg1: root::DB::BaseBuffView, arg2: root::DB::RawVoidPtr),
-            >,
             pub fn_get_config: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
@@ -369,8 +423,15 @@ pub mod root {
                     arg2: root::DB::BaseBuffView,
                 ),
             >,
+            pub fn_set_pb_msg_by_bytes: ::std::option::Option<
+                unsafe extern "C" fn(
+                    type_: root::DB::MsgPBType,
+                    ptr: root::DB::RawVoidPtr,
+                    buff: root::DB::BaseBuffView,
+                ),
+            >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 2676036121052655811;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 1236987175086361028;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
