@@ -7,7 +7,7 @@ use prometheus_static_metric::*;
 #[cfg(target_os = "linux")]
 mod threads_linux;
 #[cfg(target_os = "linux")]
-pub use self::threads_linux::{monitor_threads, ThreadInfoStatistics};
+pub use self::threads_linux::{cpu_total, get_thread_ids, monitor_threads, ThreadInfoStatistics};
 
 #[cfg(target_os = "linux")]
 mod process_linux;
@@ -91,7 +91,3 @@ pub fn convert_record_pairs(m: HashMap<String, u64>) -> RecordPairVec {
         })
         .collect()
 }
-#[cfg(not(target_os = "linux"))]
-pub use self::threads_dummy::dump_thread_stats;
-#[cfg(target_os = "linux")]
-pub use self::threads_linux::dump_thread_stats;

@@ -26,7 +26,6 @@ use std::{
     u64,
 };
 
-use cdc::{CdcConfigManager, MemoryQuota};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::{data_key_manager_from_config, DataKeyManager};
 use engine_rocks::{from_rocks_compression_type, get_env, FlowInfo, RocksEngine};
@@ -103,7 +102,7 @@ use tokio::runtime::Builder;
 
 use crate::raft_engine_switch::*;
 use crate::util::ffi_server_info;
-use crate::{memory::*, setup::*, signal_handler};
+use crate::{memory::*, setup::*};
 use raftstore::engine_store_ffi::{
     EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
     RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient,
@@ -285,9 +284,6 @@ struct Servers<EK: KvEngine, ER: RaftEngine> {
     server: LocalServer<EK, ER>,
     node: Node<RpcClient, EK, ER>,
     importer: Arc<SSTImporter>,
-    cdc_scheduler: tikv_util::worker::Scheduler<cdc::Task>,
-    cdc_memory_quota: MemoryQuota,
-    rsmeter_pubsub_service: resource_metering::PubSubService,
 }
 
 type LocalServer<EK, ER> =
@@ -655,22 +651,6 @@ impl<ER: RaftEngine> TiKVServer<ER> {
         let cfg_controller = self.cfg_controller.as_mut().unwrap();
 
         let lock_mgr = LockManager::new();
-        // Create cdc.
-        let mut cdc_worker = Box::new(LazyWorker::new("cdc"));
-        let cdc_scheduler = cdc_worker.scheduler();
-        let txn_extra_scheduler = cdc::CdcTxnExtraScheduler::new(cdc_scheduler.clone());
-
-        self.engines
-            .as_mut()
-            .unwrap()
-            .engine
-            .set_txn_extra_scheduler(Arc::new(txn_extra_scheduler));
-
-        cfg_controller.register(
-            tikv::config::Module::PessimisticTxn,
-            Box::new(lock_mgr.config_manager()),
-        );
-        lock_mgr.register_detector_role_change_observer(self.coprocessor_host.as_mut().unwrap());
 
         let engines = self.engines.as_ref().unwrap();
 
@@ -742,13 +722,19 @@ impl<ER: RaftEngine> TiKVServer<ER> {
             storage_read_pools.handle()
         };
 
+        // we don't care since we don't start this service
+        let dummy_dynamic_configs = crate::server::storage::DynamicConfigs {
+            pipelined_pessimistic_lock: Arc::new(AtomicBool::new(true)),
+            in_memory_pessimistic_lock: Arc::new(AtomicBool::new(true)),
+        };
+
         let storage = create_raft_storage(
             engines.engine.clone(),
             &self.config.storage,
             storage_read_pool_handle,
             lock_mgr.clone(),
             self.concurrency_manager.clone(),
-            lock_mgr.get_storage_dynamic_configs(),
+            dummy_dynamic_configs,
             flow_controller.clone(),
             pd_sender.clone(),
             resource_tag_factory.clone(),
@@ -807,33 +793,6 @@ impl<ER: RaftEngine> TiKVServer<ER> {
                 )),
             );
         }
-
-        // Register cdc.
-        let cdc_ob = cdc::CdcObserver::new(cdc_scheduler.clone());
-        cdc_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-        // Register cdc config manager.
-        cfg_controller.register(
-            tikv::config::Module::CDC,
-            Box::new(CdcConfigManager(cdc_worker.scheduler())),
-        );
-
-        // Create resolved ts worker
-        let rts_worker = if self.config.resolved_ts.enable {
-            let worker = Box::new(LazyWorker::new("resolved-ts"));
-            // Register the resolved ts observer
-            let resolved_ts_ob = resolved_ts::Observer::new(worker.scheduler());
-            resolved_ts_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-            // Register config manager for resolved ts worker
-            cfg_controller.register(
-                tikv::config::Module::ResolvedTs,
-                Box::new(resolved_ts::ResolvedTsConfigManager::new(
-                    worker.scheduler(),
-                )),
-            );
-            Some(worker)
-        } else {
-            None
-        };
 
         let check_leader_runner = CheckLeaderRunner::new(engines.store_meta.clone());
         let check_leader_scheduler = self
@@ -971,41 +930,7 @@ impl<ER: RaftEngine> TiKVServer<ER> {
         }
 
         // Start CDC.
-        let cdc_memory_quota = MemoryQuota::new(self.config.cdc.sink_memory_quota.0 as _);
-        let cdc_endpoint = cdc::Endpoint::new(
-            self.config.server.cluster_id,
-            &self.config.cdc,
-            self.pd_client.clone(),
-            cdc_scheduler.clone(),
-            self.router.clone(),
-            self.engines.as_ref().unwrap().engines.kv.clone(),
-            cdc_ob,
-            engines.store_meta.clone(),
-            self.concurrency_manager.clone(),
-            server.env(),
-            self.security_mgr.clone(),
-            cdc_memory_quota.clone(),
-        );
-        cdc_worker.start_with_timer(cdc_endpoint);
-        self.to_stop.push(cdc_worker);
-
         // Start resolved ts
-        if let Some(mut rts_worker) = rts_worker {
-            let rts_endpoint = resolved_ts::Endpoint::new(
-                &self.config.resolved_ts,
-                rts_worker.scheduler(),
-                self.router.clone(),
-                engines.store_meta.clone(),
-                self.pd_client.clone(),
-                self.concurrency_manager.clone(),
-                server.env(),
-                self.security_mgr.clone(),
-                // TODO: replace to the cdc sinker
-                resolved_ts::DummySinker::new(),
-            );
-            rts_worker.start_with_timer(rts_endpoint);
-            self.to_stop.push(rts_worker);
-        }
 
         cfg_controller.register(
             tikv::config::Module::Raftstore,
@@ -1020,9 +945,6 @@ impl<ER: RaftEngine> TiKVServer<ER> {
             server,
             node,
             importer,
-            cdc_scheduler,
-            cdc_memory_quota,
-            rsmeter_pubsub_service,
         });
 
         server_config
@@ -1077,72 +999,7 @@ impl<ER: RaftEngine> TiKVServer<ER> {
         }
 
         // Lock manager.
-        if servers
-            .server
-            .register_service(create_deadlock(servers.lock_mgr.deadlock_service()))
-            .is_some()
-        {
-            fatal!("failed to register deadlock service");
-        }
-
-        servers
-            .lock_mgr
-            .start(
-                servers.node.id(),
-                self.pd_client.clone(),
-                self.resolver.clone(),
-                self.security_mgr.clone(),
-                &self.config.pessimistic_txn,
-            )
-            .unwrap_or_else(|e| fatal!("failed to start lock manager: {}", e));
-
         // Backup service.
-        let mut backup_worker = Box::new(self.background_worker.lazy_build("backup-endpoint"));
-        let backup_scheduler = backup_worker.scheduler();
-        let backup_service = backup::Service::new(backup_scheduler);
-        if servers
-            .server
-            .register_service(create_backup(backup_service))
-            .is_some()
-        {
-            fatal!("failed to register backup service");
-        }
-
-        let backup_endpoint = backup::Endpoint::new(
-            servers.node.id(),
-            engines.engine.clone(),
-            self.region_info_accessor.clone(),
-            engines.engines.kv.as_inner().clone(),
-            self.config.backup.clone(),
-            self.concurrency_manager.clone(),
-            self.config.storage.api_version(),
-        );
-        self.cfg_controller.as_mut().unwrap().register(
-            tikv::config::Module::Backup,
-            Box::new(backup_endpoint.get_config_manager()),
-        );
-        backup_worker.start(backup_endpoint);
-
-        let cdc_service = cdc::Service::new(
-            servers.cdc_scheduler.clone(),
-            servers.cdc_memory_quota.clone(),
-        );
-        if servers
-            .server
-            .register_service(create_change_data(cdc_service))
-            .is_some()
-        {
-            fatal!("failed to register cdc service");
-        }
-        if servers
-            .server
-            .register_service(create_resource_metering_pub_sub(
-                servers.rsmeter_pubsub_service.clone(),
-            ))
-            .is_some()
-        {
-            warn!("failed to register resource metering pubsub service");
-        }
     }
 
     fn init_io_utility(&mut self) -> BytesFetcher {

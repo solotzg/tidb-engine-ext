@@ -1,6 +1,7 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{thread, usize};
@@ -50,8 +51,8 @@ use tikv::coprocessor_v2;
 use tikv::import::{ImportSSTService, SSTImporter};
 use tikv::read_pool::ReadPool;
 use tikv::server::gc_worker::GcWorker;
-use tikv::server::lock_manager::HackedLockManager as LockManager;
 use tikv::server::load_statistics::ThreadLoadPool;
+use tikv::server::lock_manager::HackedLockManager as LockManager;
 use tikv::server::resolve::{self, StoreAddrResolver};
 use tikv::server::service::DebugService;
 use tikv::server::Result as ServerResult;
@@ -351,13 +352,18 @@ impl Simulator for ServerCluster {
             cfg.quota.max_delay_duration,
         ));
 
+        // we don't care since we don't start this service
+        let dummy_dynamic_configs = crate::server::storage::DynamicConfigs {
+            pipelined_pessimistic_lock: Arc::new(AtomicBool::new(true)),
+            in_memory_pessimistic_lock: Arc::new(AtomicBool::new(true)),
+        };
         let store = create_raft_storage(
             engine,
             &cfg.storage,
             storage_read_pool.handle(),
             lock_mgr,
             concurrency_manager.clone(),
-            lock_mgr.get_storage_dynamic_configs(),
+            dummy_dynamic_configs,
             Arc::new(FlowController::empty()),
             pd_sender,
             res_tag_factory.clone(),
@@ -491,9 +497,9 @@ impl Simulator for ServerCluster {
         let simulate_trans = SimulateTransport::new(trans);
         let server_cfg = Arc::new(VersionTrack::new(cfg.server.clone()));
 
-
         // Register the role change observer of the lock manager.
-        lock_mgr.register_detector_role_change_observer(&mut coprocessor_host);
+        // We have hacked lock manager
+        // lock_mgr.register_detector_role_change_observer(&mut coprocessor_host);
 
         let pessimistic_txn_cfg = cfg.tikv.pessimistic_txn;
 

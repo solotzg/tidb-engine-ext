@@ -1188,7 +1188,7 @@ where
             return exec_result;
         }
 
-        debug!(
+        info!(
             "applied command";
             "region_id" => self.region_id(),
             "peer_id" => self.id(),
@@ -1436,8 +1436,8 @@ where
                 info!(
                     "useless admin command";
                     "region_id" => self.region_id(),
-                    "term" => ctx.exec_ctx.as_ref().unwrap().term,
-                    "index" => ctx.exec_ctx.as_ref().unwrap().index,
+                    "term" => ctx.exec_log_term,
+                    "index" => ctx.exec_log_index,
                     "type" => ?cmd_type,
                 );
             }
@@ -1446,15 +1446,15 @@ where
                     "execute admin command";
                     "region_id" => self.region_id(),
                     "peer_id" => self.id(),
-                    "term" => ctx.exec_ctx.as_ref().unwrap().term,
-                    "index" => ctx.exec_ctx.as_ref().unwrap().index,
+                    "term" => ctx.exec_log_term,
+                    "index" => ctx.exec_log_index,
                     "command" => ?request
                 );
             }
         }
 
         let ori_apply_state = if cmd_type == AdminCmdType::CompactLog {
-            Some(ctx.exec_ctx.as_ref().unwrap().apply_state.clone())
+            Some(self.apply_state.clone())
         } else {
             None
         };
@@ -1464,7 +1464,7 @@ where
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
             AdminCmdType::Split => self.exec_split(ctx, request),
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
-            AdminCmdType::CompactLog => self.exec_compact_log(ctx, request),
+            AdminCmdType::CompactLog => self.exec_compact_log(request),
             AdminCmdType::TransferLeader => Err(box_err!("transfer leader won't exec")),
             AdminCmdType::ComputeHash => Ok((AdminResponse::new(), ApplyResult::None)),
             AdminCmdType::VerifyHash => Ok((AdminResponse::new(), ApplyResult::None)),
@@ -1488,11 +1488,7 @@ where
             ctx.engine_store_server_helper.handle_admin_raft_cmd(
                 &request,
                 &response,
-                RaftCmdHeader::new(
-                    self.region.get_id(),
-                    ctx.exec_ctx.as_ref().unwrap().index,
-                    ctx.exec_ctx.as_ref().unwrap().term,
-                ),
+                RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
             )
         };
 
@@ -1501,7 +1497,7 @@ where
                 if cmd_type == AdminCmdType::CompactLog {
                     response = AdminResponse::new();
                     exec_result = ApplyResult::None;
-                    ctx.exec_ctx.as_mut().unwrap().apply_state = ori_apply_state.unwrap();
+                    self.apply_state = ori_apply_state.unwrap();
                 }
             }
             _ => {}
@@ -1585,8 +1581,8 @@ where
                         "skip persist for ingest sst";
                         "region_id" => self.region_id(),
                         "peer_id" => self.id(),
-                        "term" => ctx.exec_ctx.as_ref().unwrap().term,
-                        "index" => ctx.exec_ctx.as_ref().unwrap().index,
+                        "term" => ctx.exec_log_term,
+                        "index" => ctx.exec_log_index,
                         "pending_ssts" => ?self.pending_clean_ssts
                     );
 
@@ -1602,8 +1598,8 @@ where
                         "ingest sst success";
                         "region_id" => self.region_id(),
                         "peer_id" => self.id(),
-                        "term" => ctx.exec_ctx.as_ref().unwrap().term,
-                        "index" => ctx.exec_ctx.as_ref().unwrap().index,
+                        "term" => ctx.exec_log_term,
+                        "index" => ctx.exec_log_index,
                         "ssts_to_clean" => ?ssts
                     );
                     ctx.delete_ssts.append(&mut ssts.clone());
@@ -1618,11 +1614,7 @@ where
             let flash_res = {
                 ctx.engine_store_server_helper.handle_write_raft_cmd(
                     &cmds,
-                    RaftCmdHeader::new(
-                        self.region.get_id(),
-                        ctx.exec_ctx.as_ref().unwrap().index,
-                        ctx.exec_ctx.as_ref().unwrap().term,
-                    ),
+                    RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
                 )
             };
             Ok((RaftCmdResponse::new(), ApplyResult::None, flash_res))
@@ -1801,9 +1793,9 @@ where
         Ok(())
     }
 
-    fn handle_ingest_sst_for_engine_store<W: WriteBatch<EK>>(
+    fn handle_ingest_sst_for_engine_store(
         &mut self,
-        ctx: &ApplyContext<EK, W>,
+        ctx: &ApplyContext<EK>,
         ssts: &Vec<SSTMetaInfo>,
     ) -> EngineStoreApplyRes {
         let mut ssts_wrap = vec![];
@@ -1841,11 +1833,7 @@ where
 
         ctx.engine_store_server_helper.handle_ingest_sst(
             sst_views,
-            RaftCmdHeader::new(
-                self.region.get_id(),
-                ctx.exec_ctx.as_ref().unwrap().index,
-                ctx.exec_ctx.as_ref().unwrap().term,
-            ),
+            RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
         )
     }
 
@@ -3654,11 +3642,7 @@ where
     }
 
     #[allow(unused_mut, clippy::redundant_closure_call)]
-    fn handle_snapshot<W: WriteBatch<EK>>(
-        &mut self,
-        apply_ctx: &mut ApplyContext<EK, W>,
-        snap_task: GenSnapTask,
-    ) {
+    fn handle_snapshot(&mut self, apply_ctx: &mut ApplyContext<EK>, snap_task: GenSnapTask) {
         if self.delegate.pending_remove || self.delegate.stopped {
             return;
         }
@@ -3856,7 +3840,7 @@ where
                     {
                         unreachable!("should not request snapshot")
                     }
-                },
+                }
                 Msg::Change {
                     cmd,
                     region_epoch,
