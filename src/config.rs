@@ -2199,19 +2199,23 @@ impl Default for BackupConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Configuration)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct CdcConfig {
     pub min_ts_interval: ReadableDuration,
     pub hibernate_regions_compatible: bool,
+    // TODO(hi-rustin): Consider resizing the thread pool based on `incremental_scan_threads`.
+    #[config(skip)]
     pub incremental_scan_threads: usize,
     pub incremental_scan_concurrency: usize,
     pub incremental_scan_speed_limit: ReadableSize,
     pub sink_memory_quota: ReadableSize,
     pub old_value_cache_memory_quota: ReadableSize,
     // Deprecated! preserved for compatibility check.
+    #[config(skip)]
     #[doc(hidden)]
+    #[serde(skip_serializing)]
     pub old_value_cache_size: usize,
 }
 
@@ -2238,7 +2242,7 @@ impl Default for CdcConfig {
 }
 
 impl CdcConfig {
-    fn validate(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn validate(&mut self) -> Result<(), Box<dyn Error>> {
         if self.min_ts_interval == ReadableDuration::secs(0) {
             return Err("cdc.min-ts-interval can't be 0s".into());
         }
@@ -2388,7 +2392,7 @@ pub struct TiKvConfig {
     #[config(submodule)]
     pub split: SplitConfig,
 
-    #[config(skip)]
+    #[config(submodule)]
     pub cdc: CdcConfig,
 
     #[config(submodule)]
@@ -2439,6 +2443,29 @@ impl Default for TiKvConfig {
 }
 
 impl TiKvConfig {
+    pub fn infer_raft_db_path(&self, data_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
+        if self.raft_store.raftdb_path.is_empty() {
+            let data_dir = data_dir.unwrap_or(&self.storage.data_dir);
+            config::canonicalize_sub_path(data_dir, "raft")
+        } else {
+            config::canonicalize_path(&self.raft_store.raftdb_path)
+        }
+    }
+
+    pub fn infer_raft_engine_path(&self, data_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
+        if self.raft_engine.config.dir.is_empty() {
+            let data_dir = data_dir.unwrap_or(&self.storage.data_dir);
+            config::canonicalize_sub_path(data_dir, "raft-engine")
+        } else {
+            config::canonicalize_path(&self.raft_engine.config.dir)
+        }
+    }
+
+    pub fn infer_kv_engine_path(&self, data_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
+        let data_dir = data_dir.unwrap_or(&self.storage.data_dir);
+        config::canonicalize_sub_path(data_dir, DEFAULT_ROCKSDB_SUB_DIR)
+    }
+
     // TODO: change to validate(&self)
     pub fn validate(&mut self) -> Result<(), Box<dyn Error>> {
         self.readpool.validate()?;
@@ -2452,26 +2479,14 @@ impl TiKvConfig {
                 .to_owned();
         }
 
-        let default_raftdb_path = config::canonicalize_sub_path(&self.storage.data_dir, "raft")?;
-        if self.raft_store.raftdb_path.is_empty() {
-            self.raft_store.raftdb_path = default_raftdb_path;
-        } else {
-            self.raft_store.raftdb_path = config::canonicalize_path(&self.raft_store.raftdb_path)?;
-        }
+        self.raft_store.raftdb_path = self.infer_raft_db_path(None)?;
+        self.raft_engine.config.dir = self.infer_raft_engine_path(None)?;
 
-        let default_er_path = config::canonicalize_sub_path(&self.storage.data_dir, "raft-engine")?;
-        if self.raft_engine.config.dir.is_empty() {
-            self.raft_engine.config.dir = default_er_path;
-        } else {
-            self.raft_engine.config.dir = config::canonicalize_path(&self.raft_engine.config.dir)?;
-        }
         if self.raft_engine.config.dir == self.raft_store.raftdb_path {
             return Err("raft_engine.config.dir can't be same as raft_store.raftdb_path".into());
         }
 
-        let kv_db_path =
-            config::canonicalize_sub_path(&self.storage.data_dir, DEFAULT_ROCKSDB_SUB_DIR)?;
-
+        let kv_db_path = self.infer_kv_engine_path(None)?;
         if kv_db_path == self.raft_store.raftdb_path {
             return Err("raft_store.raftdb_path can't be same as storage.data_dir/db".into());
         }

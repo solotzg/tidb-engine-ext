@@ -108,6 +108,10 @@ impl SSTImporter {
         }
     }
 
+    pub fn verify_checksum(&self, metas: &[SstMeta]) -> Result<()> {
+        self.dir.verify_checksum(metas, self.key_manager.clone())
+    }
+
     pub fn exist(&self, meta: &SstMeta) -> bool {
         self.dir.exist(meta).unwrap_or(false)
     }
@@ -644,10 +648,25 @@ impl ImportDir {
         let env = get_encrypted_env(key_manager, None /*base_env*/)?;
         let env = get_inspected_env(Some(env), get_io_rate_limiter())?;
         let sst_reader = RocksSstReader::open_with_env(&path_str, Some(env))?;
-        sst_reader.verify_checksum()?;
         // TODO: check the length and crc32 of ingested file.
         let meta_info = sst_reader.sst_meta_info(meta.to_owned());
         Ok(meta_info)
+    }
+
+    pub fn verify_checksum(
+        &self,
+        metas: &[SstMeta],
+        key_manager: Option<Arc<DataKeyManager>>,
+    ) -> Result<()> {
+        for meta in metas {
+            let path = self.join(meta)?;
+            let path_str = path.save.to_str().unwrap();
+            let env = get_encrypted_env(key_manager.clone(), None /*base_env*/)?;
+            let env = get_inspected_env(Some(env), get_io_rate_limiter())?;
+            let sst_reader = RocksSstReader::open_with_env(path_str, Some(env))?;
+            sst_reader.verify_checksum()?;
+        }
+        Ok(())
     }
 
     fn ingest<E: KvEngine>(
@@ -870,7 +889,7 @@ fn path_to_sst_meta<P: AsRef<Path>>(path: P) -> Result<SstMeta> {
         return Err(Error::InvalidSSTPath(path.to_owned()));
     }
     let elems: Vec<_> = file_name.trim_end_matches(SST_SUFFIX).split('_').collect();
-    if elems.len() != 5 {
+    if elems.len() < 4 {
         return Err(Error::InvalidSSTPath(path.to_owned()));
     }
 
@@ -880,7 +899,11 @@ fn path_to_sst_meta<P: AsRef<Path>>(path: P) -> Result<SstMeta> {
     meta.set_region_id(elems[1].parse()?);
     meta.mut_region_epoch().set_conf_ver(elems[2].parse()?);
     meta.mut_region_epoch().set_version(elems[3].parse()?);
-    meta.set_cf_name(elems[4].to_owned());
+    if elems.len() > 4 {
+        // If we upgrade TiKV from 3.0.x to 4.0.x and higher version, we can not read cf_name from
+        // the file path, because TiKV 3.0.x does not encode cf_name to path.
+        meta.set_cf_name(elems[4].to_owned());
+    }
     Ok(meta)
 }
 
@@ -994,7 +1017,6 @@ mod tests {
             let mut f = dir.create(&meta, key_manager.clone()).unwrap();
             f.append(&data).unwrap();
             f.finish().unwrap();
-
             dir.ingest(&[meta.to_owned()], &db, key_manager.clone())
                 .unwrap();
             check_db_range(&db, range);
@@ -2005,5 +2027,25 @@ mod tests {
                 (b"zc".to_vec(), b"v4".to_vec()),
             ]
         );
+    }
+
+    #[test]
+    fn test_path_to_sst_meta() {
+        let uuid = Uuid::new_v4();
+        let mut meta = SstMeta::default();
+        meta.set_uuid(uuid.as_bytes().to_vec());
+        meta.set_region_id(1);
+        meta.mut_region_epoch().set_conf_ver(222);
+        meta.mut_region_epoch().set_version(333);
+        let path = PathBuf::from(format!(
+            "{}_{}_{}_{}{}",
+            UuidBuilder::from_slice(meta.get_uuid()).unwrap().build(),
+            meta.get_region_id(),
+            meta.get_region_epoch().get_conf_ver(),
+            meta.get_region_epoch().get_version(),
+            SST_SUFFIX,
+        ));
+        let new_meta = path_to_sst_meta(&path).unwrap();
+        assert_eq!(meta, new_meta);
     }
 }

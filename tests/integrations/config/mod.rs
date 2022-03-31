@@ -206,6 +206,7 @@ fn test_serde_custom_tikv_config() {
         hibernate_regions: false,
         dev_assert: true,
         apply_yield_duration: ReadableDuration::millis(333),
+        raft_log_compact_sync_interval: ReadableDuration::secs(60),
         perf_level: PerfLevel::EnableTime,
     };
     value.pd = PdConfig::new(vec!["example.com:443".to_owned()]);
@@ -682,7 +683,7 @@ fn test_serde_custom_tikv_config() {
     };
     value.cdc = CdcConfig {
         min_ts_interval: ReadableDuration::secs(4),
-        old_value_cache_size: 512,
+        old_value_cache_size: 0,
         hibernate_regions_compatible: false,
         incremental_scan_threads: 3,
         incremental_scan_concurrency: 4,
