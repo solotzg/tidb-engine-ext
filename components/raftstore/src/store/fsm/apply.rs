@@ -1,4 +1,5 @@
 // Copyright 2017 TiKV Project Authors. Licensed under Apache-2.0.
+use prometheus::local::LocalHistogram;
 
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering as CmpOrdering};
@@ -17,7 +18,8 @@ use std::vec::Drain;
 use std::{cmp, usize};
 
 use batch_system::{
-    BasicMailbox, BatchRouter, BatchSystem, Fsm, HandlerBuilder, PollHandler, Priority,
+    BasicMailbox, BatchRouter, BatchSystem, Fsm, HandleResult, HandlerBuilder, PollHandler,
+    Priority, TrackedFsm,
 };
 use collections::{HashMap, HashMapEntry, HashSet};
 use crossbeam::channel::{TryRecvError, TrySendError};
@@ -39,6 +41,7 @@ use kvproto::raft_cmdpb::{
 use kvproto::raft_serverpb::{
     MergeState, PeerState, RaftApplyState, RaftTruncatedState, RegionLocalState,
 };
+
 use raft::eraftpb::{
     ConfChange, ConfChangeType, ConfChangeV2, Entry, EntryType, Snapshot as RaftSnapshot,
 };
@@ -60,6 +63,7 @@ use crate::coprocessor::{
     Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel,
 };
 use crate::store::fsm::RaftPollerBuilder;
+use crate::store::local_metrics::RaftMetrics;
 use crate::store::memory::*;
 use crate::store::metrics::*;
 use crate::store::msg::{Callback, PeerMsg, ReadResponse, SignificantMsg};
@@ -69,10 +73,10 @@ use crate::store::peer_storage::{
 };
 use crate::store::util::{
     admin_cmd_epoch_lookup, check_region_epoch, compare_region_epoch, is_learner, ChangePeerI,
-    ConfChangeKind, KeysInfoFormatter,
+    ConfChangeKind, KeysInfoFormatter, LatencyInspector,
 };
 use crate::store::{cmd_resp, util, Config, RegionSnapshot, RegionTask};
-use crate::{bytes_capacity, store::QueryStats, Error, Result};
+use crate::{bytes_capacity, Error, Result};
 
 use super::metrics::*;
 use crate::engine_store_ffi::{
@@ -404,6 +408,11 @@ where
     priority: Priority,
     /// Whether to yield high-latency operation to low-priority handler.
     yield_high_latency_operation: bool,
+
+    /// The pending inspector should be cleaned at the end of a write.
+    pending_latency_inspect: Vec<LatencyInspector>,
+    apply_wait: LocalHistogram,
+    apply_time: LocalHistogram,
 }
 
 impl<EK, W> ApplyContext<EK, W>
@@ -453,6 +462,9 @@ where
             pending_create_peers,
             priority,
             yield_high_latency_operation: cfg.apply_batch_system.low_priority_pool_size > 0,
+            pending_latency_inspect: vec![],
+            apply_wait: APPLY_TASK_WAIT_TIME_HISTOGRAM.local(),
+            apply_time: APPLY_TIME_HISTOGRAM.local(),
         }
     }
 
@@ -526,9 +538,18 @@ where
         self.host
             .on_flush_applied_cmd_batch(batch_max_level, cmd_batch, &self.engine);
         // Invoke callbacks
+        let now = Instant::now();
         for (cb, resp) in cb_batch.drain(..) {
-            cb.invoke_with_response(resp)
+            if let Some(times) = cb.get_request_times() {
+                for t in times {
+                    self.apply_time
+                        .observe(duration_to_sec(now.saturating_duration_since(*t)));
+                }
+            }
+            cb.invoke_with_response(resp);
         }
+        self.apply_time.flush();
+        self.apply_wait.flush();
         need_sync
     }
 
@@ -587,8 +608,12 @@ where
             self.notifier.notify(apply_res);
         }
 
-        let elapsed = t.elapsed();
+        let elapsed = t.saturating_elapsed();
         STORE_APPLY_LOG_HISTOGRAM.observe(duration_to_sec(elapsed) as f64);
+        for mut inspector in std::mem::take(&mut self.pending_latency_inspect) {
+            inspector.record_apply_process(elapsed);
+            inspector.finish();
+        }
 
         slow_log!(
             elapsed,
@@ -1018,7 +1043,7 @@ where
             if should_flush_to_engine(&cmd) {
                 apply_ctx.commit_opt(self, true);
                 if let Some(start) = self.handle_start.as_ref() {
-                    if start.elapsed() >= apply_ctx.yield_duration {
+                    if start.saturating_elapsed() >= apply_ctx.yield_duration {
                         return ApplyResult::Yield;
                     }
                 }
@@ -1194,7 +1219,7 @@ where
         ctx.exec_ctx = Some(self.new_ctx(index, term));
         ctx.kv_wb_mut().set_save_point();
         let mut origin_epoch = None;
-        let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, &req) {
+        let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, req) {
             Ok(a) => {
                 ctx.kv_wb_mut().pop_save_point().unwrap();
                 if req.has_admin_request() {
@@ -1618,7 +1643,7 @@ where
                     "{} failed to write ({}, {}) to cf {}: {:?}",
                     self.tag,
                     log_wrappers::Value::key(&key),
-                    log_wrappers::Value::value(&value),
+                    log_wrappers::Value::value(value),
                     cf,
                     e
                 )
@@ -1629,7 +1654,7 @@ where
                     "{} failed to write ({}, {}): {:?}",
                     self.tag,
                     log_wrappers::Value::key(&key),
-                    log_wrappers::Value::value(&value),
+                    log_wrappers::Value::value(value),
                     e
                 );
             });
@@ -2963,6 +2988,23 @@ impl<S: Snapshot> Apply<S> {
             cbs,
         }
     }
+
+    pub fn on_schedule(&mut self, metrics: &RaftMetrics) {
+        let mut now = None;
+        for cb in &mut self.cbs {
+            if let Callback::Write { request_times, .. } = &mut cb.cb {
+                if now.is_none() {
+                    now = Some(Instant::now());
+                }
+                for t in request_times {
+                    metrics
+                        .store_time
+                        .observe(duration_to_sec(now.unwrap().saturating_duration_since(*t)));
+                    *t = now.unwrap();
+                }
+            }
+        }
+    }
 }
 
 pub struct Registration {
@@ -2991,6 +3033,7 @@ impl Registration {
     }
 }
 
+#[derive(Debug)]
 pub struct Proposal<S>
 where
     S: Snapshot,
@@ -3202,7 +3245,6 @@ pub struct ApplyMetrics {
 
     pub written_bytes: u64,
     pub written_keys: u64,
-    pub written_query_stats: QueryStats,
     pub lock_cf_written_bytes: u64,
 }
 
@@ -3624,7 +3666,9 @@ where
         loop {
             match drainer.next() {
                 Some(Msg::Apply { start, apply }) => {
-                    APPLY_TASK_WAIT_TIME_HISTOGRAM.observe(start.elapsed_secs());
+                    apply_ctx
+                        .apply_wait
+                        .observe(start.saturating_elapsed_secs());
                     // If there is any apply task, we change this fsm to normal-priority.
                     // When it meets a ingest-request or a delete-range request, it will change to
                     // low-priority.
@@ -3705,16 +3749,35 @@ where
     }
 }
 
-pub struct ControlMsg;
+pub enum ControlMsg {
+    LatencyInspect {
+        send_time: Instant,
+        inspector: LatencyInspector,
+    },
+}
 
-pub struct ControlFsm;
+pub struct ControlFsm {
+    receiver: Receiver<ControlMsg>,
+    stopped: bool,
+}
+
+impl ControlFsm {
+    fn new() -> (LooseBoundedSender<ControlMsg>, Box<ControlFsm>) {
+        let (tx, rx) = loose_bounded(std::usize::MAX);
+        let fsm = Box::new(ControlFsm {
+            stopped: false,
+            receiver: rx,
+        });
+        (tx, fsm)
+    }
+}
 
 impl Fsm for ControlFsm {
     type Message = ControlMsg;
 
     #[inline]
     fn is_stopped(&self) -> bool {
-        true
+        self.stopped
     }
 }
 
@@ -3753,53 +3816,75 @@ where
         self.apply_ctx.perf_context.start_observe();
     }
 
-    /// There is no control fsm in apply poller.
-    fn handle_control(&mut self, _: &mut ControlFsm) -> Option<usize> {
-        unimplemented!()
+    fn handle_control(&mut self, control: &mut ControlFsm) -> Option<usize> {
+        loop {
+            match control.receiver.try_recv() {
+                Ok(ControlMsg::LatencyInspect {
+                    send_time,
+                    mut inspector,
+                }) => {
+                    if self.apply_ctx.timer.is_none() {
+                        self.apply_ctx.timer = Some(Instant::now_coarse());
+                    }
+                    inspector.record_apply_wait(send_time.saturating_elapsed());
+                    self.apply_ctx.pending_latency_inspect.push(inspector);
+                }
+                Err(TryRecvError::Empty) => {
+                    return Some(0);
+                }
+                Err(TryRecvError::Disconnected) => {
+                    control.stopped = true;
+                    return Some(0);
+                }
+            }
+        }
     }
 
-    fn handle_normal(&mut self, normal: &mut ApplyFsm<EK>) -> Option<usize> {
-        let mut expected_msg_count = None;
+    fn handle_normal(
+        &mut self,
+        normal: &mut impl TrackedFsm<Target = ApplyFsm<EK>>,
+    ) -> HandleResult {
+        let mut handle_result = HandleResult::KeepProcessing;
         normal.delegate.handle_start = Some(Instant::now_coarse());
         if normal.delegate.yield_state.is_some() {
             if normal.delegate.wait_merge_state.is_some() {
                 // We need to query the length first, otherwise there is a race
                 // condition that new messages are queued after resuming and before
                 // query the length.
-                expected_msg_count = Some(normal.receiver.len());
+                handle_result = HandleResult::stop_at(normal.receiver.len(), false);
             }
             normal.resume_pending(&mut self.apply_ctx);
             if normal.delegate.wait_merge_state.is_some() {
                 // Yield due to applying CommitMerge, this fsm can be released if its
-                // channel msg count equals to expected_msg_count because it will receive
+                // channel msg count equals to last count because it will receive
                 // a new message if its source region has applied all needed logs.
-                return expected_msg_count;
+                return handle_result;
             } else if normal.delegate.yield_state.is_some() {
                 // Yield due to other reasons, this fsm must not be released because
                 // it's possible that no new message will be sent to itself.
                 // The remaining messages will be handled in next rounds.
-                return None;
+                return HandleResult::KeepProcessing;
             }
-            expected_msg_count = None;
+            handle_result = HandleResult::KeepProcessing;
         }
         fail_point!("before_handle_normal_3", normal.delegate.id() == 3, |_| {
-            None
+            HandleResult::KeepProcessing
         });
         fail_point!(
             "before_handle_normal_1003",
             normal.delegate.id() == 1003,
-            |_| { None }
+            |_| { HandleResult::KeepProcessing }
         );
         while self.msg_buf.len() < self.messages_per_tick {
             match normal.receiver.try_recv() {
                 Ok(msg) => self.msg_buf.push(msg),
                 Err(TryRecvError::Empty) => {
-                    expected_msg_count = Some(0);
+                    handle_result = HandleResult::stop_at(0, false);
                     break;
                 }
                 Err(TryRecvError::Disconnected) => {
                     normal.delegate.stopped = true;
-                    expected_msg_count = Some(0);
+                    handle_result = HandleResult::stop_at(0, false);
                     break;
                 }
             }
@@ -3809,17 +3894,17 @@ where
 
         if normal.delegate.wait_merge_state.is_some() {
             // Check it again immediately as catching up logs can be very fast.
-            expected_msg_count = Some(0);
+            handle_result = HandleResult::stop_at(0, false);
         } else if normal.delegate.yield_state.is_some() {
             // Let it continue to run next time.
-            expected_msg_count = None;
+            handle_result = HandleResult::KeepProcessing;
         }
-        expected_msg_count
+        handle_result
     }
 
-    fn end(&mut self, fsms: &mut [Box<ApplyFsm<EK>>]) {
+    fn end(&mut self, fsms: &mut [Option<impl TrackedFsm<Target = ApplyFsm<EK>>>]) {
         self.apply_ctx.flush();
-        for fsm in fsms {
+        for fsm in fsms.iter_mut().flatten() {
             fsm.delegate.last_flush_applied_index = fsm.delegate.apply_state.get_applied_index();
             fsm.delegate.update_memory_trace(&mut self.trace_event);
         }
@@ -3907,16 +3992,6 @@ where
     EK: KvEngine,
 {
     pub router: BatchRouter<ApplyFsm<EK>, ControlFsm>,
-}
-
-impl<EK> Drop for ApplyRouter<EK>
-where
-    EK: KvEngine,
-{
-    fn drop(&mut self) {
-        MEMTRACE_APPLY_ROUTER_ALIVE.trace(TraceEvent::Reset(0));
-        MEMTRACE_APPLY_ROUTER_LEAK.trace(TraceEvent::Reset(0));
-    }
 }
 
 impl<EK> Deref for ApplyRouter<EK>
@@ -4081,9 +4156,9 @@ impl<EK: KvEngine> ApplyBatchSystem<EK> {
 pub fn create_apply_batch_system<EK: KvEngine>(
     cfg: &Config,
 ) -> (ApplyRouter<EK>, ApplyBatchSystem<EK>) {
-    let (tx, _) = loose_bounded(usize::MAX);
+    let (control_tx, control_fsm) = ControlFsm::new();
     let (router, system) =
-        batch_system::create_system(&cfg.apply_batch_system, tx, Box::new(ControlFsm));
+        batch_system::create_system(&cfg.apply_batch_system, control_tx, control_fsm);
     (ApplyRouter { router }, ApplyBatchSystem { system })
 }
 
@@ -4213,7 +4288,7 @@ mod tests {
     pub fn create_tmp_importer(path: &str) -> (TempDir, Arc<SSTImporter>) {
         let dir = Builder::new().prefix(path).tempdir().unwrap();
         let importer =
-            Arc::new(SSTImporter::new(&ImportConfig::default(), dir.path(), None).unwrap());
+            Arc::new(SSTImporter::new(&ImportConfig::default(), dir.path(), None, false).unwrap());
         (dir, importer)
     }
 

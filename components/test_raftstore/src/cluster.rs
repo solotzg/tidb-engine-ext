@@ -3,7 +3,7 @@
 use std::collections::hash_map::Entry;
 use std::error::Error as StdError;
 use std::sync::{mpsc, Arc, Mutex, RwLock};
-use std::time::*;
+use std::time::Duration;
 use std::{result, thread};
 
 use futures::executor::block_on;
@@ -35,6 +35,7 @@ use raftstore::{Error, Result};
 use tikv::config::TiKvConfig;
 use tikv::server::Result as ServerResult;
 use tikv_util::thread_group::GroupProperties;
+use tikv_util::time::Instant;
 use tikv_util::HandyRwLock;
 
 use super::*;
@@ -68,6 +69,15 @@ pub trait Simulator {
         node_id: u64,
         request: RaftCmdRequest,
         cb: Callback<RocksSnapshot>,
+    ) -> Result<()> {
+        self.async_command_on_node_with_opts(node_id, request, cb, Default::default())
+    }
+    fn async_command_on_node_with_opts(
+        &self,
+        node_id: u64,
+        request: RaftCmdRequest,
+        cb: Callback<RocksSnapshot>,
+        opts: RaftCmdExtraOpts,
     ) -> Result<()>;
     fn send_raft_msg(&mut self, msg: RaftMessage) -> Result<()>;
     fn get_snap_dir(&self, node_id: u64) -> String;
@@ -128,7 +138,7 @@ pub trait Simulator {
 pub struct Cluster<T: Simulator> {
     pub cfg: TiKvConfig,
     leaders: HashMap<u64, metapb::Peer>,
-    count: usize,
+    pub count: usize,
 
     pub paths: Vec<TempDir>,
     pub dbs: Vec<Engines<RocksEngine, RocksEngine>>,
@@ -335,11 +345,11 @@ impl<T: Simulator> Cluster<T> {
     }
 
     pub fn get_engine(&self, node_id: u64) -> Arc<DB> {
-        Arc::clone(&self.engines[&node_id].kv.as_inner())
+        Arc::clone(self.engines[&node_id].kv.as_inner())
     }
 
     pub fn get_raft_engine(&self, node_id: u64) -> Arc<DB> {
-        Arc::clone(&self.engines[&node_id].raft.as_inner())
+        Arc::clone(self.engines[&node_id].raft.as_inner())
     }
 
     pub fn get_all_engines(&self, node_id: u64) -> Engines<RocksEngine, RocksEngine> {
@@ -429,7 +439,9 @@ impl<T: Simulator> Cluster<T> {
                 e @ Err(_) => return e,
                 Ok(resp) => resp,
             };
-            if self.refresh_leader_if_needed(&resp, region_id) && timer.elapsed() < timeout {
+            if self.refresh_leader_if_needed(&resp, region_id)
+                && timer.saturating_elapsed() < timeout
+            {
                 warn!(
                     "{:?} is no longer leader, let's retry",
                     request.get_header().get_peer()
@@ -600,11 +612,11 @@ impl<T: Simulator> Cluster<T> {
         for (&id, engines) in &self.engines {
             let peer = new_peer(id, id);
             region.mut_peers().push(peer.clone());
-            bootstrap_store(&engines, self.id(), id).unwrap();
+            bootstrap_store(engines, self.id(), id).unwrap();
         }
 
         for engines in self.engines.values() {
-            prepare_bootstrap_cluster(&engines, &region)?;
+            prepare_bootstrap_cluster(engines, &region)?;
         }
 
         self.bootstrap_cluster(region);
@@ -624,7 +636,7 @@ impl<T: Simulator> Cluster<T> {
         }
 
         for (&id, engines) in &self.engines {
-            bootstrap_store(&engines, self.id(), id).unwrap();
+            bootstrap_store(engines, self.id(), id).unwrap();
         }
 
         let node_id = 1;
@@ -774,7 +786,7 @@ impl<T: Simulator> Cluster<T> {
         let timer = Instant::now();
         let mut tried_times = 0;
         // At least retry once.
-        while tried_times < 2 || timer.elapsed() < timeout {
+        while tried_times < 2 || timer.saturating_elapsed() < timeout {
             tried_times += 1;
             let mut region = self.get_region(key);
             let region_id = region.get_id();
@@ -882,7 +894,15 @@ impl<T: Simulator> Cluster<T> {
 
     pub fn async_request(
         &mut self,
+        req: RaftCmdRequest,
+    ) -> Result<mpsc::Receiver<RaftCmdResponse>> {
+        self.async_request_with_opts(req, Default::default())
+    }
+
+    pub fn async_request_with_opts(
+        &mut self,
         mut req: RaftCmdRequest,
+        opts: RaftCmdExtraOpts,
     ) -> Result<mpsc::Receiver<RaftCmdResponse>> {
         let region_id = req.get_header().get_region_id();
         let leader = self.leader_of_region(region_id).unwrap();
@@ -890,7 +910,7 @@ impl<T: Simulator> Cluster<T> {
         let (cb, rx) = make_cb(&req);
         self.sim
             .rl()
-            .async_command_on_node(leader.get_store_id(), req, cb)?;
+            .async_command_on_node_with_opts(leader.get_store_id(), req, cb, opts)?;
         Ok(rx)
     }
 
@@ -1059,7 +1079,7 @@ impl<T: Simulator> Cluster<T> {
             if truncated_state.get_index() >= index {
                 return;
             }
-            if timer.elapsed() >= Duration::from_secs(5) {
+            if timer.saturating_elapsed() >= Duration::from_secs(5) {
                 panic!(
                     "[region {}] log is still not truncated to {}: {:?} on store {}",
                     region_id, index, truncated_state, store_id,
@@ -1112,7 +1132,7 @@ impl<T: Simulator> Cluster<T> {
             if cur_index >= expected {
                 return;
             }
-            if timer.elapsed() >= timeout {
+            if timer.saturating_elapsed() >= timeout {
                 panic!(
                     "[region {}] last index still not reach {}: {:?}",
                     region_id, expected, raft_state
@@ -1216,7 +1236,7 @@ impl<T: Simulator> Cluster<T> {
                     return;
                 }
             }
-            if timer.elapsed() > Duration::from_secs(5) {
+            if timer.saturating_elapsed() > Duration::from_secs(5) {
                 panic!(
                     "failed to transfer leader to [{}] {:?}, current leader: {:?}",
                     region_id, leader, cur_leader
@@ -1469,7 +1489,7 @@ impl<T: Simulator> Cluster<T> {
                 );
                 break;
             }
-            if timer.elapsed() > Duration::from_secs(60) {
+            if timer.saturating_elapsed() > Duration::from_secs(60) {
                 panic!("region {} is not removed after 60s.", region_id);
             }
             thread::sleep(Duration::from_millis(100));
@@ -1479,25 +1499,6 @@ impl<T: Simulator> Cluster<T> {
     // it's so common that we provide an API for it
     pub fn partition(&self, s1: Vec<u64>, s2: Vec<u64>) {
         self.add_send_filter(PartitionFilterFactory::new(s1, s2));
-    }
-
-    // Request a snapshot on the given region.
-    pub fn must_request_snapshot(&self, store_id: u64, region_id: u64) -> u64 {
-        // Request snapshot.
-        let (request_tx, request_rx) = mpsc::channel();
-        let router = self.sim.rl().get_router(store_id).unwrap();
-        CasualRouter::send(
-            &router,
-            region_id,
-            CasualMessage::AccessPeer(Box::new(move |peer: &mut dyn AbstractPeer| {
-                let idx = peer.raft_commit_index();
-                peer.raft_request_snapshot(idx);
-                debug!("{} request snapshot at {:?}", idx, peer.meta_peer());
-                request_tx.send(idx).unwrap();
-            })),
-        )
-        .unwrap();
-        request_rx.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 }
 

@@ -8,11 +8,11 @@ edition = "2018"
 name = "gen-proxy-ffi"
 
 [dependencies.bindgen]
-version = ""
+version = "0.57.0"
 default-features = false
 features = ["which-rustfmt"]
 
 [dependencies]
 walkdir = "2"
-md5 = ""
-clap = ""
+md5 = "0.7"
+clap = "2.33"

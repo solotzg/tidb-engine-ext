@@ -4,7 +4,7 @@ mod interfaces;
 mod read_index_helper;
 
 use encryption::DataKeyManager;
-use engine_rocks::encryption::get_env;
+use engine_rocks::get_env;
 use engine_rocks::{RocksSstIterator, RocksSstReader};
 use engine_traits::{
     EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, SeekKey, SstReader,

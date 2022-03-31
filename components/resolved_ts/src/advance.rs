@@ -25,6 +25,8 @@ use crate::endpoint::Task;
 use crate::errors::Result;
 use crate::metrics::{CHECK_LEADER_REQ_ITEM_COUNT_HISTOGRAM, CHECK_LEADER_REQ_SIZE_HISTOGRAM};
 
+const DEFAULT_CHECK_LEADER_TIMEOUT_MILLISECONDS: u64 = 5_000; // 5s
+
 pub struct AdvanceTsWorker<E: KvEngine> {
     store_meta: Arc<Mutex<StoreMeta>>,
     region_read_progress: RegionReadProgressRegistry,
@@ -54,6 +56,7 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
         let worker = Builder::new_multi_thread()
             .thread_name("advance-ts")
             .worker_threads(1)
+            .enable_time()
             .build()
             .unwrap();
         Self {
@@ -72,8 +75,7 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
 }
 
 impl<E: KvEngine> AdvanceTsWorker<E> {
-    pub fn register_advance_event(&self, advance_ts_interval: Duration, regions: Vec<u64>) {
-        let timeout = self.timer.delay(advance_ts_interval);
+    pub fn advance_ts_for_regions(&self, regions: Vec<u64>) {
         let pd_client = self.pd_client.clone();
         let scheduler = self.scheduler.clone();
         let cm: ConcurrencyManager = self.concurrency_manager.clone();
@@ -84,7 +86,6 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
         let region_read_progress = self.region_read_progress.clone();
 
         let fut = async move {
-            let _ = timeout.compat().await;
             // Ignore get tso errors since we will retry every `advance_ts_interval`.
             let mut min_ts = pd_client.get_tso().await.unwrap_or_default();
 
@@ -97,10 +98,6 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
                 if min_mem_lock_ts < min_ts {
                     min_ts = min_mem_lock_ts;
                 }
-            }
-
-            if let Err(e) = scheduler.schedule(Task::RegisterAdvanceEvent) {
-                info!("failed to schedule register advance event"; "err" => ?e);
             }
 
             let regions = Self::region_resolved_ts_store(
@@ -122,6 +119,18 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
                 }) {
                     info!("failed to schedule advance event"; "err" => ?e);
                 }
+            }
+        };
+        self.worker.spawn(fut);
+    }
+
+    pub fn register_next_event(&self, advance_ts_interval: Duration, cfg_version: usize) {
+        let scheduler = self.scheduler.clone();
+        let timeout = self.timer.delay(advance_ts_interval);
+        let fut = async move {
+            let _ = timeout.compat().await;
+            if let Err(e) = scheduler.schedule(Task::RegisterAdvanceEvent { cfg_version }) {
+                info!("failed to schedule register advance event"; "err" => ?e);
             }
         };
         self.worker.spawn(fut);
@@ -202,7 +211,13 @@ impl<E: KvEngine> AdvanceTsWorker<E> {
                 let mut req = CheckLeaderRequest::default();
                 req.set_regions(regions.into());
                 req.set_ts(min_ts.into_inner());
-                let res = box_try!(client.check_leader_async(&req)).await;
+                let res = box_try!(
+                    tokio::time::timeout(
+                        Duration::from_millis(DEFAULT_CHECK_LEADER_TIMEOUT_MILLISECONDS),
+                        box_try!(client.check_leader_async(&req))
+                    )
+                    .await
+                );
                 let resp = box_try!(res);
                 Result::Ok((store_id, resp))
             }
