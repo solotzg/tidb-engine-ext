@@ -102,7 +102,7 @@ impl<ER: RaftEngine> ReadIndex for ReadIndexClient<ER> {
             if let Err(_) = self.routers[region_id as usize % self.routers.len()]
                 .lock()
                 .unwrap()
-                .send_command(cmd, Callback::Read(cb))
+                .send_command(cmd, Callback::Read(cb), Default::default())
             {
                 router_cbs.push_back((None, region_id));
             } else {

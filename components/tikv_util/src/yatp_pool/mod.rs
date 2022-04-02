@@ -16,7 +16,7 @@ use yatp::ThreadPool;
 pub(crate) const TICK_INTERVAL: Duration = Duration::from_secs(1);
 
 fn tick_interval() -> Duration {
-    fail_point!("mock_tick_interval", |_| { Duration::from_millis(10) });
+    fail_point!("mock_tick_interval", |_| { Duration::from_millis(1) });
     TICK_INTERVAL
 }
 
@@ -40,7 +40,7 @@ impl<T: PoolTicker> TickerWrapper<T> {
 
     pub fn try_tick(&mut self) {
         let now = Instant::now_coarse();
-        if now.duration_since(self.last_tick_time) < tick_interval() {
+        if now.saturating_duration_since(self.last_tick_time) < tick_interval() {
             return;
         }
         self.last_tick_time = now;
@@ -251,8 +251,9 @@ impl<T: PoolTicker> YatpPoolBuilder<T> {
     }
 
     fn create_builder(&mut self) -> (yatp::Builder, YatpPoolRunner<T>) {
-        let mut builder =
-            yatp::Builder::new(self.name_prefix.clone().unwrap_or_else(|| "".to_string()));
+        let mut builder = yatp::Builder::new(thd_name!(
+            self.name_prefix.clone().unwrap_or_else(|| "".to_string())
+        ));
         builder
             .stack_size(self.stack_size)
             .min_thread_count(self.min_thread_count)

@@ -22,7 +22,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref RTS_MIN_RESOLVED_TS_GAP: IntGauge = register_int_gauge!(
-        "tikv_resolved_ts_min_resolved_ts_gap_seconds",
+        "tikv_resolved_ts_min_resolved_ts_gap_millis",
         "The minimal (non-zero) resolved ts gap for observe regions"
     )
     .unwrap();
@@ -68,6 +68,19 @@ lazy_static! {
         "tikv_resolved_ts_region_resolve_status",
         "The status of resolved-ts observe regions",
         &["type"]
+    )
+    .unwrap();
+    pub static ref RTS_CHECK_LEADER_DURATION_HISTOGRAM_VEC: HistogramVec = register_histogram_vec!(
+        "tikv_resolved_ts_check_leader_duration_seconds",
+        "Bucketed histogram of resolved-ts check leader duration",
+        &["type"],
+        exponential_buckets(0.005, 2.0, 20).unwrap()
+    )
+    .unwrap();
+    pub static ref RTS_TIKV_CLIENT_INIT_DURATION_HISTOGRAM: Histogram = register_histogram!(
+        "tikv_resolved_ts_tikv_client_init_duration_seconds",
+        "Bucketed histogram of resolved-ts tikv client initializing duration",
+        exponential_buckets(0.005, 2.0, 20).unwrap()
     )
     .unwrap();
 }

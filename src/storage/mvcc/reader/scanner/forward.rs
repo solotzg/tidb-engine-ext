@@ -1,5 +1,6 @@
 // Copyright 2018 TiKV Project Authors. Licensed under Apache-2.0.
 
+// #[PerformanceCriticalPath]
 use std::{borrow::Cow, cmp::Ordering};
 
 use engine_traits::CF_DEFAULT;
@@ -1040,7 +1041,7 @@ mod latest_kv_tests {
         }
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build()
             .unwrap();
@@ -1109,7 +1110,7 @@ mod latest_kv_tests {
         must_commit(&engine, b"b", SEEK_BOUND / 2, SEEK_BOUND / 2);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build()
             .unwrap();
@@ -1191,7 +1192,7 @@ mod latest_kv_tests {
         must_commit(&engine, b"b", SEEK_BOUND, SEEK_BOUND);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build()
             .unwrap();
@@ -1269,7 +1270,7 @@ mod latest_kv_tests {
         let snapshot = engine.snapshot(Default::default()).unwrap();
 
         // Test both bound specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[3u8])), Some(Key::from_raw(&[5u8])))
             .build()
             .unwrap();
@@ -1291,7 +1292,7 @@ mod latest_kv_tests {
         );
 
         // Test left bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(None, Some(Key::from_raw(&[3u8])))
             .build()
             .unwrap();
@@ -1313,7 +1314,7 @@ mod latest_kv_tests {
         );
 
         // Test right bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[5u8])), None)
             .build()
             .unwrap();
@@ -1335,7 +1336,7 @@ mod latest_kv_tests {
         );
 
         // Test both bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build()
             .unwrap();
@@ -1383,7 +1384,7 @@ mod latest_kv_tests {
             .collect();
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, read_ts, false)
+        let mut scanner = ScannerBuilder::new(snapshot, read_ts)
             .range(None, None)
             .build()
             .unwrap();
@@ -1435,7 +1436,7 @@ mod latest_entry_tests {
         }
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1508,7 +1509,7 @@ mod latest_entry_tests {
         must_commit(&engine, b"b", SEEK_BOUND / 2, SEEK_BOUND / 2);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1592,7 +1593,7 @@ mod latest_entry_tests {
         must_commit(&engine, b"b", SEEK_BOUND, SEEK_BOUND);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1672,7 +1673,7 @@ mod latest_entry_tests {
         let snapshot = engine.snapshot(Default::default()).unwrap();
 
         // Test both bound specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[3u8])), Some(Key::from_raw(&[5u8])))
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1691,7 +1692,7 @@ mod latest_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test left bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(None, Some(Key::from_raw(&[3u8])))
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1700,7 +1701,7 @@ mod latest_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test right bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[5u8])), None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1709,7 +1710,7 @@ mod latest_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test both bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1783,7 +1784,7 @@ mod latest_entry_tests {
 
         let check = |ts: u64, after_ts: u64, output_delete, expected: Vec<&TxnEntry>| {
             let snapshot = engine.snapshot(Default::default()).unwrap();
-            let mut scanner = ScannerBuilder::new(snapshot, ts.into(), false)
+            let mut scanner = ScannerBuilder::new(snapshot, ts.into())
                 .range(None, None)
                 .build_entry_scanner(after_ts.into(), output_delete)
                 .unwrap();
@@ -1818,7 +1819,7 @@ mod latest_entry_tests {
             .collect();
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, read_ts, false)
+        let mut scanner = ScannerBuilder::new(snapshot, read_ts)
             .range(None, None)
             .build_entry_scanner(0.into(), false)
             .unwrap();
@@ -1871,7 +1872,7 @@ mod delta_entry_tests {
         }
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build_delta_scanner(0.into(), ExtraOp::Noop)
             .unwrap();
@@ -1943,7 +1944,7 @@ mod delta_entry_tests {
         must_commit(&engine, b"b", SEEK_BOUND / 2, SEEK_BOUND / 2);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build_delta_scanner(0.into(), ExtraOp::Noop)
             .unwrap();
@@ -2029,7 +2030,7 @@ mod delta_entry_tests {
         must_commit(&engine, b"b", SEEK_BOUND + 1, SEEK_BOUND + 1);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, (SEEK_BOUND * 2).into())
             .range(None, None)
             .build_delta_scanner(8.into(), ExtraOp::Noop)
             .unwrap();
@@ -2109,7 +2110,7 @@ mod delta_entry_tests {
         let snapshot = engine.snapshot(Default::default()).unwrap();
 
         // Test both bound specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[3u8])), Some(Key::from_raw(&[5u8])))
             .build_delta_scanner(4.into(), ExtraOp::Noop)
             .unwrap();
@@ -2128,7 +2129,7 @@ mod delta_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test left bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(None, Some(Key::from_raw(&[3u8])))
             .build_delta_scanner(4.into(), ExtraOp::Noop)
             .unwrap();
@@ -2137,7 +2138,7 @@ mod delta_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test right bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot.clone(), 10.into())
             .range(Some(Key::from_raw(&[5u8])), None)
             .build_delta_scanner(4.into(), ExtraOp::Noop)
             .unwrap();
@@ -2146,7 +2147,7 @@ mod delta_entry_tests {
         assert_eq!(scanner.next_entry().unwrap(), None);
 
         // Test both bound not specified.
-        let mut scanner = ScannerBuilder::new(snapshot, 10.into(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, 10.into())
             .range(None, None)
             .build_delta_scanner(4.into(), ExtraOp::Noop)
             .unwrap();
@@ -2366,16 +2367,13 @@ mod delta_entry_tests {
             } else {
                 Some(Key::from_raw(to_key))
             };
-            let mut scanner = ScannerBuilder::new(
-                engine.snapshot(Default::default()).unwrap(),
-                to_ts.into(),
-                false,
-            )
-            .hint_min_ts(Some(from_ts.into()))
-            .hint_max_ts(Some(to_ts.into()))
-            .range(from_key, to_key)
-            .build_delta_scanner(from_ts.into(), ExtraOp::Noop)
-            .unwrap();
+            let mut scanner =
+                ScannerBuilder::new(engine.snapshot(Default::default()).unwrap(), to_ts.into())
+                    .hint_min_ts(Some(from_ts.into()))
+                    .hint_max_ts(Some(to_ts.into()))
+                    .range(from_key, to_key)
+                    .build_delta_scanner(from_ts.into(), ExtraOp::Noop)
+                    .unwrap();
 
             let mut actual = vec![];
             while let Some(entry) = scanner.next_entry().unwrap() {
@@ -2508,7 +2506,7 @@ mod delta_entry_tests {
 
         let check = |after_ts: u64, expected: Vec<&TxnEntry>| {
             let snapshot = engine.snapshot(Default::default()).unwrap();
-            let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max(), false)
+            let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max())
                 .range(None, None)
                 .build_delta_scanner(after_ts.into(), ExtraOp::ReadOldValue)
                 .unwrap();
@@ -2545,7 +2543,7 @@ mod delta_entry_tests {
         prepare_test_data_for_check_gc_fence(&engine);
 
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max())
             .range(None, None)
             .build_delta_scanner(40.into(), ExtraOp::ReadOldValue)
             .unwrap();
@@ -2577,7 +2575,7 @@ mod delta_entry_tests {
             must_prewrite_put(&engine, key, value, b"k1", 55);
         }
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max())
             .range(None, None)
             .build_delta_scanner(40.into(), ExtraOp::ReadOldValue)
             .unwrap();
@@ -2613,7 +2611,7 @@ mod delta_entry_tests {
             must_commit(&engine, key, 55, 56);
         }
         let snapshot = engine.snapshot(Default::default()).unwrap();
-        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max(), false)
+        let mut scanner = ScannerBuilder::new(snapshot, TimeStamp::max())
             .range(None, None)
             .build_delta_scanner(40.into(), ExtraOp::ReadOldValue)
             .unwrap();

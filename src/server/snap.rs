@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use futures::future::{Future, TryFutureExt};
 use futures::sink::SinkExt;
@@ -27,6 +27,7 @@ use raftstore::router::RaftStoreRouter;
 use raftstore::store::{SnapEntry, SnapKey, SnapManager, Snapshot};
 use security::SecurityManager;
 use tikv_util::config::{Tracker, VersionTrack};
+use tikv_util::time::Instant;
 use tikv_util::worker::Runnable;
 use tikv_util::DeferContext;
 
@@ -178,7 +179,7 @@ pub fn send_snap(
                 Ok(SendStat {
                     key,
                     total_size,
-                    elapsed: timer.elapsed(),
+                    elapsed: timer.saturating_elapsed(),
                 })
             }
             Err(e) => Err(e),
@@ -272,8 +273,11 @@ fn recv_snap<R: RaftStoreRouter<impl KvEngine> + 'static>(
         }
         let context_key = context.key.clone();
         snap_mgr.register(context.key.clone(), SnapEntry::Receiving);
-
+        defer!(snap_mgr.deregister(&context_key, &SnapEntry::Receiving));
         while let Some(item) = stream.next().await {
+            fail_point!("receiving_snapshot_net_error", |_| {
+                return Err(box_err!("{} failed to receive snapshot", context_key));
+            });
             let mut chunk = item?;
             let data = chunk.take_data();
             if data.is_empty() {
@@ -287,10 +291,7 @@ fn recv_snap<R: RaftStoreRouter<impl KvEngine> + 'static>(
                 return Err(e);
             }
         }
-
-        let res = context.finish(raft_router);
-        snap_mgr.deregister(&context_key, &SnapEntry::Receiving);
-        res
+        context.finish(raft_router)
     };
 
     async move {
@@ -369,8 +370,8 @@ where
             };
             self.snap_mgr.set_speed_limit(limit);
             self.snap_mgr.set_max_total_snap_size(max_total_size);
-            info!("refresh snapshot manager config"; 
-            "speed_limit"=> limit, 
+            info!("refresh snapshot manager config";
+            "speed_limit"=> limit,
             "max_total_snap_size"=> max_total_size);
             self.cfg = incoming.clone();
         }

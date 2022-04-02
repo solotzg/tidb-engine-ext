@@ -1,5 +1,6 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
+// #[PerformanceCriticalPath]
 use std::{
     borrow::Cow,
     fmt::{self, Debug, Display, Formatter},
@@ -30,7 +31,8 @@ use raftstore::{
     errors::Error as RaftServerError,
     router::{LocalReadRouter, RaftStoreRouter},
     store::{
-        Callback as StoreCallback, ReadIndexContext, ReadResponse, RegionSnapshot, WriteResponse,
+        Callback as StoreCallback, RaftCmdExtraOpts, ReadIndexContext, ReadResponse,
+        RegionSnapshot, WriteResponse,
     },
 };
 use tikv_util::codec::number::NumberEncoder;
@@ -104,18 +106,6 @@ impl From<Error> for kv::Error {
     }
 }
 
-/// `RaftKv` is a storage engine base on `RaftStore`.
-#[derive(Clone)]
-pub struct RaftKv<E, S>
-where
-    E: KvEngine,
-    S: RaftStoreRouter<E> + LocalReadRouter<E> + 'static,
-{
-    router: S,
-    engine: E,
-    txn_extra_scheduler: Option<Arc<dyn TxnExtraScheduler>>,
-}
-
 pub enum CmdRes<S>
 where
     S: Snapshot,
@@ -130,46 +120,33 @@ fn new_ctx(resp: &RaftCmdResponse) -> CbContext {
     cb_ctx
 }
 
-fn check_raft_cmd_response(resp: &mut RaftCmdResponse, req_cnt: usize) -> Result<()> {
+fn check_raft_cmd_response(resp: &mut RaftCmdResponse) -> Result<()> {
     if resp.get_header().has_error() {
         return Err(Error::RequestFailed(resp.take_header().take_error()));
-    }
-    if req_cnt != resp.get_responses().len() {
-        return Err(Error::InvalidResponse(format!(
-            "responses count {} is not equal to requests count {}",
-            resp.get_responses().len(),
-            req_cnt
-        )));
     }
 
     Ok(())
 }
 
-fn on_write_result<S>(
-    mut write_resp: WriteResponse,
-    req_cnt: usize,
-) -> (CbContext, Result<CmdRes<S>>)
+fn on_write_result<S>(mut write_resp: WriteResponse) -> (CbContext, Result<CmdRes<S>>)
 where
     S: Snapshot,
 {
     let cb_ctx = new_ctx(&write_resp.response);
-    if let Err(e) = check_raft_cmd_response(&mut write_resp.response, req_cnt) {
+    if let Err(e) = check_raft_cmd_response(&mut write_resp.response) {
         return (cb_ctx, Err(e));
     }
     let resps = write_resp.response.take_responses();
     (cb_ctx, Ok(CmdRes::Resp(resps.into())))
 }
 
-fn on_read_result<S>(
-    mut read_resp: ReadResponse<S>,
-    req_cnt: usize,
-) -> (CbContext, Result<CmdRes<S>>)
+fn on_read_result<S>(mut read_resp: ReadResponse<S>) -> (CbContext, Result<CmdRes<S>>)
 where
     S: Snapshot,
 {
     let mut cb_ctx = new_ctx(&read_resp.response);
     cb_ctx.txn_extra_op = read_resp.txn_extra_op;
-    if let Err(e) = check_raft_cmd_response(&mut read_resp.response, req_cnt) {
+    if let Err(e) = check_raft_cmd_response(&mut read_resp.response) {
         return (cb_ctx, Err(e));
     }
     let resps = read_resp.response.take_responses();
@@ -178,6 +155,18 @@ where
     } else {
         (cb_ctx, Ok(CmdRes::Resp(resps.into())))
     }
+}
+
+/// `RaftKv` is a storage engine base on `RaftStore`.
+#[derive(Clone)]
+pub struct RaftKv<E, S>
+where
+    E: KvEngine,
+    S: RaftStoreRouter<E> + LocalReadRouter<E> + 'static,
+{
+    router: S,
+    engine: E,
+    txn_extra_scheduler: Option<Arc<dyn TxnExtraScheduler>>,
 }
 
 impl<E, S> RaftKv<E, S>
@@ -234,7 +223,7 @@ where
                 ctx.read_id,
                 cmd,
                 StoreCallback::Read(Box::new(move |resp| {
-                    let (cb_ctx, res) = on_read_result(resp, 1);
+                    let (cb_ctx, res) = on_read_result(resp);
                     cb((cb_ctx, res.map_err(Error::into)));
                 })),
             )
@@ -269,7 +258,6 @@ where
 
         let reqs = modifies_to_requests(batch.modifies);
         let txn_extra = batch.extra;
-        let len = reqs.len();
         let mut header = self.new_request_header(ctx);
         if txn_extra.one_pc {
             header.set_flags(WriteBatchFlags::ONE_PC.bits());
@@ -287,17 +275,18 @@ where
 
         let cb = StoreCallback::write_ext(
             Box::new(move |resp| {
-                let (cb_ctx, res) = on_write_result(resp, len);
+                let (cb_ctx, res) = on_write_result(resp);
                 write_cb((cb_ctx, res.map_err(Error::into)));
             }),
             proposed_cb,
             committed_cb,
         );
-        if let Some(deadline) = batch.deadline {
-            self.router.send_command_with_deadline(cmd, cb, deadline)?;
-        } else {
-            self.router.send_command(cmd, cb)?;
-        }
+        let extra_opts = RaftCmdExtraOpts {
+            deadline: batch.deadline,
+            disk_full_opt: batch.disk_full_opt,
+        };
+        self.router.send_command(cmd, cb, extra_opts)?;
+
         Ok(())
     }
 }
@@ -408,7 +397,7 @@ where
                     ASYNC_REQUESTS_COUNTER_VEC.write.success.inc();
                     ASYNC_REQUESTS_DURATIONS_VEC
                         .write
-                        .observe(begin_instant.elapsed_secs());
+                        .observe(begin_instant.saturating_elapsed_secs());
                     fail_point!("raftkv_async_write_finish");
                     write_cb((cb_ctx, Ok(())))
                 }
@@ -466,7 +455,7 @@ where
                 Ok(CmdRes::Snap(s)) => {
                     ASYNC_REQUESTS_DURATIONS_VEC
                         .snapshot
-                        .observe(begin_instant.elapsed_secs());
+                        .observe(begin_instant.saturating_elapsed_secs());
                     ASYNC_REQUESTS_COUNTER_VEC.snapshot.success.inc();
                     cb((cb_ctx, Ok(s)))
                 }
@@ -560,11 +549,11 @@ impl ReadIndexObserver for ReplicaReadLockChecker {
                     rctx.locked = Some(lock);
                     REPLICA_READ_LOCK_CHECK_HISTOGRAM_VEC_STATIC
                         .locked
-                        .observe(begin_instant.elapsed().as_secs_f64());
+                        .observe(begin_instant.saturating_elapsed().as_secs_f64());
                 } else {
                     REPLICA_READ_LOCK_CHECK_HISTOGRAM_VEC_STATIC
                         .unlocked
-                        .observe(begin_instant.elapsed().as_secs_f64());
+                        .observe(begin_instant.saturating_elapsed().as_secs_f64());
                 }
             }
             msg.mut_entries()[0].set_data(rctx.to_bytes().into());
