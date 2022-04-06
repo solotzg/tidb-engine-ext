@@ -4,7 +4,7 @@ pub mod interfaces;
 mod read_index_helper;
 
 use encryption::DataKeyManager;
-use engine_rocks::encryption::get_env;
+use engine_rocks::get_env;
 use engine_rocks::{RocksSstIterator, RocksSstReader};
 use engine_traits::{
     EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, SeekKey, SstReader,
@@ -540,7 +540,7 @@ impl Drop for RawCppPtr {
 
 static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
-fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
+pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
 }
 

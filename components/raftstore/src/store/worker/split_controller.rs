@@ -49,14 +49,14 @@ impl Sample {
 }
 
 // It will return prefix sum of iter. `read` is a function to be used to read data from iter.
-fn prefix_sum<F, T>(iter: Iter<T>, read: F) -> Vec<usize>
+fn prefix_sum<F, T>(iter: Iter<'_, T>, read: F) -> Vec<usize>
 where
     F: Fn(&T) -> usize,
 {
     let mut pre_sum = vec![];
     let mut sum = 0;
     for item in iter {
-        sum += read(&item);
+        sum += read(item);
         pre_sum.push(sum);
     }
     pre_sum
@@ -208,7 +208,7 @@ impl Recorder {
         let mut samples: Vec<Sample> = self.convert(sampled_key_ranges);
         for key_ranges in &self.key_ranges {
             for key_range in key_ranges {
-                Recorder::sample(&mut samples, &key_range);
+                Recorder::sample(&mut samples, key_range);
             }
         }
         Recorder::split_key(
@@ -252,19 +252,40 @@ impl Recorder {
         let mut best_index: i32 = -1;
         let mut best_score = 2.0;
         for (index, sample) in samples.iter().enumerate() {
+            if sample.key.is_empty() {
+                continue;
+            }
             let sampled = sample.contained + sample.left + sample.right;
             if (sample.left + sample.right) == 0 || sampled < sample_threshold {
+                LOAD_BASE_SPLIT_EVENT
+                    .with_label_values(&["no_enough_key"])
+                    .inc();
                 continue;
             }
+
             let diff = (sample.left - sample.right) as f64;
             let balance_score = diff.abs() / (sample.left + sample.right) as f64;
+            LOAD_BASE_SPLIT_SAMPLE_VEC
+                .with_label_values(&["balance_score"])
+                .observe(balance_score);
             if balance_score >= split_balance_score {
+                LOAD_BASE_SPLIT_EVENT
+                    .with_label_values(&["no_balance_key"])
+                    .inc();
                 continue;
             }
+
             let contained_score = sample.contained as f64 / sampled as f64;
+            LOAD_BASE_SPLIT_SAMPLE_VEC
+                .with_label_values(&["contained_score"])
+                .observe(contained_score);
             if contained_score >= split_contained_score {
+                LOAD_BASE_SPLIT_EVENT
+                    .with_label_values(&["no_uncross_key"])
+                    .inc();
                 continue;
             }
+
             let final_score = balance_score + contained_score;
             if final_score < best_score {
                 best_index = index as i32;
@@ -275,6 +296,33 @@ impl Recorder {
             return samples[best_index as usize].key.clone();
         }
         return vec![];
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WriteStats {
+    pub region_infos: HashMap<u64, QueryStats>,
+}
+
+impl WriteStats {
+    pub fn add_query_num(&mut self, region_id: u64, kind: QueryKind) {
+        let query_stats = self
+            .region_infos
+            .entry(region_id)
+            .or_insert_with(|| QueryStats::default());
+        query_stats.add_query_num(kind, 1);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.region_infos.is_empty()
+    }
+}
+
+impl Default for WriteStats {
+    fn default() -> WriteStats {
+        WriteStats {
+            region_infos: HashMap::default(),
+        }
     }
 }
 
@@ -385,6 +433,10 @@ impl AutoSplitController {
                 .iter()
                 .fold(0, |flow, region_info| flow + region_info.flow.read_bytes);
             debug!("load base split params";"region_id"=>region_id,"qps"=>qps,"qps_threshold"=>self.cfg.qps_threshold,"byte"=>byte,"byte_threshold"=>self.cfg.byte_threshold);
+
+            QUERY_REGION_VEC
+                .with_label_values(&["read"])
+                .observe(qps as f64);
 
             if qps < self.cfg.qps_threshold && byte < self.cfg.byte_threshold {
                 self.recorders.remove_entry(&region_id);
