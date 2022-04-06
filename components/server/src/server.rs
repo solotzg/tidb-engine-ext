@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex,
     },
     time::Duration,
@@ -42,18 +42,13 @@ use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
 use kvproto::{
     debugpb::create_debug, diagnosticspb::create_diagnostics, import_sstpb::create_import_sst,
-    resource_usage_agent::create_resource_metering_pub_sub,
 };
 use pd_client::{PdClient, RpcClient};
 use raft_log_engine::RaftLogEngine;
 use raftstore::{
-    coprocessor::{
-        config::SplitCheckConfigManager, BoxConsistencyCheckObserver, ConsistencyCheckMethod,
-        CoprocessorHost, RawConsistencyCheckObserver, RegionInfoAccessor,
-    },
+    coprocessor::{config::SplitCheckConfigManager, CoprocessorHost, RegionInfoAccessor},
     router::ServerRaftStoreRouter,
     store::{
-        config::RaftstoreConfigManager,
         fsm,
         fsm::store::{RaftBatchSystem, RaftRouter, StoreMeta, PENDING_MSG_CAP},
         memory::MEMTRACE_ROOT as MEMTRACE_RAFTSTORE,
@@ -62,7 +57,7 @@ use raftstore::{
     },
 };
 use security::SecurityManager;
-use tikv::server::gc_worker::AutoGcConfig;
+
 use tikv::{
     config::{ConfigController, DBConfigManger, DBType, TiKvConfig, DEFAULT_ROCKSDB_SUB_DIR},
     coprocessor::{self, MEMTRACE_ROOT as MEMTRACE_COPROCESSOR},
@@ -82,10 +77,7 @@ use tikv::{
         ttl::TTLChecker,
         Node, RaftKv, Server, CPU_CORES_QUOTA_GAUGE, DEFAULT_CLUSTER_ID, GRPC_THREAD_PREFIX,
     },
-    storage::{
-        self, config::StorageConfigManger, mvcc::MvccConsistencyCheckObserver,
-        txn::flow_controller::FlowController, Engine,
-    },
+    storage::{self, config::StorageConfigManger, txn::flow_controller::FlowController, Engine},
 };
 use tikv_util::{
     check_environment_variables,
@@ -682,7 +674,6 @@ impl<ER: RaftEngine> TiKVServer<ER> {
             data_sink_reg_handle.clone(),
         );
         self.to_stop.push(single_target_worker);
-        let rsmeter_pubsub_service = resource_metering::PubSubService::new(data_sink_reg_handle);
 
         let cfg_manager = resource_metering::ConfigManager::new(
             self.config.resource_metering.clone(),

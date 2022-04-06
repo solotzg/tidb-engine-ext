@@ -4,7 +4,7 @@ use std::i32;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use futures::compat::Stream01CompatExt;
 use futures::stream::StreamExt;
@@ -30,13 +30,13 @@ use tikv_util::worker::{LazyWorker, Scheduler, Worker};
 use tikv_util::Either;
 
 use super::load_statistics::*;
-use super::metrics::{MEMORY_USAGE_GAUGE, SERVER_INFO_GAUGE_VEC};
+use super::metrics::MEMORY_USAGE_GAUGE;
 use super::raft_client::{ConnectionBuilder, RaftClient};
 use super::resolve::StoreAddrResolver;
 use super::service::*;
 use super::snap::{Runner as SnapHandler, Task as SnapTask};
 use super::transport::ServerTransport;
-use super::{Config, Error, Result};
+use super::{Config, Result};
 use crate::read_pool::ReadPool;
 
 const LOAD_STATISTICS_SLOTS: usize = 4;
