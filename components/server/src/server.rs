@@ -100,7 +100,7 @@ use crate::raft_engine_switch::{check_and_dump_raft_db, check_and_dump_raft_engi
 use crate::{memory::*, setup::*};
 use raftstore::engine_store_ffi::{
     get_engine_store_server_helper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-    RaftStoreProxyFFIHelper, ReadIndexClient,
+    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient,
 };
 use std::sync::atomic::{AtomicBool, AtomicU8};
 
@@ -137,14 +137,15 @@ pub unsafe fn run_tikv(config: TiKvConfig) {
             tikv.init_fs();
             tikv.init_yatp();
             tikv.init_encryption();
-            let mut proxy = RaftStoreProxy {
-                status: AtomicU8::new(RaftProxyStatus::Idle as u8),
-                key_manager: tikv.encryption_key_manager.clone(),
-                read_index_client: Box::new(ReadIndexClient::new(
+            let mut proxy = RaftStoreProxy::new(
+                AtomicU8::new(RaftProxyStatus::Idle as u8),
+                tikv.encryption_key_manager.clone(),
+                Box::new(ReadIndexClient::new(
                     tikv.router.clone(),
                     SysQuota::cpu_cores_quota() as usize * 2,
                 )),
-            };
+                std::sync::RwLock::new(None),
+            );
 
             let proxy_helper = RaftStoreProxyFFIHelper::new(&proxy);
 
@@ -170,7 +171,10 @@ pub unsafe fn run_tikv(config: TiKvConfig) {
             let (limiter, fetcher) = tikv.init_io_utility();
             let (engines, engines_info) = tikv.init_raw_engines(Some(limiter.clone()));
             limiter.set_low_priority_io_adjustor_if_needed(Some(engines_info.clone()));
-            tikv.init_engines(engines);
+            tikv.init_engines(engines.clone());
+            {
+                proxy.set_kv_engine(Some(engines.kv.clone()));
+            }
             let server_config = tikv.init_servers();
             tikv.register_services();
             tikv.init_metrics_flusher(fetcher, engines_info);
