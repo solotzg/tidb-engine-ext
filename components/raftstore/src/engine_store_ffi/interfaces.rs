@@ -2,281 +2,127 @@
 
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 pub mod root {
-    #[repr(C)]
-    pub struct __BindgenUnionField<T>(::std::marker::PhantomData<T>);
-    impl<T> __BindgenUnionField<T> {
-        #[inline]
-        pub const fn new() -> Self {
-            __BindgenUnionField(::std::marker::PhantomData)
-        }
-        #[inline]
-        pub unsafe fn as_ref(&self) -> &T {
-            ::std::mem::transmute(self)
-        }
-        #[inline]
-        pub unsafe fn as_mut(&mut self) -> &mut T {
-            ::std::mem::transmute(self)
-        }
-    }
-    impl<T> ::std::default::Default for __BindgenUnionField<T> {
-        #[inline]
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-    impl<T> ::std::clone::Clone for __BindgenUnionField<T> {
-        #[inline]
-        fn clone(&self) -> Self {
-            Self::new()
-        }
-    }
-    impl<T> ::std::marker::Copy for __BindgenUnionField<T> {}
-    impl<T> ::std::fmt::Debug for __BindgenUnionField<T> {
-        fn fmt(&self, fmt: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            fmt.write_str("__BindgenUnionField")
-        }
-    }
-    impl<T> ::std::hash::Hash for __BindgenUnionField<T> {
-        fn hash<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
-    }
-    impl<T> ::std::cmp::PartialEq for __BindgenUnionField<T> {
-        fn eq(&self, _other: &__BindgenUnionField<T>) -> bool {
-            true
-        }
-    }
-    impl<T> ::std::cmp::Eq for __BindgenUnionField<T> {}
     #[allow(unused_imports)]
     use self::super::root;
-    pub const _LIBCPP_HAS_MERGED_TYPEINFO_NAMES_DEFAULT: u32 = 1;
-    pub const _LIBCPP_VERSION: u32 = 10000;
+    pub const _LIBCPP_VERSION: u32 = 13000;
     pub const _LIBCPP_ABI_VERSION: u32 = 1;
     pub const _LIBCPP_STD_VER: u32 = 11;
-    pub const _LIBCPP_OBJECT_FORMAT_MACHO: u32 = 1;
-    pub const _LIBCPP_HIDE_FROM_ABI_PER_TU: u32 = 1;
-    pub const _LIBCPP_DEBUG_LEVEL: u32 = 0;
-    pub const _LIBCPP_LOCALE__L_EXTENSIONS: u32 = 1;
-    pub const _LIBCPP_HAS_CATOPEN: u32 = 1;
-    pub const __STDCPP_THREADS__: u32 = 1;
+    pub const _LIBCPP_OBJECT_FORMAT_ELF: u32 = 1;
+    pub const _FEATURES_H: u32 = 1;
+    pub const __USE_ANSI: u32 = 1;
+    pub const _ISOC95_SOURCE: u32 = 1;
+    pub const _ISOC99_SOURCE: u32 = 1;
+    pub const _ISOC11_SOURCE: u32 = 1;
+    pub const _POSIX_SOURCE: u32 = 1;
+    pub const _POSIX_C_SOURCE: u32 = 200809;
+    pub const _XOPEN_SOURCE: u32 = 700;
+    pub const _XOPEN_SOURCE_EXTENDED: u32 = 1;
+    pub const _LARGEFILE64_SOURCE: u32 = 1;
+    pub const _BSD_SOURCE: u32 = 1;
+    pub const _SVID_SOURCE: u32 = 1;
+    pub const _ATFILE_SOURCE: u32 = 1;
+    pub const __USE_ISOC11: u32 = 1;
+    pub const __USE_ISOC99: u32 = 1;
+    pub const __USE_ISOC95: u32 = 1;
+    pub const __USE_ISOCXX11: u32 = 1;
+    pub const __USE_POSIX: u32 = 1;
+    pub const __USE_POSIX2: u32 = 1;
+    pub const __USE_POSIX199309: u32 = 1;
+    pub const __USE_POSIX199506: u32 = 1;
+    pub const __USE_XOPEN2K: u32 = 1;
+    pub const __USE_XOPEN2K8: u32 = 1;
+    pub const __USE_XOPEN: u32 = 1;
+    pub const __USE_XOPEN_EXTENDED: u32 = 1;
+    pub const __USE_UNIX98: u32 = 1;
+    pub const _LARGEFILE_SOURCE: u32 = 1;
+    pub const __USE_XOPEN2K8XSI: u32 = 1;
+    pub const __USE_XOPEN2KXSI: u32 = 1;
+    pub const __USE_LARGEFILE: u32 = 1;
+    pub const __USE_LARGEFILE64: u32 = 1;
+    pub const __USE_MISC: u32 = 1;
+    pub const __USE_BSD: u32 = 1;
+    pub const __USE_SVID: u32 = 1;
+    pub const __USE_ATFILE: u32 = 1;
+    pub const __USE_GNU: u32 = 1;
+    pub const __USE_FORTIFY_LEVEL: u32 = 0;
+    pub const _STDC_PREDEF_H: u32 = 1;
+    pub const __STDC_IEC_559__: u32 = 1;
+    pub const __STDC_IEC_559_COMPLEX__: u32 = 1;
+    pub const __STDC_ISO_10646__: u32 = 201103;
+    pub const __STDC_NO_THREADS__: u32 = 1;
+    pub const __GNU_LIBRARY__: u32 = 6;
+    pub const __GLIBC__: u32 = 2;
+    pub const __GLIBC_MINOR__: u32 = 17;
+    pub const __GLIBC_HAVE_LONG_LONG: u32 = 1;
+    pub const _SYS_CDEFS_H: u32 = 1;
     pub const __WORDSIZE: u32 = 64;
-    pub const __DARWIN_ONLY_64_BIT_INO_T: u32 = 0;
-    pub const __DARWIN_ONLY_VERS_1050: u32 = 0;
-    pub const __DARWIN_ONLY_UNIX_CONFORMANCE: u32 = 1;
-    pub const __DARWIN_UNIX03: u32 = 1;
-    pub const __DARWIN_64_BIT_INO_T: u32 = 1;
-    pub const __DARWIN_VERS_1050: u32 = 1;
-    pub const __DARWIN_NON_CANCELABLE: u32 = 0;
-    pub const __DARWIN_SUF_64_BIT_INO_T: &'static [u8; 9usize] = b"$INODE64\0";
-    pub const __DARWIN_SUF_1050: &'static [u8; 6usize] = b"$1050\0";
-    pub const __DARWIN_SUF_EXTSN: &'static [u8; 14usize] = b"$DARWIN_EXTSN\0";
-    pub const __DARWIN_C_ANSI: u32 = 4096;
-    pub const __DARWIN_C_FULL: u32 = 900000;
-    pub const __DARWIN_C_LEVEL: u32 = 900000;
-    pub const __DARWIN_NO_LONG_LONG: u32 = 0;
-    pub const _DARWIN_FEATURE_64_BIT_INODE: u32 = 1;
-    pub const _DARWIN_FEATURE_ONLY_UNIX_CONFORMANCE: u32 = 1;
-    pub const _DARWIN_FEATURE_UNIX_CONFORMANCE: u32 = 3;
-    pub const __PTHREAD_SIZE__: u32 = 8176;
-    pub const __PTHREAD_ATTR_SIZE__: u32 = 56;
-    pub const __PTHREAD_MUTEXATTR_SIZE__: u32 = 8;
-    pub const __PTHREAD_MUTEX_SIZE__: u32 = 56;
-    pub const __PTHREAD_CONDATTR_SIZE__: u32 = 8;
-    pub const __PTHREAD_COND_SIZE__: u32 = 40;
-    pub const __PTHREAD_ONCE_SIZE__: u32 = 8;
-    pub const __PTHREAD_RWLOCK_SIZE__: u32 = 192;
-    pub const __PTHREAD_RWLOCKATTR_SIZE__: u32 = 16;
-    pub const INT8_MAX: u32 = 127;
-    pub const INT16_MAX: u32 = 32767;
-    pub const INT32_MAX: u32 = 2147483647;
-    pub const INT64_MAX: u64 = 9223372036854775807;
+    pub const __WORDSIZE_TIME64_COMPAT32: u32 = 1;
+    pub const __SYSCALL_WORDSIZE: u32 = 64;
+    pub const _LIBCPP_HIDE_FROM_ABI_PER_TU: u32 = 0;
+    pub const _LIBCPP_DEBUG_LEVEL: u32 = 0;
+    pub const _STDINT_H: u32 = 1;
+    pub const _BITS_WCHAR_H: u32 = 1;
+    pub const __WCHAR_MIN: i32 = -2147483648;
+    pub const __WCHAR_MAX: u32 = 2147483647;
     pub const INT8_MIN: i32 = -128;
     pub const INT16_MIN: i32 = -32768;
     pub const INT32_MIN: i32 = -2147483648;
-    pub const INT64_MIN: i64 = -9223372036854775808;
+    pub const INT8_MAX: u32 = 127;
+    pub const INT16_MAX: u32 = 32767;
+    pub const INT32_MAX: u32 = 2147483647;
     pub const UINT8_MAX: u32 = 255;
     pub const UINT16_MAX: u32 = 65535;
     pub const UINT32_MAX: u32 = 4294967295;
-    pub const UINT64_MAX: i32 = -1;
     pub const INT_LEAST8_MIN: i32 = -128;
     pub const INT_LEAST16_MIN: i32 = -32768;
     pub const INT_LEAST32_MIN: i32 = -2147483648;
-    pub const INT_LEAST64_MIN: i64 = -9223372036854775808;
     pub const INT_LEAST8_MAX: u32 = 127;
     pub const INT_LEAST16_MAX: u32 = 32767;
     pub const INT_LEAST32_MAX: u32 = 2147483647;
-    pub const INT_LEAST64_MAX: u64 = 9223372036854775807;
     pub const UINT_LEAST8_MAX: u32 = 255;
     pub const UINT_LEAST16_MAX: u32 = 65535;
     pub const UINT_LEAST32_MAX: u32 = 4294967295;
-    pub const UINT_LEAST64_MAX: i32 = -1;
     pub const INT_FAST8_MIN: i32 = -128;
-    pub const INT_FAST16_MIN: i32 = -32768;
-    pub const INT_FAST32_MIN: i32 = -2147483648;
-    pub const INT_FAST64_MIN: i64 = -9223372036854775808;
+    pub const INT_FAST16_MIN: i64 = -9223372036854775808;
+    pub const INT_FAST32_MIN: i64 = -9223372036854775808;
     pub const INT_FAST8_MAX: u32 = 127;
-    pub const INT_FAST16_MAX: u32 = 32767;
-    pub const INT_FAST32_MAX: u32 = 2147483647;
-    pub const INT_FAST64_MAX: u64 = 9223372036854775807;
+    pub const INT_FAST16_MAX: u64 = 9223372036854775807;
+    pub const INT_FAST32_MAX: u64 = 9223372036854775807;
     pub const UINT_FAST8_MAX: u32 = 255;
-    pub const UINT_FAST16_MAX: u32 = 65535;
-    pub const UINT_FAST32_MAX: u32 = 4294967295;
-    pub const UINT_FAST64_MAX: i32 = -1;
-    pub const INTPTR_MAX: u64 = 9223372036854775807;
+    pub const UINT_FAST16_MAX: i32 = -1;
+    pub const UINT_FAST32_MAX: i32 = -1;
     pub const INTPTR_MIN: i64 = -9223372036854775808;
+    pub const INTPTR_MAX: u64 = 9223372036854775807;
     pub const UINTPTR_MAX: i32 = -1;
-    pub const SIZE_MAX: i32 = -1;
-    pub const WINT_MIN: i32 = -2147483648;
-    pub const WINT_MAX: u32 = 2147483647;
+    pub const PTRDIFF_MIN: i64 = -9223372036854775808;
+    pub const PTRDIFF_MAX: u64 = 9223372036854775807;
     pub const SIG_ATOMIC_MIN: i32 = -2147483648;
     pub const SIG_ATOMIC_MAX: u32 = 2147483647;
+    pub const SIZE_MAX: i32 = -1;
+    pub const WCHAR_MIN: i32 = -2147483648;
+    pub const WCHAR_MAX: u32 = 2147483647;
+    pub const WINT_MIN: u32 = 0;
+    pub const WINT_MAX: u32 = 4294967295;
     pub mod std {
         #[allow(unused_imports)]
         use self::super::super::root;
     }
-    pub type int_least8_t = i8;
-    pub type int_least16_t = i16;
-    pub type int_least32_t = i32;
-    pub type int_least64_t = i64;
-    pub type uint_least8_t = u8;
-    pub type uint_least16_t = u16;
-    pub type uint_least32_t = u32;
-    pub type uint_least64_t = u64;
-    pub type int_fast8_t = i8;
-    pub type int_fast16_t = i16;
-    pub type int_fast32_t = i32;
-    pub type int_fast64_t = i64;
-    pub type uint_fast8_t = u8;
-    pub type uint_fast16_t = u16;
-    pub type uint_fast32_t = u32;
-    pub type uint_fast64_t = u64;
-    pub type __int8_t = ::std::os::raw::c_schar;
-    pub type __uint8_t = ::std::os::raw::c_uchar;
-    pub type __int16_t = ::std::os::raw::c_short;
-    pub type __uint16_t = ::std::os::raw::c_ushort;
-    pub type __int32_t = ::std::os::raw::c_int;
-    pub type __uint32_t = ::std::os::raw::c_uint;
-    pub type __int64_t = ::std::os::raw::c_longlong;
-    pub type __uint64_t = ::std::os::raw::c_ulonglong;
-    pub type __darwin_intptr_t = ::std::os::raw::c_long;
-    pub type __darwin_natural_t = ::std::os::raw::c_uint;
-    pub type __darwin_ct_rune_t = ::std::os::raw::c_int;
-    #[repr(C)]
-    pub struct __mbstate_t {
-        pub __mbstate8: root::__BindgenUnionField<[::std::os::raw::c_char; 128usize]>,
-        pub _mbstateL: root::__BindgenUnionField<::std::os::raw::c_longlong>,
-        pub bindgen_union_field: [u64; 16usize],
-    }
-    pub type __darwin_mbstate_t = root::__mbstate_t;
-    pub type __darwin_ptrdiff_t = ::std::os::raw::c_long;
-    pub type __darwin_size_t = ::std::os::raw::c_ulong;
-    pub type __darwin_va_list = root::__builtin_va_list;
-    pub type __darwin_wchar_t = ::std::os::raw::c_int;
-    pub type __darwin_rune_t = root::__darwin_wchar_t;
-    pub type __darwin_wint_t = ::std::os::raw::c_int;
-    pub type __darwin_clock_t = ::std::os::raw::c_ulong;
-    pub type __darwin_socklen_t = root::__uint32_t;
-    pub type __darwin_ssize_t = ::std::os::raw::c_long;
-    pub type __darwin_time_t = ::std::os::raw::c_long;
-    pub type __darwin_blkcnt_t = root::__int64_t;
-    pub type __darwin_blksize_t = root::__int32_t;
-    pub type __darwin_dev_t = root::__int32_t;
-    pub type __darwin_fsblkcnt_t = ::std::os::raw::c_uint;
-    pub type __darwin_fsfilcnt_t = ::std::os::raw::c_uint;
-    pub type __darwin_gid_t = root::__uint32_t;
-    pub type __darwin_id_t = root::__uint32_t;
-    pub type __darwin_ino64_t = root::__uint64_t;
-    pub type __darwin_ino_t = root::__darwin_ino64_t;
-    pub type __darwin_mach_port_name_t = root::__darwin_natural_t;
-    pub type __darwin_mach_port_t = root::__darwin_mach_port_name_t;
-    pub type __darwin_mode_t = root::__uint16_t;
-    pub type __darwin_off_t = root::__int64_t;
-    pub type __darwin_pid_t = root::__int32_t;
-    pub type __darwin_sigset_t = root::__uint32_t;
-    pub type __darwin_suseconds_t = root::__int32_t;
-    pub type __darwin_uid_t = root::__uint32_t;
-    pub type __darwin_useconds_t = root::__uint32_t;
-    pub type __darwin_uuid_t = [::std::os::raw::c_uchar; 16usize];
-    pub type __darwin_uuid_string_t = [::std::os::raw::c_char; 37usize];
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct __darwin_pthread_handler_rec {
-        pub __routine:
-            ::std::option::Option<unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void)>,
-        pub __arg: *mut ::std::os::raw::c_void,
-        pub __next: *mut root::__darwin_pthread_handler_rec,
-    }
-    #[repr(C)]
-    pub struct _opaque_pthread_attr_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 56usize],
-    }
-    #[repr(C)]
-    pub struct _opaque_pthread_cond_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 40usize],
-    }
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct _opaque_pthread_condattr_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 8usize],
-    }
-    #[repr(C)]
-    pub struct _opaque_pthread_mutex_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 56usize],
-    }
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct _opaque_pthread_mutexattr_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 8usize],
-    }
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct _opaque_pthread_once_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 8usize],
-    }
-    #[repr(C)]
-    pub struct _opaque_pthread_rwlock_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 192usize],
-    }
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct _opaque_pthread_rwlockattr_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __opaque: [::std::os::raw::c_char; 16usize],
-    }
-    #[repr(C)]
-    pub struct _opaque_pthread_t {
-        pub __sig: ::std::os::raw::c_long,
-        pub __cleanup_stack: *mut root::__darwin_pthread_handler_rec,
-        pub __opaque: [::std::os::raw::c_char; 8176usize],
-    }
-    pub type __darwin_pthread_attr_t = root::_opaque_pthread_attr_t;
-    pub type __darwin_pthread_cond_t = root::_opaque_pthread_cond_t;
-    pub type __darwin_pthread_condattr_t = root::_opaque_pthread_condattr_t;
-    pub type __darwin_pthread_key_t = ::std::os::raw::c_ulong;
-    pub type __darwin_pthread_mutex_t = root::_opaque_pthread_mutex_t;
-    pub type __darwin_pthread_mutexattr_t = root::_opaque_pthread_mutexattr_t;
-    pub type __darwin_pthread_once_t = root::_opaque_pthread_once_t;
-    pub type __darwin_pthread_rwlock_t = root::_opaque_pthread_rwlock_t;
-    pub type __darwin_pthread_rwlockattr_t = root::_opaque_pthread_rwlockattr_t;
-    pub type __darwin_pthread_t = *mut root::_opaque_pthread_t;
-    pub type u_int8_t = ::std::os::raw::c_uchar;
-    pub type u_int16_t = ::std::os::raw::c_ushort;
-    pub type u_int32_t = ::std::os::raw::c_uint;
-    pub type u_int64_t = ::std::os::raw::c_ulonglong;
-    pub type register_t = i64;
-    pub type user_addr_t = root::u_int64_t;
-    pub type user_size_t = root::u_int64_t;
-    pub type user_ssize_t = i64;
-    pub type user_long_t = i64;
-    pub type user_ulong_t = root::u_int64_t;
-    pub type user_time_t = i64;
-    pub type user_off_t = i64;
-    pub type syscall_arg_t = root::u_int64_t;
+    pub type int_least8_t = ::std::os::raw::c_schar;
+    pub type int_least16_t = ::std::os::raw::c_short;
+    pub type int_least32_t = ::std::os::raw::c_int;
+    pub type int_least64_t = ::std::os::raw::c_long;
+    pub type uint_least8_t = ::std::os::raw::c_uchar;
+    pub type uint_least16_t = ::std::os::raw::c_ushort;
+    pub type uint_least32_t = ::std::os::raw::c_uint;
+    pub type uint_least64_t = ::std::os::raw::c_ulong;
+    pub type int_fast8_t = ::std::os::raw::c_schar;
+    pub type int_fast16_t = ::std::os::raw::c_long;
+    pub type int_fast32_t = ::std::os::raw::c_long;
+    pub type int_fast64_t = ::std::os::raw::c_long;
+    pub type uint_fast8_t = ::std::os::raw::c_uchar;
+    pub type uint_fast16_t = ::std::os::raw::c_ulong;
+    pub type uint_fast32_t = ::std::os::raw::c_ulong;
+    pub type uint_fast64_t = ::std::os::raw::c_ulong;
     pub type intmax_t = ::std::os::raw::c_long;
     pub type uintmax_t = ::std::os::raw::c_ulong;
     pub mod DB {
@@ -284,6 +130,12 @@ pub mod root {
         use self::super::super::root;
         pub type ConstRawVoidPtr = *const ::std::os::raw::c_void;
         pub type RawVoidPtr = *mut ::std::os::raw::c_void;
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppString {
+            _unused: [u8; 0],
+        }
+        pub type RawCppStringPtr = *mut root::DB::RawCppString;
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum ColumnFamilyType {
@@ -291,12 +143,6 @@ pub mod root {
             Write = 1,
             Default = 2,
         }
-        #[repr(C)]
-        #[derive(Debug)]
-        pub struct RawCppString {
-            _unused: [u8; 0],
-        }
-        pub type RawCppStringPtr = *mut root::DB::RawCppString;
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum FileEncryptionRes {
@@ -486,6 +332,20 @@ pub mod root {
                 ),
             >,
         }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum MsgPBType {
+            ReadIndexResponse = 0,
+            ServerInfoResponse = 1,
+            RegionLocalState = 2,
+        }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum KVGetStatus {
+            Ok = 0,
+            Error = 1,
+            NotFound = 2,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct RaftStoreProxyFFIHelper {
@@ -532,10 +392,26 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
                     arg2: root::DB::CppStrVecView,
-                    arg3: u64,
-                ) -> root::DB::RawVoidPtr,
+                    arg3: root::DB::RawVoidPtr,
+                    arg4: u64,
+                    fn_insert_batch_read_index_resp: ::std::option::Option<
+                        unsafe extern "C" fn(
+                            arg1: root::DB::RawVoidPtr,
+                            arg2: root::DB::BaseBuffView,
+                            arg3: u64,
+                        ),
+                    >,
+                ),
             >,
             pub sst_reader_interfaces: root::DB::SSTReaderInterfaces,
+            pub fn_get_region_local_state: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                    region_id: u64,
+                    data: root::DB::RawVoidPtr,
+                    error_msg: *mut root::DB::RawCppStringPtr,
+                ) -> root::DB::KVGetStatus,
+            >,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -616,32 +492,17 @@ pub mod root {
             pub fn_check_http_uri_available:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::BaseBuffView) -> u8>,
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *mut root::DB::EngineStoreServerWrap,
-                    arg2: root::DB::RawVoidPtr,
-                    arg3: root::DB::RawCppPtrType,
-                ),
+                unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
-            pub fn_gen_batch_read_index_res:
-                ::std::option::Option<unsafe extern "C" fn(arg1: u64) -> root::DB::RawVoidPtr>,
-            pub fn_insert_batch_read_index_resp: ::std::option::Option<
+            pub fn_set_pb_msg_by_bytes: ::std::option::Option<
                 unsafe extern "C" fn(
-                    arg1: root::DB::RawVoidPtr,
-                    arg2: root::DB::BaseBuffView,
-                    arg3: u64,
+                    type_: root::DB::MsgPBType,
+                    ptr: root::DB::RawVoidPtr,
+                    buff: root::DB::BaseBuffView,
                 ),
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u32 = 501000;
+        pub const RAFT_STORE_PROXY_VERSION: u32 = 501001;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
-    }
-    pub type __builtin_va_list = [root::__va_list_tag; 1usize];
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct __va_list_tag {
-        pub gp_offset: ::std::os::raw::c_uint,
-        pub fp_offset: ::std::os::raw::c_uint,
-        pub overflow_arg_area: *mut ::std::os::raw::c_void,
-        pub reg_save_area: *mut ::std::os::raw::c_void,
     }
 }

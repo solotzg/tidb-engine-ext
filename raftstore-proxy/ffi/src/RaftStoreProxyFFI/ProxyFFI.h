@@ -122,6 +122,18 @@ struct SSTReaderInterfaces {
   void (*fn_gc)(SSTReaderPtr, ColumnFamilyType);
 };
 
+enum class MsgPBType : uint32_t {
+  ReadIndexResponse = 0,
+  ServerInfoResponse,
+  RegionLocalState,
+};
+
+enum class KVGetStatus : uint32_t {
+  Ok = 0,
+  Error,
+  NotFound,
+};
+
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);
@@ -133,9 +145,14 @@ struct RaftStoreProxyFFIHelper {
                                                  BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
-  RawVoidPtr (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
-                                           uint64_t);
+  void (*fn_handle_batch_read_index)(
+      RaftStoreProxyPtr, CppStrVecView, RawVoidPtr, uint64_t,
+      void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,
+                                              uint64_t));  // To remove
   SSTReaderInterfaces sst_reader_interfaces;
+  KVGetStatus (*fn_get_region_local_state)(RaftStoreProxyPtr,
+                                           uint64_t region_id, RawVoidPtr data,
+                                           RawCppStringPtr *error_msg);
 };
 
 struct EngineStoreServerHelper {
@@ -167,8 +184,8 @@ struct EngineStoreServerHelper {
   HttpRequestRes (*fn_handle_http_request)(EngineStoreServerWrap *,
                                            BaseBuffView);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
-  void (*fn_gc_raw_cpp_ptr)(EngineStoreServerWrap *, RawVoidPtr, RawCppPtrType);
-  RawVoidPtr (*fn_gen_batch_read_index_res)(uint64_t);
-  void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView, uint64_t);
+  void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
+  void (*fn_set_pb_msg_by_bytes)(MsgPBType type, RawVoidPtr ptr,
+                                 BaseBuffView buff);
 };
 }  // namespace DB

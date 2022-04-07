@@ -7,8 +7,8 @@ use encryption::DataKeyManager;
 use engine_rocks::get_env;
 use engine_rocks::{RocksSstIterator, RocksSstReader};
 use engine_traits::{
-    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, SeekKey, SstReader,
-    CF_DEFAULT, CF_LOCK, CF_WRITE,
+    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, Peekable, SeekKey,
+    SstReader, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use protobuf::Message;
@@ -25,8 +25,8 @@ pub use crate::engine_store_ffi::interfaces::root::DB::{
     WriteCmdType, WriteCmdsView,
 };
 use crate::engine_store_ffi::interfaces::root::DB::{
-    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawCppStringPtr,
-    SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
+    ConstRawVoidPtr, FileEncryptionInfoRaw, KVGetStatus, RaftStoreProxyPtr, RawCppPtrType,
+    RawCppStringPtr, SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
     RAFT_STORE_PROXY_VERSION,
 };
 use crate::store::LockCFFileReader;
@@ -53,14 +53,69 @@ impl<T> UnwrapExternCFunc<T> for std::option::Option<T> {
 }
 
 pub struct RaftStoreProxy {
-    pub status: AtomicU8,
-    pub key_manager: Option<Arc<DataKeyManager>>,
-    pub read_index_client: Box<dyn read_index_helper::ReadIndex>,
+    status: AtomicU8,
+    key_manager: Option<Arc<DataKeyManager>>,
+    read_index_client: Box<dyn read_index_helper::ReadIndex>,
+    kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+}
+
+pub trait RaftStoreProxyFFI: Sync {
+    fn set_status(&mut self, s: RaftProxyStatus);
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnOnce(Result<Option<&[u8]>, String>);
+    fn set_kv_engine(&mut self, kv_engine: Option<engine_rocks::RocksEngine>);
 }
 
 impl RaftStoreProxy {
-    pub fn set_status(&mut self, s: RaftProxyStatus) {
+    pub fn new(
+        status: AtomicU8,
+        key_manager: Option<Arc<DataKeyManager>>,
+        read_index_client: Box<dyn read_index_helper::ReadIndex>,
+        kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+    ) -> Self {
+        RaftStoreProxy {
+            status,
+            key_manager,
+            read_index_client,
+            kv_engine,
+        }
+    }
+}
+
+impl RaftStoreProxyFFI for RaftStoreProxy {
+    fn set_kv_engine(&mut self, kv_engine: Option<engine_rocks::RocksEngine>) {
+        let mut lock = self.kv_engine.write().unwrap();
+        *lock = kv_engine;
+    }
+
+    fn set_status(&mut self, s: RaftProxyStatus) {
         self.status.store(s as u8, Ordering::SeqCst);
+    }
+
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnOnce(Result<Option<&[u8]>, String>),
+    {
+        let kv_engine_lock = self.kv_engine.read().unwrap();
+        let kv_engine = kv_engine_lock.as_ref();
+        if kv_engine.is_none() {
+            cb(Err(format!("KV engine is not initialized")));
+            return;
+        }
+        let value = kv_engine.unwrap().get_value_cf(cf, key);
+        match value {
+            Ok(v) => {
+                if let Some(x) = v {
+                    cb(Ok(Some(&x)));
+                } else {
+                    cb(Ok(None));
+                }
+            }
+            Err(e) => {
+                cb(Err(format!("{}", e)));
+            }
+        }
     }
 }
 
@@ -81,7 +136,43 @@ impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
     }
 }
 
-#[no_mangle]
+unsafe extern "C" fn ffi_get_region_local_state(
+    proxy_ptr: RaftStoreProxyPtr,
+    region_id: u64,
+    data: RawVoidPtr,
+    error_msg: *mut RawCppStringPtr,
+) -> KVGetStatus {
+    assert!(!proxy_ptr.is_null());
+
+    let region_state_key = keys::region_state_key(region_id);
+    let mut res = KVGetStatus::NotFound;
+    proxy_ptr
+        .as_ref()
+        .get_value_cf(engine_traits::CF_RAFT, &region_state_key, |value| {
+            match value {
+                Ok(v) => {
+                    if let Some(buff) = v {
+                        get_engine_store_server_helper().set_pb_msg_by_bytes(
+                            interfaces::root::DB::MsgPBType::RegionLocalState,
+                            data,
+                            buff.into(),
+                        );
+                        res = KVGetStatus::Ok;
+                    } else {
+                        res = KVGetStatus::NotFound;
+                    }
+                }
+                Err(e) => {
+                    let msg = get_engine_store_server_helper().gen_cpp_string(e.as_ref());
+                    *error_msg = msg;
+                    res = KVGetStatus::Error;
+                }
+            };
+        });
+
+    return res;
+}
+
 pub extern "C" fn ffi_handle_get_proxy_status(proxy_ptr: RaftStoreProxyPtr) -> RaftProxyStatus {
     unsafe {
         let r = proxy_ptr.as_ref().status.load(Ordering::SeqCst);
@@ -112,9 +203,12 @@ pub extern "C" fn ffi_encryption_method(
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
+    res: RawVoidPtr,
     timeout_ms: u64,
-) -> RawVoidPtr {
+    fn_insert_batch_read_index_resp: Option<unsafe extern "C" fn(RawVoidPtr, BaseBuffView, u64)>,
+) {
     assert!(!proxy_ptr.is_null());
+    debug_assert!(fn_insert_batch_read_index_resp.is_some());
     if view.len != 0 {
         assert_ne!(view.view, std::ptr::null());
     }
@@ -122,7 +216,7 @@ pub extern "C" fn ffi_batch_read_index(
         let mut req_vec = Vec::with_capacity(view.len as usize);
         for i in 0..view.len as usize {
             let mut req = kvrpcpb::ReadIndexRequest::default();
-            let p = &(*view.view.offset(i as isize));
+            let p = &(*view.view.add(i));
             assert_ne!(p.data, std::ptr::null());
             assert_ne!(p.len, 0);
             req.merge_from_bytes(p.to_slice()).unwrap();
@@ -132,17 +226,11 @@ pub extern "C" fn ffi_batch_read_index(
             .as_ref()
             .read_index_client
             .batch_read_index(req_vec, Duration::from_millis(timeout_ms));
-        let res = get_engine_store_server_helper().gen_batch_read_index_res(resp.len() as u64);
         assert_ne!(res, std::ptr::null_mut());
         for (r, region_id) in &resp {
             let r = ProtoMsgBaseBuff::new(r);
-            get_engine_store_server_helper().insert_batch_read_index_resp(
-                res,
-                r.borrow().into(),
-                *region_id,
-            );
+            (fn_insert_batch_read_index_resp.into_inner())(res, r.borrow().into(), *region_id)
         }
-        res
     }
 }
 
@@ -384,6 +472,7 @@ impl RaftStoreProxyFFIHelper {
                 fn_next: Some(ffi_next),
                 fn_gc: Some(ffi_gc),
             },
+            fn_get_region_local_state: Some(ffi_get_region_local_state),
         }
     }
 }
@@ -570,10 +659,12 @@ impl From<&Vec<SSTView>> for SSTViewVec {
     }
 }
 
+unsafe impl Sync for EngineStoreServerHelper {}
+
 impl EngineStoreServerHelper {
     fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         unsafe {
-            (self.fn_gc_raw_cpp_ptr.into_inner())(self.inner, ptr, tp);
+            (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
         }
     }
 
@@ -689,17 +780,19 @@ impl EngineStoreServerHelper {
     pub fn handle_check_terminated(&self) -> bool {
         unsafe { (self.fn_handle_check_terminated.into_inner())(self.inner) != 0 }
     }
-
     fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
+        debug_assert!(self.fn_gen_cpp_string.is_some());
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
     }
 
-    fn gen_batch_read_index_res(&self, cap: u64) -> RawVoidPtr {
-        unsafe { (self.fn_gen_batch_read_index_res.into_inner())(cap) }
-    }
-
-    fn insert_batch_read_index_resp(&self, data: RawVoidPtr, buf: BaseBuffView, region_id: u64) {
-        unsafe { (self.fn_insert_batch_read_index_resp.into_inner())(data, buf, region_id) }
+    fn set_pb_msg_by_bytes(
+        &self,
+        type_: interfaces::root::DB::MsgPBType,
+        ptr: RawVoidPtr,
+        buff: BaseBuffView,
+    ) {
+        debug_assert!(self.fn_set_pb_msg_by_bytes.is_some());
+        unsafe { (self.fn_set_pb_msg_by_bytes.into_inner())(type_, ptr, buff) }
     }
 
     pub fn handle_http_request(&self, path: &str) -> HttpRequestRes {
