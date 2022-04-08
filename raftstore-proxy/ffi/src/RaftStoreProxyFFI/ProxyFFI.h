@@ -145,10 +145,10 @@ struct RaftStoreProxyFFIHelper {
                                                  BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
-  void (*fn_handle_batch_read_index)(
-      RaftStoreProxyPtr, CppStrVecView, RawVoidPtr, uint64_t,
-      void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,
-                                              uint64_t));  // To remove
+  void (*fn_handle_batch_read_index)(RaftStoreProxyPtr, CppStrVecView,
+                                     RawVoidPtr, uint64_t,
+                                     void (*fn_insert_batch_read_index_resp)(
+                                         RawVoidPtr, BaseBuffView, uint64_t));
   SSTReaderInterfaces sst_reader_interfaces;
   KVGetStatus (*fn_get_region_local_state)(RaftStoreProxyPtr,
                                            uint64_t region_id, RawVoidPtr data,
@@ -156,9 +156,9 @@ struct RaftStoreProxyFFIHelper {
 };
 
 struct EngineStoreServerHelper {
-  uint32_t magic_number;  // use a very special number to check whether this
+  uint64_t magic_number;  // use a very special number to check whether this
                           // struct is legal
-  uint32_t version;       // version of function interface
+  uint64_t version;       // version of function interface
   //
 
   EngineStoreServerWrap *inner;
