@@ -1443,6 +1443,12 @@ where
             }
         }
 
+        let ori_apply_state = if cmd_type == AdminCmdType::CompactLog {
+            Some(self.apply_state.clone())
+        } else {
+            None
+        };
+
         let (mut response, mut exec_result) = match cmd_type {
             AdminCmdType::ChangePeer => self.exec_change_peer(ctx, request),
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
@@ -1481,6 +1487,7 @@ where
                 if cmd_type == AdminCmdType::CompactLog {
                     response = AdminResponse::new();
                     exec_result = ApplyResult::None;
+                    self.apply_state = ori_apply_state.unwrap();
                 }
             }
             _ => {}
