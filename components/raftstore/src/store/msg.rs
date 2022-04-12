@@ -23,8 +23,8 @@ use crate::store::fsm::apply::{CatchUpLogs, ChangeObserver};
 use crate::store::metrics::RaftEventDurationType;
 use crate::store::util::{KeysInfoFormatter, LatencyInspector};
 use crate::store::{RaftlogFetchResult, SnapKey};
+use collections::HashSet;
 use tikv_util::{deadline::Deadline, escape, memory::HeapSize, time::Instant};
-
 use super::{AbstractPeer, RegionSnapshot};
 
 #[derive(Debug)]
@@ -313,6 +313,10 @@ where
         context: GetEntriesContext,
         res: Box<RaftlogFetchResult>,
     },
+    EnterForceLeaderState {
+        failed_stores: HashSet<u64>,
+    },
+    ExitForceLeaderState,
 }
 
 /// Message that will be sent to a peer.
