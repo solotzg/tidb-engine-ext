@@ -12,7 +12,8 @@ lib_suffix="so"
 if [[ $(uname -s) == "Darwin" ]]; then
   lib_suffix="dylib"
   # use the openssl 1.1 lib from system
-  export OPENSSL_DIR=${OPENSSL_DIR:-$(brew --prefix openssl@1.1)}
+  export OPENSSL_DIR=${OPENSSL_DIR:-$(brew --prefix openssl@1.1)}  # for openssl-sys
+  export OPENSSL_ROOT_DIR=${OPENSSL_DIR}  # for Cmake
 
   if [[ -z ${OPENSSL_DIR} ]]; then
     echo "Not found openssl installed by Homebrew or env 'OPENSSL_DIR', please install openssl by 'brew install openssl@1.1'"
@@ -20,11 +21,11 @@ if [[ $(uname -s) == "Darwin" ]]; then
   fi
 
   echo "OPENSSL_DIR: ${OPENSSL_DIR}"
-  export OPENSSL_NO_VENDOR=1
-  export OPENSSL_STATIC=1
+  export OPENSSL_NO_VENDOR=1  # for openssl-sys
+  export OPENSSL_STATIC=1     # for openssl-sys
 fi
 
-PROXY_ENABLE_FEATURES=${PROXY_ENABLE_FEATURES} ./cargo-build.sh
+CFLAGS=-w CXXFLAGS=-w PROXY_ENABLE_FEATURES=${PROXY_ENABLE_FEATURES} ./cargo-build.sh
 
 target_name="lib${ENGINE_LABEL_VALUE}_proxy.${lib_suffix}"
 ori_build_path="target/${PROXY_PROFILE}/libraftstore_proxy.${lib_suffix}"
