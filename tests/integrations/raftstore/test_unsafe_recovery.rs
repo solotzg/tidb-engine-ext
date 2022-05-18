@@ -4,52 +4,33 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use std::time::Duration;
 
-use collections::HashSet;
 use futures::executor::block_on;
-use kvproto::metapb;
+use kvproto::{metapb, pdpb};
 use pd_client::PdClient;
-use raft::eraftpb::ConfChangeType;
-use raft::eraftpb::MessageType;
+use raft::eraftpb::{ConfChangeType, MessageType};
+use raftstore::store::util::find_peer;
 use test_raftstore::*;
 use tikv_util::config::ReadableDuration;
 use tikv_util::HandyRwLock;
 
-#[test]
-fn test_unsafe_recover_update_region() {
-    let mut cluster = new_server_cluster(0, 3);
-    cluster.run();
-    let nodes = Vec::from_iter(cluster.get_node_ids());
-    assert_eq!(nodes.len(), 3);
-
-    let pd_client = Arc::clone(&cluster.pd_client);
-    // Disable default max peer number check.
-    pd_client.disable_default_operator();
-
-    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
-
-    configure_for_lease_read(&mut cluster, None, None);
-    cluster.stop_node(nodes[1]);
-    cluster.stop_node(nodes[2]);
-    cluster.must_wait_for_leader_expire(nodes[0], region.get_id());
-
-    let mut update = metapb::Region::default();
-    update.set_id(1);
-    update.set_end_key(b"anykey2".to_vec());
-    for p in region.get_peers() {
-        if p.get_store_id() == nodes[0] {
-            update.mut_peers().push(p.clone());
-        }
-    }
-    update.mut_region_epoch().set_version(1);
-    update.mut_region_epoch().set_conf_ver(1);
-    // Removes the boostrap region, since it overlaps with any regions we create.
-    cluster.must_update_region_for_unsafe_recover(nodes[0], &update);
-    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
-    assert_eq!(region.get_end_key(), b"anykey2");
+fn confirm_quorum_is_lost<T: Simulator>(cluster: &mut Cluster<T>, region: &metapb::Region) {
+    let put = new_put_cmd(b"k2", b"v2");
+    let req = new_request(
+        region.get_id(),
+        region.get_region_epoch().clone(),
+        vec![put],
+        true,
+    );
+    // marjority is lost, can't propose command successfully.
+    assert!(
+        cluster
+            .call_command_on_leader(req, Duration::from_millis(10))
+            .is_err()
+    );
 }
 
 #[test]
-fn test_unsafe_recover_create_region() {
+fn test_unsafe_recovery_demote_failed_voters() {
     let mut cluster = new_server_cluster(0, 3);
     cluster.run();
     let nodes = Vec::from_iter(cluster.get_node_ids());
@@ -60,25 +41,300 @@ fn test_unsafe_recover_create_region() {
     pd_client.disable_default_operator();
 
     let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+    configure_for_lease_read(&mut cluster, None, None);
+
+    let peer_on_store2 = find_peer(&region, nodes[2]).unwrap();
+    cluster.must_transfer_leader(region.get_id(), peer_on_store2.clone());
+    cluster.stop_node(nodes[1]);
+    cluster.stop_node(nodes[2]);
+
+    confirm_quorum_is_lost(&mut cluster, &region);
+
+    cluster.must_enter_force_leader(region.get_id(), nodes[0], vec![nodes[1], nodes[2]]);
+
+    let to_be_removed: Vec<metapb::Peer> = region
+        .get_peers()
+        .iter()
+        .filter(|&peer| peer.get_store_id() != nodes[0])
+        .cloned()
+        .collect();
+    let mut plan = pdpb::RecoveryPlan::default();
+    let mut demote = pdpb::DemoteFailedVoters::default();
+    demote.set_region_id(region.get_id());
+    demote.set_failed_voters(to_be_removed.into());
+    plan.mut_demotes().push(demote);
+    pd_client.must_set_unsafe_recovery_plan(nodes[0], plan);
+    cluster.must_send_store_heartbeat(nodes[0]);
+
+    let mut demoted = true;
+    for _ in 0..10 {
+        let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+
+        demoted = true;
+        for peer in region.get_peers() {
+            if peer.get_id() != nodes[0] && peer.get_role() == metapb::PeerRole::Voter {
+                demoted = false;
+            }
+        }
+        if demoted {
+            break;
+        }
+        sleep_ms(200);
+    }
+    assert_eq!(demoted, true);
+}
+
+// Demote non-exist voters will not work, but TiKV should still report to PD.
+#[test]
+fn test_unsafe_recovery_demote_non_exist_voters() {
+    let mut cluster = new_server_cluster(0, 3);
+    cluster.run();
+    let nodes = Vec::from_iter(cluster.get_node_ids());
+    assert_eq!(nodes.len(), 3);
+
+    let pd_client = Arc::clone(&cluster.pd_client);
+    // Disable default max peer number check.
+    pd_client.disable_default_operator();
+
+    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+    configure_for_lease_read(&mut cluster, None, None);
+
+    let peer_on_store2 = find_peer(&region, nodes[2]).unwrap();
+    cluster.must_transfer_leader(region.get_id(), peer_on_store2.clone());
+    cluster.stop_node(nodes[1]);
+    cluster.stop_node(nodes[2]);
+
+    confirm_quorum_is_lost(&mut cluster, &region);
+    cluster.must_enter_force_leader(region.get_id(), nodes[0], vec![nodes[1], nodes[2]]);
+
+    let mut plan = pdpb::RecoveryPlan::default();
+    let mut demote = pdpb::DemoteFailedVoters::default();
+    demote.set_region_id(region.get_id());
+    let mut peer = metapb::Peer::default();
+    peer.set_id(12345);
+    peer.set_store_id(region.get_id());
+    peer.set_role(metapb::PeerRole::Voter);
+    demote.mut_failed_voters().push(peer);
+    plan.mut_demotes().push(demote);
+    pd_client.must_set_unsafe_recovery_plan(nodes[0], plan);
+    cluster.must_send_store_heartbeat(nodes[0]);
+
+    let mut store_report = None;
+    for _ in 0..20 {
+        store_report = pd_client.must_get_store_report(nodes[0]);
+        if store_report.is_some() {
+            break;
+        }
+        sleep_ms(100);
+    }
+    assert_ne!(store_report, None);
+    let report = store_report.unwrap();
+    let peer_reports = report.get_peer_reports();
+    assert_eq!(peer_reports.len(), 1);
+    let reported_region = peer_reports[0].get_region_state().get_region();
+    assert_eq!(reported_region.get_id(), region.get_id());
+    assert_eq!(reported_region.get_peers().len(), 3);
+    let demoted = reported_region
+        .get_peers()
+        .iter()
+        .any(|peer| peer.get_role() != metapb::PeerRole::Voter);
+    assert_eq!(demoted, false);
+
+    let region_in_pd = block_on(pd_client.get_region_by_id(region.get_id()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(region_in_pd.get_peers().len(), 3);
+    let demoted = region_in_pd
+        .get_peers()
+        .iter()
+        .any(|peer| peer.get_role() != metapb::PeerRole::Voter);
+    assert_eq!(demoted, false);
+}
+
+#[test]
+fn test_unsafe_recovery_auto_promote_learner() {
+    let mut cluster = new_server_cluster(0, 3);
+    cluster.run();
+    let nodes = Vec::from_iter(cluster.get_node_ids());
+    assert_eq!(nodes.len(), 3);
+
+    let pd_client = Arc::clone(&cluster.pd_client);
+    // Disable default max peer number check.
+    pd_client.disable_default_operator();
+
+    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+    configure_for_lease_read(&mut cluster, None, None);
+
+    let peer_on_store0 = find_peer(&region, nodes[0]).unwrap();
+    let peer_on_store2 = find_peer(&region, nodes[2]).unwrap();
+    cluster.must_transfer_leader(region.get_id(), peer_on_store2.clone());
+    // replace one peer with learner
+    cluster
+        .pd_client
+        .must_remove_peer(region.get_id(), peer_on_store0.clone());
+    cluster.pd_client.must_add_peer(
+        region.get_id(),
+        new_learner_peer(nodes[0], peer_on_store0.get_id()),
+    );
+    // Sleep 100 ms to wait for the new learner to be initialized.
+    sleep_ms(100);
+    cluster.stop_node(nodes[1]);
+    cluster.stop_node(nodes[2]);
+
+    confirm_quorum_is_lost(&mut cluster, &region);
+    cluster.must_enter_force_leader(region.get_id(), nodes[0], vec![nodes[1], nodes[2]]);
+
+    let to_be_removed: Vec<metapb::Peer> = region
+        .get_peers()
+        .iter()
+        .filter(|&peer| peer.get_store_id() != nodes[0])
+        .cloned()
+        .collect();
+    let mut plan = pdpb::RecoveryPlan::default();
+    let mut demote = pdpb::DemoteFailedVoters::default();
+    demote.set_region_id(region.get_id());
+    demote.set_failed_voters(to_be_removed.into());
+    plan.mut_demotes().push(demote);
+    pd_client.must_set_unsafe_recovery_plan(nodes[0], plan);
+    cluster.must_send_store_heartbeat(nodes[0]);
+
+    let mut demoted = true;
+    let mut promoted = false;
+    for _ in 0..10 {
+        let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+
+        promoted = region
+            .get_peers()
+            .iter()
+            .find(|peer| peer.get_store_id() == nodes[0])
+            .unwrap()
+            .get_role()
+            == metapb::PeerRole::Voter;
+
+        demoted = region
+            .get_peers()
+            .iter()
+            .filter(|peer| peer.get_store_id() != nodes[0])
+            .all(|peer| peer.get_role() == metapb::PeerRole::Learner);
+        if demoted && promoted {
+            break;
+        }
+        sleep_ms(100);
+    }
+    assert_eq!(demoted, true);
+    assert_eq!(promoted, true);
+}
+
+#[test]
+fn test_unsafe_recovery_already_in_joint_state() {
+    let mut cluster = new_server_cluster(0, 3);
+    cluster.run();
+    let nodes = Vec::from_iter(cluster.get_node_ids());
+    assert_eq!(nodes.len(), 3);
+
+    let pd_client = Arc::clone(&cluster.pd_client);
+    // Disable default max peer number check.
+    pd_client.disable_default_operator();
+
+    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+    configure_for_lease_read(&mut cluster, None, None);
+
+    let peer_on_store0 = find_peer(&region, nodes[0]).unwrap();
+    let peer_on_store2 = find_peer(&region, nodes[2]).unwrap();
+    cluster.must_transfer_leader(region.get_id(), peer_on_store2.clone());
+    cluster
+        .pd_client
+        .must_remove_peer(region.get_id(), peer_on_store2.clone());
+    cluster.pd_client.must_add_peer(
+        region.get_id(),
+        new_learner_peer(nodes[2], peer_on_store2.get_id()),
+    );
+    // Wait the new learner to be initialized.
+    sleep_ms(100);
+    pd_client.must_joint_confchange(
+        region.get_id(),
+        vec![
+            (
+                ConfChangeType::AddLearnerNode,
+                new_learner_peer(nodes[0], peer_on_store0.get_id()),
+            ),
+            (
+                ConfChangeType::AddNode,
+                new_peer(nodes[2], peer_on_store2.get_id()),
+            ),
+        ],
+    );
+    cluster.stop_node(nodes[1]);
+    cluster.stop_node(nodes[2]);
+    cluster.must_wait_for_leader_expire(nodes[0], region.get_id());
+
+    confirm_quorum_is_lost(&mut cluster, &region);
+    cluster.must_enter_force_leader(region.get_id(), nodes[0], vec![nodes[1], nodes[2]]);
+
+    let to_be_removed: Vec<metapb::Peer> = region
+        .get_peers()
+        .iter()
+        .filter(|&peer| peer.get_store_id() != nodes[0])
+        .cloned()
+        .collect();
+    let mut plan = pdpb::RecoveryPlan::default();
+    let mut demote = pdpb::DemoteFailedVoters::default();
+    demote.set_region_id(region.get_id());
+    demote.set_failed_voters(to_be_removed.into());
+    plan.mut_demotes().push(demote);
+    pd_client.must_set_unsafe_recovery_plan(nodes[0], plan);
+    cluster.must_send_store_heartbeat(nodes[0]);
+
+    let mut demoted = true;
+    let mut promoted = false;
+    for _ in 0..10 {
+        let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+
+        promoted = region
+            .get_peers()
+            .iter()
+            .find(|peer| peer.get_store_id() == nodes[0])
+            .unwrap()
+            .get_role()
+            == metapb::PeerRole::Voter;
+
+        demoted = region
+            .get_peers()
+            .iter()
+            .filter(|peer| peer.get_store_id() != nodes[0])
+            .all(|peer| peer.get_role() == metapb::PeerRole::Learner);
+        if demoted && promoted {
+            break;
+        }
+        sleep_ms(100);
+    }
+    assert_eq!(demoted, true);
+    assert_eq!(promoted, true);
+}
+
+#[test]
+fn test_unsafe_recovery_create_region() {
+    let mut cluster = new_server_cluster(0, 3);
+    cluster.run();
+    let nodes = Vec::from_iter(cluster.get_node_ids());
+    assert_eq!(nodes.len(), 3);
+
+    let pd_client = Arc::clone(&cluster.pd_client);
+    // Disable default max peer number check.
+    pd_client.disable_default_operator();
+
+    let region = block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
+    let store0_peer = find_peer(&region, nodes[0]).unwrap().to_owned();
+
+    // Removes the boostrap region, since it overlaps with any regions we create.
+    pd_client.must_remove_peer(region.get_id(), store0_peer);
+    cluster.must_remove_region(nodes[0], region.get_id());
 
     configure_for_lease_read(&mut cluster, None, None);
     cluster.stop_node(nodes[1]);
     cluster.stop_node(nodes[2]);
     cluster.must_wait_for_leader_expire(nodes[0], region.get_id());
 
-    let mut update = metapb::Region::default();
-    update.set_id(1);
-    update.set_end_key(b"anykey".to_vec());
-    for p in region.get_peers() {
-        if p.get_store_id() == nodes[0] {
-            update.mut_peers().push(p.clone());
-        }
-    }
-    update.mut_region_epoch().set_version(1);
-    update.mut_region_epoch().set_conf_ver(1);
-    // Removes the bootstrap region, since it overlaps with any regions we create.
-    cluster.must_update_region_for_unsafe_recover(nodes[0], &update);
-    block_on(pd_client.get_region_by_id(1)).unwrap().unwrap();
     let mut create = metapb::Region::default();
     create.set_id(101);
     create.set_start_key(b"anykey".to_vec());
@@ -86,9 +342,19 @@ fn test_unsafe_recover_create_region() {
     peer.set_id(102);
     peer.set_store_id(nodes[0]);
     create.mut_peers().push(peer);
-    cluster.must_recreate_region_for_unsafe_recover(nodes[0], &create);
-    let region = pd_client.get_region(b"anykey1").unwrap();
-    assert_eq!(create.get_id(), region.get_id());
+    let mut plan = pdpb::RecoveryPlan::default();
+    plan.mut_creates().push(create);
+    pd_client.must_set_unsafe_recovery_plan(nodes[0], plan);
+    cluster.must_send_store_heartbeat(nodes[0]);
+    let mut created = false;
+    for _ in 1..11 {
+        let region = pd_client.get_region(b"anykey1").unwrap();
+        if region.get_id() == 101 {
+            created = true;
+        }
+        sleep_ms(200);
+    }
+    assert_eq!(created, true);
 }
 
 fn must_get_error_recovery_in_progress<T: Simulator>(
@@ -125,23 +391,17 @@ fn test_force_leader_three_nodes() {
 
     let region = cluster.get_region(b"k1");
     cluster.must_split(&region, b"k9");
-    let mut region = cluster.get_region(b"k2");
+    let region = cluster.get_region(b"k2");
     let peer_on_store3 = find_peer(&region, 3).unwrap();
     cluster.must_transfer_leader(region.get_id(), peer_on_store3.clone());
 
     cluster.stop_node(2);
     cluster.stop_node(3);
 
-    let put = new_put_cmd(b"k2", b"v2");
-    let req = new_request(region.get_id(), region.take_region_epoch(), vec![put], true);
     // quorum is lost, can't propose command successfully.
-    assert!(
-        cluster
-            .call_command_on_leader(req, Duration::from_millis(10))
-            .is_err()
-    );
+    confirm_quorum_is_lost(&mut cluster, &region);
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![2, 3]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![2, 3]);
     // remove the peers on failed nodes
     cluster
         .pd_client
@@ -179,7 +439,7 @@ fn test_force_leader_five_nodes() {
 
     let region = cluster.get_region(b"k1");
     cluster.must_split(&region, b"k9");
-    let mut region = cluster.get_region(b"k2");
+    let region = cluster.get_region(b"k2");
     let peer_on_store5 = find_peer(&region, 5).unwrap();
     cluster.must_transfer_leader(region.get_id(), peer_on_store5.clone());
 
@@ -187,16 +447,10 @@ fn test_force_leader_five_nodes() {
     cluster.stop_node(4);
     cluster.stop_node(5);
 
-    let put = new_put_cmd(b"k2", b"v2");
-    let req = new_request(region.get_id(), region.take_region_epoch(), vec![put], true);
     // quorum is lost, can't propose command successfully.
-    assert!(
-        cluster
-            .call_command_on_leader(req, Duration::from_millis(10))
-            .is_err()
-    );
+    confirm_quorum_is_lost(&mut cluster, &region);
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // remove the peers on failed nodes
     cluster
         .pd_client
@@ -241,7 +495,7 @@ fn test_force_leader_for_learner() {
 
     let region = cluster.get_region(b"k1");
     cluster.must_split(&region, b"k9");
-    let mut region = cluster.get_region(b"k2");
+    let region = cluster.get_region(b"k2");
     let peer_on_store5 = find_peer(&region, 5).unwrap();
     cluster.must_transfer_leader(region.get_id(), peer_on_store5.clone());
 
@@ -254,6 +508,8 @@ fn test_force_leader_for_learner() {
         region.get_id(),
         new_learner_peer(peer_on_store1.get_store_id(), peer_on_store1.get_id()),
     );
+    // Sleep 100 ms to wait for the new learner to be initialized.
+    sleep_ms(100);
 
     must_get_equal(&cluster.get_engine(1), b"k1", b"v1");
 
@@ -261,14 +517,7 @@ fn test_force_leader_for_learner() {
     cluster.stop_node(4);
     cluster.stop_node(5);
 
-    let put = new_put_cmd(b"k2", b"v2");
-    let req = new_request(region.get_id(), region.take_region_epoch(), vec![put], true);
-    // quorum is lost, can't propose command successfully.
-    assert!(
-        cluster
-            .call_command_on_leader(req, Duration::from_millis(10))
-            .is_err()
-    );
+    confirm_quorum_is_lost(&mut cluster, &region);
 
     // wait election timeout
     std::thread::sleep(Duration::from_millis(
@@ -276,7 +525,7 @@ fn test_force_leader_for_learner() {
             * cluster.cfg.raft_store.raft_base_tick_interval.as_millis()
             * 2,
     ));
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // promote the learner first and remove the peers on failed nodes
     cluster
         .pd_client
@@ -328,7 +577,7 @@ fn test_force_leader_on_hibernated_leader() {
     cluster.stop_node(4);
     cluster.stop_node(5);
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // remove the peers on failed nodes
     cluster
         .pd_client
@@ -377,7 +626,7 @@ fn test_force_leader_on_hibernated_follower() {
     cluster.stop_node(4);
     cluster.stop_node(5);
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // remove the peers on failed nodes
     cluster
         .pd_client
@@ -449,7 +698,7 @@ fn test_force_leader_trigger_snapshot() {
             * cluster.cfg.raft_store.raft_base_tick_interval.as_millis()
             * 5,
     );
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
 
     sleep_ms(
         cluster.cfg.raft_store.raft_election_timeout_ticks as u64
@@ -514,18 +763,7 @@ fn test_force_leader_with_uncommitted_conf_change() {
     cluster.stop_node(4);
     cluster.stop_node(5);
 
-    let put = new_put_cmd(b"k2", b"v2");
-    let req = new_request(
-        region.get_id(),
-        region.get_region_epoch().clone(),
-        vec![put],
-        true,
-    );
-    assert!(
-        cluster
-            .call_command_on_leader(req, Duration::from_millis(10))
-            .is_err()
-    );
+    confirm_quorum_is_lost(&mut cluster, &region);
 
     // an uncommitted conf-change
     let cmd = new_change_peer_request(
@@ -545,7 +783,7 @@ fn test_force_leader_with_uncommitted_conf_change() {
             * cluster.cfg.raft_store.raft_base_tick_interval.as_millis()
             * 2,
     ));
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // the uncommitted conf-change is committed successfully after being force leader
     cluster
         .pd_client
@@ -592,7 +830,7 @@ fn test_force_leader_on_healthy_region() {
     cluster.must_transfer_leader(region.get_id(), peer_on_store5.clone());
 
     // try to enter force leader, it can't succeed due to quorum isn't lost
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // make sure it leaves pre force leader state.
     std::thread::sleep(Duration::from_millis(
         cluster.cfg.raft_store.raft_election_timeout_ticks as u64
@@ -622,7 +860,7 @@ fn test_force_leader_on_wrong_leader() {
 
     let region = cluster.get_region(b"k1");
     cluster.must_split(&region, b"k9");
-    let mut region = cluster.get_region(b"k2");
+    let region = cluster.get_region(b"k2");
     let peer_on_store5 = find_peer(&region, 5).unwrap();
     cluster.must_transfer_leader(region.get_id(), peer_on_store5.clone());
 
@@ -639,17 +877,10 @@ fn test_force_leader_on_wrong_leader() {
     cluster.stop_node(1);
     cluster.run_node(1).unwrap();
 
-    let put = new_put_cmd(b"k3", b"v3");
-    let req = new_request(region.get_id(), region.take_region_epoch(), vec![put], true);
-    // quorum is lost, can't propose command successfully.
-    assert!(
-        cluster
-            .call_command_on_leader(req, Duration::from_millis(100))
-            .is_err()
-    );
+    confirm_quorum_is_lost(&mut cluster, &region);
 
     // try to force leader on peer of node2 which is stale
-    cluster.enter_force_leader(region.get_id(), 2, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 2, vec![3, 4, 5]);
     // can't propose confchange as it's not in force leader state
     let cmd = new_change_peer_request(
         ConfChangeType::RemoveNode,
@@ -692,11 +923,11 @@ fn test_force_leader_twice_on_different_peers() {
     cluster.run_node(1).unwrap();
     cluster.stop_node(2);
     cluster.run_node(2).unwrap();
+    confirm_quorum_is_lost(&mut cluster, &region);
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
-    std::thread::sleep(Duration::from_millis(100));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // enter force leader on a different peer
-    cluster.enter_force_leader(region.get_id(), 2, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 2, vec![3, 4, 5]);
     // leader is the peer of store 2
     assert_eq!(
         cluster.leader_of_region(region.get_id()).unwrap(),
@@ -761,10 +992,8 @@ fn test_force_leader_twice_on_same_peer() {
     cluster.stop_node(2);
     cluster.run_node(2).unwrap();
 
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
-    std::thread::sleep(Duration::from_millis(100));
-    // enter force leader on the same peer
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // remove the peers on failed nodes
     cluster
         .pd_client
@@ -814,7 +1043,7 @@ fn test_force_leader_multiple_election_rounds() {
             * cluster.cfg.raft_store.raft_base_tick_interval.as_millis()
             * 2,
     ));
-    cluster.enter_force_leader(region.get_id(), 1, HashSet::from_iter(vec![3, 4, 5]));
+    cluster.must_enter_force_leader(region.get_id(), 1, vec![3, 4, 5]);
     // wait multiple election rounds
     std::thread::sleep(Duration::from_millis(
         cluster.cfg.raft_store.raft_election_timeout_ticks as u64
