@@ -3,7 +3,9 @@ name: Build
 on:
   push:
     branches:
-      - "raftstore-proxy-6.0-try" # Build the base branch so that cache can be used for PRs
+      # Build the base branch so that cache can be used for PRs.
+      # See https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#restrictions-for-accessing-a-cache
+      - "raftstore-proxy*"
   pull_request:
     branches:
       - "raftstore-proxy*"
