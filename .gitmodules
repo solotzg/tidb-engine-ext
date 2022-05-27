@@ -1,0 +1,4 @@
+[submodule "tikv"]
+	path = tikv
+	url = https://github.com/breezewish/tikv.git
+	branch = release-6.0-for-proxy
