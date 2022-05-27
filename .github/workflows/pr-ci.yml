@@ -1,29 +1,30 @@
-name: Pull Request CI
+name: Build
 
 on:
-  # push:
-  #   branches:
-  #     - 'raftstore-proxy*'
+  push:
+    branches:
+      - "raftstore-proxy-6.0-try" # Build the base branch so that cache can be used for PRs
   pull_request:
     branches:
-      - 'raftstore-proxy*'
+      - "raftstore-proxy*"
 
 jobs:
-  build-check:
+  proxy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - name: cache cargo env
         id: cache-cargo
-        uses: actions/cache@v2
+        uses: pat-s/always-upload-cache@v3.0.1
         with:
           path: |
             ~/.cargo/bin/
-            ~/.cargo/registry/
-            ~/.cargo/git/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/rust-toolchain') }}
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: install rust
@@ -32,18 +33,14 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- --no-modify-path --default-toolchain none -y
           export PATH=~/.cargo/bin/:$PATH
           rustup self update && rustup set profile minimal && rustup default $(cat "rust-toolchain")
-          # cargo install sccache
-      # - name: cache build target
-      #   uses: actions/cache@v2
-      #   env:
-      #     cache-name: cargo-target
-      #   with:
-      #     path: |
-      #       target/
-      #       # ~/.cache/sccache/
-      #     key: ${{ runner.os }}-${{ env.cache-name }}-v1-${{ hashFiles('**/rust-toolchain') }}-${{ hashFiles('**/Cargo.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-${{ env.cache-name }}-v1-${{ hashFiles('**/rust-toolchain') }}-
+      - name: cache build result
+        uses: pat-s/always-upload-cache@v3.0.1
+        with:
+          path: |
+            target/
+          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
       - name: format check
         run: |
           cd ${{github.workspace}}
