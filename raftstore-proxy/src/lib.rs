@@ -46,7 +46,7 @@ pub struct SymbolInfo {
     /// source line number.
     pub lineno: usize,
     /// symbol offset to the beginning of the binary file.
-    pub svma: usize
+    pub svma: usize,
 }
 
 #[cfg(feature = "symbolization")]
@@ -67,27 +67,22 @@ impl Default for SymbolInfo {
 impl SymbolInfo {
     pub fn new(avma: *mut c_void) -> Self {
         let mut info = SymbolInfo::default();
-        if let Some(LocationInObject {name, svma}) = locate_symbol_in_object(avma) {
+        if let Some(LocationInObject { name, svma }) = locate_symbol_in_object(avma) {
             info.object_name = name;
             info.svma = svma;
         }
         backtrace::resolve(avma, |sym| {
             info.symbol_name = sym
                 .name()
-                .map(|x|x.as_bytes().as_ptr() as *const _)
+                .map(|x| x.as_bytes().as_ptr() as *const _)
                 .unwrap_or_else(std::ptr::null);
-            if let Some(src) = sym
-                .filename()
-                .and_then(|x|x.to_str()) {
+            if let Some(src) = sym.filename().and_then(|x| x.to_str()) {
                 info.source_filename = src.as_ptr() as _;
                 info.source_filename_length = src.len();
             }
-            info.lineno = sym.lineno()
-                .map(|x| x as _)
-                .unwrap_or(0)
+            info.lineno = sym.lineno().map(|x| x as _).unwrap_or(0)
         });
         info
-
     }
 }
 

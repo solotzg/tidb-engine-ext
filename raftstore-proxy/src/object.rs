@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use findshlibs::{SharedLibrary, TargetSharedLibrary};
+use lazy_static::lazy_static;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::os::unix::ffi::OsStringExt;
-use lazy_static::lazy_static;
-use findshlibs::{SharedLibrary, TargetSharedLibrary};
 
 struct CachedObject {
     filename: CString,
@@ -63,17 +63,14 @@ fn init_object_cache() -> Vec<CachedObject> {
 }
 
 lazy_static! {
-    static ref CACHED_OBJECTS : Vec<CachedObject> = init_object_cache();
+    static ref CACHED_OBJECTS: Vec<CachedObject> = init_object_cache();
 }
 
 pub fn locate_symbol_in_object(avma: *const c_void) -> Option<LocationInObject> {
     let address = avma as usize;
     let key = std::cmp::Reverse(address);
-    let obj = match CACHED_OBJECTS
-        .binary_search_by_key(&key, |obj| std::cmp::Reverse(obj.avma)) {
-        Ok(idx) | Err(idx) => {
-            CACHED_OBJECTS.get(idx)
-        }
+    let obj = match CACHED_OBJECTS.binary_search_by_key(&key, |obj| std::cmp::Reverse(obj.avma)) {
+        Ok(idx) | Err(idx) => CACHED_OBJECTS.get(idx),
     };
     obj.and_then(|x| x.locate(address))
 }
