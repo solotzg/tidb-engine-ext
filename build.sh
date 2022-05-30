@@ -20,7 +20,14 @@ else
   echo "rust build-std is disabled"
 fi
 
-lib_suffix="so"
+RAFTSTORE_PROXY_ENABLE_STATIC="${RAFTSTORE_PROXY_ENABLE_STATIC:-0}"
+
+if $RAFTSTORE_PROXY_ENABLE_STATIC; then
+  lib_suffix="so"
+else
+  lib_suffix="a"
+fi
+
 if [[ $(uname -s) == "Darwin" ]]; then
   lib_suffix="dylib"
   # use the openssl 1.1 lib from system
