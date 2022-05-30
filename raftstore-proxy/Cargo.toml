@@ -9,5 +9,11 @@ publish = false
 name = "raftstore_proxy"
 crate-type = ["cdylib"]
 
+[features]
+symbolization = ["backtrace", "findshlibs", "lazy_static"] # provides symbolization utilities
+
 [dependencies]
 server = { path = "../components/server" }
+backtrace = { version = "0.3", optional = true }
+findshlibs = { version = "0.10", optional = true }
+lazy_static = { version = "1.4", optional = true }
