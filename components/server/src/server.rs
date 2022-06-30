@@ -146,10 +146,10 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             let mut proxy = RaftStoreProxy::new(
                 AtomicU8::new(RaftProxyStatus::Idle as u8),
                 tikv.encryption_key_manager.clone(),
-                Box::new(ReadIndexClient::new(
+                Some(Box::new(ReadIndexClient::new(
                     tikv.router.clone(),
                     SysQuota::cpu_cores_quota() as usize * 2,
-                )),
+                ))),
                 std::sync::RwLock::new(None),
             );
 
@@ -217,6 +217,119 @@ pub unsafe fn run_tikv(config: TiKvConfig, engine_store_server_helper: &EngineSt
             );
 
             tikv.stop();
+
+            proxy.set_status(RaftProxyStatus::Stopped);
+
+            info!("all services in raft-store proxy are stopped");
+
+            info!("wait for engine-store server to stop");
+            while engine_store_server_helper.handle_get_engine_store_server_status()
+                != EngineStoreServerStatus::Terminated
+            {
+                thread::sleep(Duration::from_millis(200));
+            }
+            info!("engine-store server is stopped");
+        }};
+    }
+
+    if !config.raft_engine.enable {
+        run_impl!(RocksEngine)
+    } else {
+        run_impl!(RaftLogEngine)
+    }
+}
+
+/// Run a TiKV server only for decryption. Returns when the server is shutdown by the user, in which
+/// case the server will be properly stopped.
+pub unsafe fn run_tikv_only_decryption(
+    config: TiKvConfig,
+    engine_store_server_helper: &EngineStoreServerHelper,
+) {
+    // Sets the global logger ASAP.
+    // It is okay to use the config w/o `validate()`,
+    // because `initial_logger()` handles various conditions.
+    initial_logger(&config);
+
+    // Print version information.
+    crate::log_proxy_info();
+
+    // Print resource quota.
+    SysQuota::log_quota();
+    CPU_CORES_QUOTA_GAUGE.set(SysQuota::cpu_cores_quota());
+
+    // Do some prepare works before start.
+    pre_start();
+
+    let _m = Monitor::default();
+
+    macro_rules! run_impl {
+        ($ER: ty) => {{
+            let encryption_key_manager =
+                data_key_manager_from_config(&config.security.encryption, &config.storage.data_dir)
+                    .map_err(|e| {
+                        panic!(
+                            "Encryption failed to initialize: {}. code: {}",
+                            e,
+                            e.error_code()
+                        )
+                    })
+                    .unwrap()
+                    .map(Arc::new);
+
+            let mut proxy = RaftStoreProxy::new(
+                AtomicU8::new(RaftProxyStatus::Idle as u8),
+                encryption_key_manager.clone(),
+                Option::None,
+                std::sync::RwLock::new(None),
+            );
+
+            let proxy_helper = {
+                let mut proxy_helper = RaftStoreProxyFFIHelper::new(&proxy);
+                proxy_helper.fn_server_info = Some(ffi_server_info);
+                proxy_helper
+            };
+
+            info!("set raft-store proxy helper");
+
+            engine_store_server_helper.handle_set_proxy(&proxy_helper);
+
+            info!("wait for engine-store server to start");
+            while engine_store_server_helper.handle_get_engine_store_server_status()
+                == EngineStoreServerStatus::Idle
+            {
+                thread::sleep(Duration::from_millis(200));
+            }
+
+            if engine_store_server_helper.handle_get_engine_store_server_status()
+                != EngineStoreServerStatus::Running
+            {
+                info!("engine-store server is not running, make proxy exit");
+                return;
+            }
+
+            info!("engine-store server is started");
+
+            proxy.set_status(RaftProxyStatus::Running);
+
+            {
+                debug_assert!(
+                    engine_store_server_helper.handle_get_engine_store_server_status()
+                        == EngineStoreServerStatus::Running
+                );
+                loop {
+                    if engine_store_server_helper.handle_get_engine_store_server_status()
+                        != EngineStoreServerStatus::Running
+                    {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(200));
+                }
+            }
+
+            info!(
+                "found engine-store server status is {:?}, start to stop all services",
+                engine_store_server_helper.handle_get_engine_store_server_status()
+            );
 
             proxy.set_status(RaftProxyStatus::Stopped);
 
