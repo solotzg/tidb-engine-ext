@@ -3101,6 +3101,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "new-mock-engine-store"
+version = "0.0.1"
+dependencies = [
+ "api_version",
+ "collections",
+ "concurrency_manager",
+ "crossbeam",
+ "encryption",
+ "encryption_export",
+ "engine_rocks",
+ "engine_test",
+ "engine_traits",
+ "fail",
+ "file_system",
+ "keys",
+ "kvproto",
+ "lazy_static",
+ "protobuf",
+ "raft",
+ "raftstore",
+ "rand 0.8.3",
+ "resource_metering",
+ "server",
+ "slog",
+ "slog-global",
+ "tempfile",
+ "test_raftstore",
+ "test_util",
+ "tikv",
+ "tikv_util",
+]
+
+[[package]]
 name = "nix"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5660,6 +5693,7 @@ dependencies = [
  "log_wrappers",
  "mock-engine-store",
  "more-asserts",
+ "new-mock-engine-store",
  "online_config",
  "panic_hook",
  "paste",

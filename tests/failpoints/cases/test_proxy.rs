@@ -31,8 +31,15 @@ use raftstore::{
 };
 use sst_importer::SstImporter;
 use test_raftstore::{
-    must_get_equal, must_get_none, new_node_cluster, new_peer, Cluster, FFIHelperSet, NodeCluster,
+    must_get_equal, must_get_none, new_peer, Cluster,
     Simulator, TestPdClient,
+};
+use new_mock_engine_store::{
+    mock_cluster::FFIHelperSet,
+    node::NodeCluster,
+    transport_simulate::{
+        CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
+    },
 };
 use tikv::config::TiKvConfig;
 use tikv_util::{
@@ -146,8 +153,28 @@ fn collect_all_states(cluster: &mut Cluster<NodeCluster>, region_id: u64) -> Has
     prev_state
 }
 
+pub fn new_mock_cluster(
+    id: u64,
+    count: usize,
+) -> (
+    new_mock_engine_store::mock_cluster::Cluster<NodeCluster>,
+    Arc<TestPdClient>,
+) {
+    let pd_client = Arc::new(TestPdClient::new(0, false));
+    let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
+    let cluster = new_mock_engine_store::mock_cluster::Cluster::new(
+        id,
+        count,
+        sim,
+        pd_client.clone(),
+        ProxyConfig::default(),
+    );
+
+    (cluster, pd_client)
+}
+
 pub fn must_get_mem(
-    engine_store_server: &Box<mock_engine_store::EngineStoreServer>,
+    engine_store_server: &Box<new_mock_engine_store::EngineStoreServer>,
     region_id: u64,
     key: &[u8],
     value: Option<&[u8]>,
@@ -156,7 +183,7 @@ pub fn must_get_mem(
     for _ in 1..300 {
         let res = engine_store_server.get_mem(
             region_id,
-            mock_engine_store::ffi_interfaces::ColumnFamilyType::Default,
+            new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default,
             &key.to_vec(),
         );
 
@@ -235,7 +262,7 @@ fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
 
 #[test]
 fn test_kv_write() {
-    let mut cluster = new_node_cluster(0, 3);
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     cluster.proxy_compat = true;
 
     // No persist will be triggered by CompactLog
