@@ -45,3 +45,4 @@ test_util = { path = "../components/test_util", default-features = false }
 crossbeam = "0.8"
 rand = "0.8"
 api_version = { path = "../components/api_version", default-features = false }
+pd_client = { path = "../components/pd_client", default-features = false }

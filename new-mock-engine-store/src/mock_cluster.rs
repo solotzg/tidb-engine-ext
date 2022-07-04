@@ -68,7 +68,6 @@ use test_raftstore::new_admin_request;
 use test_raftstore::is_error_response;
 use test_raftstore::new_status_request;
 use test_raftstore::new_region_leader_cmd;
-use test_raftstore::PdClient;
 use pd_client::PdClient;
 // mock cluster
 

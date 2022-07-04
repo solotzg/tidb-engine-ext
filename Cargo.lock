@@ -3118,6 +3118,7 @@ dependencies = [
  "keys",
  "kvproto",
  "lazy_static",
+ "pd_client",
  "protobuf",
  "raft",
  "raftstore",
