@@ -18,6 +18,7 @@ use kvproto::{
 use raft::{eraftpb::MessageType, SnapshotStatus};
 use raftstore::{
     coprocessor::{config::SplitCheckConfigManager, CoprocessorHost},
+    engine_store_ffi,
     errors::Error as RaftError,
     router::{LocalReadRouter, RaftStoreRouter, ServerRaftStoreRouter},
     store::{
@@ -44,20 +45,15 @@ use tikv_util::{
 };
 
 use crate::{
-    mock_cluster::{create_tiflash_test_engine, Cluster, Simulator, TestPdClient},
+    mock_cluster::{create_tiflash_test_engine, Cluster, Simulator, TestPdClient, TiFlashEngine},
     transport_simulate::{Filter, SimulateTransport},
 };
-use raftstore::engine_store_ffi;
-
-use crate::mock_cluster::TiFlashEngine;
 
 pub struct ChannelTransportCore {
     snap_paths: HashMap<u64, (SnapManager, TempDir)>,
     routers: HashMap<
         u64,
-        SimulateTransport<
-            ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>,
-        >,
+        SimulateTransport<ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
     >,
 }
 
@@ -164,8 +160,7 @@ pub struct NodeCluster {
     simulate_trans: HashMap<u64, SimulateChannelTransport>,
     concurrency_managers: HashMap<u64, ConcurrencyManager>,
     #[allow(clippy::type_complexity)]
-    post_create_coprocessor_host:
-        Option<Box<dyn Fn(u64, &mut CoprocessorHost<TiFlashEngine>)>>,
+    post_create_coprocessor_host: Option<Box<dyn Fn(u64, &mut CoprocessorHost<TiFlashEngine>)>>,
     pub importer: Option<Arc<SstImporter>>,
 }
 
@@ -190,9 +185,7 @@ impl NodeCluster {
     pub fn get_node_router(
         &self,
         node_id: u64,
-    ) -> SimulateTransport<
-        ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>,
-    > {
+    ) -> SimulateTransport<ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>> {
         self.trans
             .core
             .lock()
@@ -217,8 +210,7 @@ impl NodeCluster {
     pub fn get_node(
         &mut self,
         node_id: u64,
-    ) -> Option<&mut Node<TestPdClient, TiFlashEngine, engine_rocks::RocksEngine>>
-    {
+    ) -> Option<&mut Node<TestPdClient, TiFlashEngine, engine_rocks::RocksEngine>> {
         self.nodes.get_mut(&node_id)
     }
 

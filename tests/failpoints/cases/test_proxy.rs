@@ -21,6 +21,13 @@ use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
     raft_serverpb::{RaftApplyState, RegionLocalState, StoreIdent},
 };
+use new_mock_engine_store::{
+    mock_cluster::FFIHelperSet,
+    node::NodeCluster,
+    transport_simulate::{
+        CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
+    },
+};
 use pd_client::PdClient;
 use raft::eraftpb::MessageType;
 use raftstore::{
@@ -30,17 +37,7 @@ use raftstore::{
     store::util::find_peer,
 };
 use sst_importer::SstImporter;
-use test_raftstore::{
-    must_get_equal, must_get_none, new_peer, Cluster,
-    Simulator, TestPdClient,
-};
-use new_mock_engine_store::{
-    mock_cluster::FFIHelperSet,
-    node::NodeCluster,
-    transport_simulate::{
-        CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
-    },
-};
+use test_raftstore::{must_get_equal, must_get_none, new_peer, Cluster, Simulator, TestPdClient};
 use tikv::config::TiKvConfig;
 use tikv_util::{
     config::{LogFormat, ReadableDuration, ReadableSize},

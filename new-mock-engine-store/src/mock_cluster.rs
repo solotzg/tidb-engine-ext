@@ -3,7 +3,7 @@
 use std::{
     borrow::BorrowMut,
     cell::RefCell,
-    collections::{BTreeMap},
+    collections::BTreeMap,
     path::Path,
     pin::Pin,
     sync::{atomic::AtomicU8, Arc, Mutex, RwLock},
@@ -12,63 +12,57 @@ use std::{
 
 use encryption::DataKeyManager;
 use engine_rocks::raw::DB;
-use raftstore::engine_store_ffi;
-use raftstore::engine_store_ffi::{
-    interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper,
-    RaftStoreProxyFFIHelper, RawCppPtr, UnwrapExternCFunc,
-};
-use engine_traits::{Engines, SyncMutable, CF_DEFAULT, CF_LOCK, CF_WRITE};
+use engine_traits::{Engines, KvEngine, SyncMutable, CF_DEFAULT, CF_LOCK, CF_WRITE};
 use file_system::IORateLimiter;
 use kvproto::{
     metapb,
-    raft_cmdpb::{RaftCmdRequest, RaftCmdResponse},
+    metapb::StoreLabel,
+    raft_cmdpb::{RaftCmdRequest, RaftCmdResponse, Request},
+    raft_serverpb::RaftMessage,
 };
+use pd_client::PdClient;
 use protobuf::Message;
 use raftstore::{
+    engine_store_ffi,
+    engine_store_ffi::{
+        interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
+        RawCppPtr, UnwrapExternCFunc,
+    },
     store::{
+        bootstrap_store,
         fsm::{
             create_raft_batch_system,
             store::{StoreMeta, PENDING_MSG_CAP},
+            RaftBatchSystem,
         },
-        RaftRouter,
+        initial_region, prepare_bootstrap_cluster, Callback, CasualRouter, RaftCmdExtraOpts,
+        RaftRouter, SnapManager, WriteResponse, INIT_EPOCH_CONF_VER, INIT_EPOCH_VER,
     },
     Error, Result,
 };
 use server::fatal;
 use tempfile::TempDir;
-use test_raftstore::{Config};
 pub use test_raftstore::TestPdClient;
-use tikv::server::{Node, Result as ServerResult};
-use tikv_util::{
-    crit, debug, info, sys::SysQuota, thread_group::GroupProperties, warn, HandyRwLock,
+use test_raftstore::{
+    is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_region_leader_cmd,
+    new_request, new_status_request, new_store, sleep_ms, Config,
 };
-use engine_traits::KvEngine;
-use raftstore::store::fsm::RaftBatchSystem;
-use raftstore::store::Callback;use raftstore::store::RaftCmdExtraOpts;use kvproto::raft_serverpb::RaftMessage;use raftstore::store::SnapManager;
-use crate::transport_simulate::Filter;use tikv_util::time::ThreadReadId;use test_raftstore::make_cb;
-use crate::{gen_engine_store_server_helper, EngineStoreServer, EngineStoreServerWrap};
-use tikv::config::TiKvConfig;
-use tikv_util::safe_panic;
-use tikv_util::time::Instant;
-use raftstore::store::WriteResponse;
-use test_raftstore::sleep_ms;
-use raftstore::store::CasualRouter;
-use kvproto::raft_cmdpb::Request;
-use raftstore::store::initial_region;
-use raftstore::store::bootstrap_store;
-use raftstore::store::prepare_bootstrap_cluster;
-use raftstore::store::INIT_EPOCH_VER;
-use raftstore::store::INIT_EPOCH_CONF_VER;
-use kvproto::metapb::StoreLabel;
-use test_raftstore::new_peer;
-use test_raftstore::new_request;
-use test_raftstore::new_delete_cmd;
-use test_raftstore::new_store;
-use test_raftstore::new_admin_request;
-use test_raftstore::is_error_response;
-use test_raftstore::new_status_request;
-use test_raftstore::new_region_leader_cmd;
-use pd_client::PdClient;
+use tikv::{
+    config::TiKvConfig,
+    server::{Node, Result as ServerResult},
+};
+use tikv_util::{
+    crit, debug, info, safe_panic,
+    sys::SysQuota,
+    thread_group::GroupProperties,
+    time::{Instant, ThreadReadId},
+    warn, HandyRwLock,
+};
+
+use crate::{
+    gen_engine_store_server_helper, transport_simulate::Filter, EngineStoreServer,
+    EngineStoreServerWrap,
+};
 // mock cluster
 
 pub type TiFlashEngine = engine_tiflash::RocksEngine;
@@ -337,8 +331,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
     pub fn create_engines(&mut self) {
         self.io_rate_limiter = Some(Arc::new(
-            self
-                .cfg
+            self.cfg
                 .storage
                 .io_rate_limit
                 .build(true /*enable_statistics*/),
@@ -484,11 +477,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         &mut self,
         router: Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
     ) {
-        let (mut engines, key_manager, dir) = create_tiflash_test_engine(
-            router.clone(),
-            self.io_rate_limiter.clone(),
-            &self.cfg,
-        );
+        let (mut engines, key_manager, dir) =
+            create_tiflash_test_engine(router.clone(), self.io_rate_limiter.clone(), &self.cfg);
 
         self.create_ffi_helper_set(engines, &key_manager, &router);
         let ffi_helper_set = self.ffi_helper_lst.last_mut().unwrap();
@@ -552,9 +542,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.group_props.insert(node_id, props);
             self.engines.insert(node_id, engines.clone());
             self.store_metas.insert(node_id, store_meta);
-            self
-                .key_managers_map
-                .insert(node_id, key_manager.clone());
+            self.key_managers_map.insert(node_id, key_manager.clone());
             self.associate_ffi_helper_set(None, node_id);
         }
         Ok(())
@@ -678,8 +666,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
     // Get region when the `filter` returns true.
     pub fn get_region_with<F>(&self, key: &[u8], filter: F) -> metapb::Region
-        where
-            F: Fn(&metapb::Region) -> bool,
+    where
+        F: Fn(&metapb::Region) -> bool,
     {
         for _ in 0..100 {
             if let Ok(region) = self.pd_client.get_region(key) {
@@ -776,8 +764,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                             || error.has_not_leader()
                             || error.has_stale_command()
                             || error
-                            .get_message()
-                            .contains("peer has not applied to current term")
+                                .get_message()
+                                .contains("peer has not applied to current term")
                         {
                             warn!("fail to split: {:?}, ignore.", error);
                             return;
@@ -943,8 +931,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 
     // It's similar to `ask_split`, the difference is the msg, it sends, is `Msg::SplitRegion`,
-// and `region` will not be embedded to that msg.
-// Caller must ensure that the `split_key` is in the `region`.
+    // and `region` will not be embedded to that msg.
+    // Caller must ensure that the `split_key` is in the `region`.
     pub fn split_region(
         &mut self,
         region: &metapb::Region,
@@ -964,9 +952,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 source: "test".into(),
             },
         )
-            .unwrap();
+        .unwrap();
     }
-
 
     pub fn leader_of_region(&mut self, region_id: u64) -> Option<metapb::Peer> {
         let timer = Instant::now_coarse();
@@ -1160,7 +1147,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         store_ids.contains(&leader_id) && node_ids.contains(&leader_id)
     }
 
-
     pub fn run_node(&mut self, node_id: u64) -> ServerResult<()> {
         debug!("starting node {}", node_id);
         let engines = self.engines[&node_id].clone();
@@ -1197,7 +1183,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.cfg.server.cluster_id
     }
 
-
     pub fn stop_node(&mut self, node_id: u64) {
         debug!("stopping node {}", node_id);
         self.group_props[&node_id].mark_shutdown();
@@ -1208,7 +1193,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.pd_client.shutdown_store(node_id);
         debug!("node {} stopped", node_id);
     }
-
 
     pub fn get_region_epoch(&self, region_id: u64) -> RegionEpoch {
         block_on(self.pd_client.get_region_by_id(region_id))
