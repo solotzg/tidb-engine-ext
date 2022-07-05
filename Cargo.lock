@@ -1491,6 +1491,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine_tiflash"
+version = "0.0.1"
+dependencies = [
+ "api_version",
+ "case_macros",
+ "collections",
+ "derive_more",
+ "encryption",
+ "engine_rocks",
+ "engine_traits",
+ "fail",
+ "file_system",
+ "keys",
+ "kvproto",
+ "lazy_static",
+ "libc 0.2.125",
+ "log_wrappers",
+ "num_cpus",
+ "online_config",
+ "prometheus",
+ "prometheus-static-metric",
+ "protobuf",
+ "raft",
+ "raftstore",
+ "rand 0.8.3",
+ "regex",
+ "rocksdb",
+ "serde",
+ "serde_derive",
+ "slog",
+ "slog-global",
+ "slog_derive",
+ "tempfile",
+ "tikv_alloc",
+ "tikv_util",
+ "time",
+ "toml",
+ "txn_types",
+ "yatp",
+]
+
+[[package]]
 name = "engine_traits"
 version = "0.0.1"
 dependencies = [
@@ -3112,6 +3154,7 @@ dependencies = [
  "encryption_export",
  "engine_rocks",
  "engine_test",
+ "engine_tiflash",
  "engine_traits",
  "fail",
  "file_system",

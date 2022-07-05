@@ -259,6 +259,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             Arc::clone(&self.pd_client),
             Arc::default(),
             bg_worker.clone(),
+            None,
         );
 
         let (snap_mgr, snap_mgr_path) = if node_id == 0

@@ -3,7 +3,7 @@
 use std::{
     borrow::BorrowMut,
     cell::RefCell,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap},
     path::Path,
     pin::Pin,
     sync::{atomic::AtomicU8, Arc, Mutex, RwLock},
@@ -71,7 +71,7 @@ use test_raftstore::new_region_leader_cmd;
 use pd_client::PdClient;
 // mock cluster
 
-pub type TiFlashEngine = engine_rocks::RocksEngine;
+pub type TiFlashEngine = engine_tiflash::RocksEngine;
 
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
@@ -1207,5 +1207,13 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         }
         self.pd_client.shutdown_store(node_id);
         debug!("node {} stopped", node_id);
+    }
+
+
+    pub fn get_region_epoch(&self, region_id: u64) -> RegionEpoch {
+        block_on(self.pd_client.get_region_by_id(region_id))
+            .unwrap()
+            .unwrap()
+            .take_region_epoch()
     }
 }
