@@ -6,4 +6,3 @@
 
 #[macro_use]
 extern crate slog_global;
-

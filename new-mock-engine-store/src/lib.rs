@@ -401,7 +401,7 @@ impl EngineStoreServerWrap {
                 // Do persist or not
                 let res = match req.get_cmd_type() {
                     AdminCmdType::CompactLog => {
-                        fail::fail_point!("no_persist_compact_logZ", |_| {
+                        fail::fail_point!("no_persist_compact_log", |_| {
                             debug!("!!!!! ZZZ no_persist_compact_log");
                             ffi_interfaces::EngineStoreApplyRes::None
                         });

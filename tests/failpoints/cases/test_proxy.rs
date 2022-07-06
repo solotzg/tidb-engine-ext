@@ -237,7 +237,7 @@ fn test_kv_write() {
     cluster.proxy_compat = true;
 
     // No persist will be triggered by CompactLog
-    fail::cfg("no_persist_compact_logZ", "return").unwrap();
+    fail::cfg("no_persist_compact_log", "return").unwrap();
     let _ = cluster.run();
 
     cluster.must_put(b"k0", b"v0");
@@ -272,7 +272,8 @@ fn test_kv_write() {
         );
     }
 
-    fail::remove("no_persist_compact_logZ");
+    debug!("now CompactLog can persist");
+    fail::remove("no_persist_compact_log");
 
     let prev_states = collect_all_states(&mut cluster, r1);
     // Write more after we force persist when CompactLog.
