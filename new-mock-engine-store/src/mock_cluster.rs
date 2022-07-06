@@ -819,9 +819,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 "node_id" => id,
             );
             prepare_bootstrap_cluster(engines, &region)?;
-            tikv_util::debug!("!!! end prepare_bootstrap_cluster";
-                "node_id" => id,
-            );
         }
 
         self.bootstrap_cluster(region);
