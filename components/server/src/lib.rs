@@ -10,6 +10,7 @@ mod setup;
 pub mod memory;
 mod proxy;
 pub mod raft_engine_switch;
+pub mod run;
 pub mod server;
 mod util;
 

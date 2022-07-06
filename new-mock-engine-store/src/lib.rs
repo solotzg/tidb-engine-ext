@@ -12,7 +12,6 @@ pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     UnwrapExternCFunc,
 };
-use engine_test::raft::engine_rocks::RocksEngine;
 use engine_traits::{Engines, Iterable, SyncMutable, CF_DEFAULT, CF_LOCK, CF_WRITE};
 use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
@@ -22,7 +21,9 @@ use kvproto::{
 };
 use protobuf::Message;
 use raftstore::{engine_store_ffi, engine_store_ffi::RawCppPtr};
-use tikv_util::{debug, info, warn};
+use tikv_util::{debug, error, info, warn};
+
+use crate::mock_cluster::TiFlashEngine;
 
 pub mod mock_cluster;
 pub mod node;
@@ -65,13 +66,16 @@ impl Region {
 
 pub struct EngineStoreServer {
     pub id: u64,
-    pub engines: Option<Engines<RocksEngine, engine_rocks::RocksEngine>>,
+    pub engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
     pub proxy_compat: bool,
 }
 
 impl EngineStoreServer {
-    pub fn new(id: u64, engines: Option<Engines<RocksEngine, engine_rocks::RocksEngine>>) -> Self {
+    pub fn new(
+        id: u64,
+        engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
+    ) -> Self {
         EngineStoreServer {
             id,
             engines,

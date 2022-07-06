@@ -2,6 +2,7 @@
 pub mod interfaces;
 
 mod lock_cf_reader;
+pub mod observer;
 mod read_index_helper;
 mod utils;
 
@@ -39,6 +40,8 @@ use crate::engine_store_ffi::{
     lock_cf_reader::LockCFFileReader,
 };
 
+pub type TiFlashEngine = engine_tiflash::RocksEngine;
+
 impl From<&[u8]> for BaseBuffView {
     fn from(s: &[u8]) -> Self {
         let ptr = s.as_ptr() as *const _;
@@ -63,7 +66,7 @@ pub struct RaftStoreProxy {
     pub status: AtomicU8,
     pub key_manager: Option<Arc<DataKeyManager>>,
     pub read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-    pub kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+    pub kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
 }
 
 pub trait RaftStoreProxyFFI: Sync {
@@ -71,7 +74,7 @@ pub trait RaftStoreProxyFFI: Sync {
     fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
     where
         F: FnOnce(Result<Option<&[u8]>, String>);
-    fn set_kv_engine(&mut self, kv_engine: Option<engine_rocks::RocksEngine>);
+    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>);
 }
 
 impl RaftStoreProxy {
@@ -79,7 +82,7 @@ impl RaftStoreProxy {
         status: AtomicU8,
         key_manager: Option<Arc<DataKeyManager>>,
         read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-        kv_engine: std::sync::RwLock<Option<engine_rocks::RocksEngine>>,
+        kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
     ) -> Self {
         RaftStoreProxy {
             status,
@@ -91,7 +94,7 @@ impl RaftStoreProxy {
 }
 
 impl RaftStoreProxyFFI for RaftStoreProxy {
-    fn set_kv_engine(&mut self, kv_engine: Option<engine_rocks::RocksEngine>) {
+    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
         let mut lock = self.kv_engine.write().unwrap();
         *lock = kv_engine;
     }

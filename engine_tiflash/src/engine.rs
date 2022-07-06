@@ -28,7 +28,6 @@ use engine_rocks::{
 use engine_traits::{
     Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable,
 };
-use raftstore::store::SnapKey;
 use rocksdb::{DBIterator, Writable, DB};
 use yatp::{
     pool::{Builder, ThreadPool},
@@ -85,6 +84,17 @@ impl RocksEngine {
         self.pool_capacity = snap_handle_pool_size;
         self.pending_applies_count.store(0, Ordering::Relaxed);
         self.ffi_hub = ffi_hub;
+    }
+
+    pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
+        RocksEngine {
+            rocks,
+            engine_store_server_helper: 0,
+            apply_snap_pool: None,
+            pool_capacity: 0,
+            pending_applies_count: Arc::new(AtomicUsize::new(0)),
+            ffi_hub: None,
+        }
     }
 
     pub fn from_db(db: Arc<DB>) -> Self {

@@ -251,9 +251,9 @@ pub unsafe fn run_proxy(
 
     config.raft_store.engine_store_server_helper = engine_store_server_helper as *const _ as isize;
     if matches.is_present("only-decryption") {
-        crate::server::run_tikv_only_decryption(config, engine_store_server_helper);
+        crate::run::run_tikv_only_decryption(config, engine_store_server_helper);
     } else {
-        crate::server::run_tikv(config, engine_store_server_helper);
+        crate::run::run_tikv_proxy(config, engine_store_server_helper);
     }
 }
 
