@@ -14,6 +14,11 @@ name = "integrations"
 path = "integrations/mod.rs"
 required-features = ["testexport"]
 
+[[test]]
+name = "proxy"
+path = "proxy/mod.rs"
+required-features = ["failpoints", "testexport"]
+
 [features]
 default = ["failpoints", "testexport", "test-engine-kv-rocksdb", "test-engine-raft-raft-engine", "cloud-aws", "cloud-gcp", "cloud-azure", "test-raftstore-proxy"]
 test-raftstore-proxy = ["raftstore/test-raftstore-proxy"]

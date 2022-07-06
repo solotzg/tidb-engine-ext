@@ -291,12 +291,13 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             f(node_id, &mut coprocessor_host);
         }
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
-            node_id,
-            engines.kv.clone(),
-            importer.clone(),
-        );
-        tiflash_ob.register_to(&mut coprocessor_host);
+        // TODO(tiflash) initialize tiflash observers.
+        // let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+        //     node_id,
+        //     engines.kv.clone(),
+        //     importer.clone(),
+        // );
+        // tiflash_ob.register_to(&mut coprocessor_host);
 
         let cm = ConcurrencyManager::new(1.into());
         self.concurrency_managers.insert(node_id, cm.clone());

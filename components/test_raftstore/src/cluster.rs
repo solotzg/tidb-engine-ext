@@ -346,6 +346,7 @@ impl<T: Simulator> Cluster<T> {
                 std::pin::Pin::new(&*engine_store_server_wrap),
             ));
 
+        // Used by RegionRunner.
         let mut node_cfg = self.cfg.clone();
         let helper_sz = &*engine_store_server_helper as *const _ as isize;
         node_cfg.raft_store.engine_store_server_helper = helper_sz;

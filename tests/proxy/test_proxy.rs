@@ -27,6 +27,7 @@ use new_mock_engine_store::{
     transport_simulate::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
+    Cluster, ProxyConfig, Simulator, TestPdClient,
 };
 use pd_client::PdClient;
 use raft::eraftpb::MessageType;
@@ -37,7 +38,7 @@ use raftstore::{
     store::util::find_peer,
 };
 use sst_importer::SstImporter;
-use test_raftstore::{must_get_equal, must_get_none, new_peer, Cluster, Simulator, TestPdClient};
+pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use tikv::config::TiKvConfig;
 use tikv_util::{
     config::{LogFormat, ReadableDuration, ReadableSize},
@@ -89,8 +90,8 @@ struct States {
     ident: StoreIdent,
 }
 
-fn iter_ffi_helpers_mut(
-    cluster: &mut Cluster<NodeCluster>,
+fn iter_ffi_helpers(
+    cluster: &Cluster<NodeCluster>,
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
 ) {
@@ -101,31 +102,15 @@ fn iter_ffi_helpers_mut(
     for id in ids {
         let db = cluster.get_engine(id);
         let engine = engine_rocks::RocksEngine::from_db(db);
-        let ffiset = cluster.ffi_helper_set.get_mut(&id).unwrap();
-        f(id, &engine, ffiset);
-    }
-}
-
-fn iter_ffi_helpers(
-    cluster: &Cluster<NodeCluster>,
-    store_ids: Option<Vec<u64>>,
-    f: &dyn Fn(u64, &engine_rocks::RocksEngine, &FFIHelperSet) -> (),
-) {
-    let ids = match store_ids {
-        Some(ids) => ids,
-        None => cluster.engines.keys().map(|e| *e).collect::<Vec<_>>(),
-    };
-    for id in ids {
-        let db = cluster.get_engine(id);
-        let engine = engine_rocks::RocksEngine::from_db(db);
-        let ffiset = cluster.ffi_helper_set.get(&id).unwrap();
+        let mut lock = cluster.ffi_helper_set.lock().unwrap();
+        let ffiset = lock.get_mut(&id).unwrap();
         f(id, &engine, ffiset);
     }
 }
 
 fn collect_all_states(cluster: &mut Cluster<NodeCluster>, region_id: u64) -> HashMap<u64, States> {
     let mut prev_state: HashMap<u64, States> = HashMap::default();
-    iter_ffi_helpers_mut(
+    iter_ffi_helpers(
         cluster,
         None,
         &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
@@ -150,22 +135,10 @@ fn collect_all_states(cluster: &mut Cluster<NodeCluster>, region_id: u64) -> Has
     prev_state
 }
 
-pub fn new_mock_cluster(
-    id: u64,
-    count: usize,
-) -> (
-    new_mock_engine_store::mock_cluster::Cluster<NodeCluster>,
-    Arc<TestPdClient>,
-) {
+pub fn new_mock_cluster(id: u64, count: usize) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
-    let cluster = new_mock_engine_store::mock_cluster::Cluster::new(
-        id,
-        count,
-        sim,
-        pd_client.clone(),
-        ProxyConfig::default(),
-    );
+    let cluster = Cluster::new(id, count, sim, pd_client.clone(), ProxyConfig::default());
 
     (cluster, pd_client)
 }
@@ -232,7 +205,8 @@ pub fn check_key(
         };
         match in_mem {
             Some(b) => {
-                let server = &cluster.ffi_helper_set.get(&id).unwrap().engine_store_server;
+                let mut lock = cluster.ffi_helper_set.lock().unwrap();
+                let server = &lock.get(&id).unwrap().engine_store_server;
                 if b {
                     must_get_mem(server, region_id, k, Some(v));
                 } else {

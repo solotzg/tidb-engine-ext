@@ -19,6 +19,7 @@ use kvproto::{
         MergeState, PeerState, RaftApplyState, RaftLocalState, RaftSnapshotData, RegionLocalState,
     },
 };
+pub use mock_cluster::{Cluster, ProxyConfig, Simulator, TestPdClient};
 use protobuf::Message;
 use raftstore::{engine_store_ffi, engine_store_ffi::RawCppPtr};
 use tikv_util::{debug, error, info, warn};
@@ -485,6 +486,7 @@ impl EngineStoreServerWrap {
                     "region_id" => region_id,
                     "node_id" => server.id,
                     "header" => ?header,
+                    "proxy_compat" => proxy_compat,
                 );
                 let data = &mut region.data[cf_index as usize];
                 match tp {

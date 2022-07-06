@@ -77,17 +77,19 @@ pub fn prepare_bootstrap_cluster(
 ) -> Result<()> {
     let mut state = RegionLocalState::default();
     state.set_region(region.clone());
-
+    tikv_util::debug!("!!! PPP1");
     let mut wb = engines.kv.write_batch();
     box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, region));
     box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region.get_id()), &state));
     write_initial_apply_state(&mut wb, region.get_id())?;
+    tikv_util::debug!("!!! PPP3");
     wb.write()?;
     engines.sync_kv()?;
 
     let mut raft_wb = engines.raft.log_batch(1024);
     write_initial_raft_state(&mut raft_wb, region.get_id())?;
     box_try!(engines.raft.consume(&mut raft_wb, true));
+    tikv_util::debug!("!!! PPP5");
     Ok(())
 }
 

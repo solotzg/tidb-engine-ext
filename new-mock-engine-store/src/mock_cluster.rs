@@ -48,13 +48,13 @@ use raftstore::{
     },
     Error, Result,
 };
+pub use server::config::ProxyConfig;
 use server::fatal;
 use tempfile::TempDir;
-pub use test_raftstore::TestPdClient;
-use test_raftstore::{
+pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,
-    new_region_leader_cmd, new_request, new_status_request, new_store, new_transfer_leader_cmd,
-    sleep_ms, Config,
+    new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
+    new_transfer_leader_cmd, sleep_ms, Config, TestPdClient,
 };
 use tikv::{
     config::TiKvConfig,
@@ -192,6 +192,9 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             .as_mut()
             .unwrap()
             .engine_store_server_helper = engine_store_server_helper_ptr;
+        // TODO(tiflash) when we pre handle snap with observer, this is useless.
+        let mut node_cfg = node_cfg;
+        node_cfg.raft_store.engine_store_server_helper = engine_store_server_helper_ptr;
         let ffi_helper_set = FFIHelperSet {
             proxy,
             proxy_helper,
@@ -253,7 +256,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         key_manager: &Option<Arc<DataKeyManager>>,
         router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
     ) {
-        debug!("!!!!!! create_ffi_helper_set");
         let (mut ffi_helper_set, mut node_cfg) =
             self.make_ffi_helper_set(0, engines, key_manager, router);
 
@@ -274,6 +276,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             });
             (helper_ptr, ffi_hub)
         };
+        debug!("!!!!!! create_ffi_helper_set {}", helper_ptr);
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
 
         engines.kv.init(
@@ -322,10 +325,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         // Try recover from last shutdown.
         let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         for node_id in node_ids {
+            debug!("recover node"; "node_id" => node_id);
             let mut engines = self.engines.get_mut(&node_id).unwrap().clone();
             let key_mgr = self.key_managers_map[&node_id].clone();
-            // // We must set up ffi_helper_set again
-            // self.create_ffi_helper_set(engines, &key_mgr, &None);
+            // Always at the front of the vector.
             self.associate_ffi_helper_set(Some(0), node_id);
             // Like TiKVServer::init
             self.run_node(node_id)?;
@@ -722,12 +725,18 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn run_node(&mut self, node_id: u64) -> ServerResult<()> {
         debug!("starting node {}", node_id);
         let engines = self.engines[&node_id].clone();
+        assert_ne!(engines.kv.engine_store_server_helper, 0);
+
         let key_mgr = self.key_managers_map[&node_id].clone();
         let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
 
         let mut cfg = self.cfg.clone();
         if let Some(labels) = self.labels.get(&node_id) {
             cfg.server.labels = labels.to_owned();
+        }
+        {
+            // TODO(tiflash) remove this when we use observer to pre handle snap.
+            cfg.raft_store.engine_store_server_helper = engines.kv.engine_store_server_helper;
         }
         let store_meta = match self.store_metas.entry(node_id) {
             MapEntry::Occupied(o) => {
@@ -743,6 +752,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.group_props.insert(node_id, props.clone());
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
+
         // FIXME: rocksdb event listeners may not work, because we change the router.
         self.sim
             .wl()
@@ -780,9 +790,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     /// Must be called after `create_engines`.
     pub fn bootstrap_region(&mut self) -> Result<()> {
         for (i, engines) in self.dbs.iter().enumerate() {
-            debug!("!!!!!! bootstrap_region {}", i);
             let id = i as u64 + 1;
             self.engines.insert(id, engines.clone());
+            tikv_util::debug!("bootstrap_region";
+                "node_id" => id,
+            );
             let store_meta = Arc::new(Mutex::new(StoreMeta::new(PENDING_MSG_CAP)));
             self.store_metas.insert(id, store_meta);
             self.key_managers_map
@@ -802,8 +814,14 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             bootstrap_store(engines, self.id(), id).unwrap();
         }
 
-        for engines in self.engines.values() {
+        for (&id, engines) in &self.engines {
+            tikv_util::debug!("prepare_bootstrap_cluster";
+                "node_id" => id,
+            );
             prepare_bootstrap_cluster(engines, &region)?;
+            tikv_util::debug!("!!! end prepare_bootstrap_cluster";
+                "node_id" => id,
+            );
         }
 
         self.bootstrap_cluster(region);
@@ -1186,24 +1204,4 @@ pub trait Simulator<EK: KvEngine> {
         rx.recv_timeout(timeout)
             .map_err(|e| Error::Timeout(format!("request timeout for {:?}: {:?}", timeout, e)))
     }
-}
-
-lazy_static! {
-    static ref TEST_CONFIG: TiKvConfig = {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let common_test_cfg = manifest_dir.join("src/common-test.toml");
-        TiKvConfig::from_file(&common_test_cfg, None).unwrap_or_else(|e| {
-            panic!(
-                "invalid auto generated configuration file {}, err {}",
-                manifest_dir.display(),
-                e
-            );
-        })
-    };
-}
-
-pub fn new_tikv_config(cluster_id: u64) -> TiKvConfig {
-    let mut cfg = TEST_CONFIG.clone();
-    cfg.server.cluster_id = cluster_id;
-    cfg
 }

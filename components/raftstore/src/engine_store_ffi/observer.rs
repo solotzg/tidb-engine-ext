@@ -1,12 +1,15 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
+use sst_importer::SstImporter;
 
 use crate::{
     engine_store_ffi::{
+        gen_engine_store_server_helper,
         interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
-        ColumnFamilyType, RaftCmdHeader, TiFlashEngine, WriteCmdType,
+        ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
+        WriteCmdType,
     },
     store::SnapKey,
 };
@@ -22,11 +25,10 @@ impl Into<engine_tiflash::FsStatsExt> for ffi_interfaces::StoreStats {
 }
 
 pub struct TiFlashFFIHub {
-    pub engine_store_server_helper: &'static crate::engine_store_ffi::EngineStoreServerHelper,
+    pub engine_store_server_helper: &'static EngineStoreServerHelper,
 }
 unsafe impl Send for TiFlashFFIHub {}
 unsafe impl Sync for TiFlashFFIHub {}
-
 impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     fn get_store_stats(&self) -> engine_tiflash::FsStatsExt {
         self.engine_store_server_helper
@@ -35,7 +37,7 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     }
 }
 
-pub struct PtrWrapper(crate::RawCppPtr);
+pub struct PtrWrapper(RawCppPtr);
 
 unsafe impl Send for PtrWrapper {}
 unsafe impl Sync for PtrWrapper {}
@@ -45,14 +47,26 @@ pub struct PrehandleContext {
     // tracer holds ptr of snapshot prehandled by TiFlash side.
     pub tracer: HashMap<SnapKey, Arc<PrehandleTask>>,
 }
+
+#[derive(Debug)]
+pub struct PrehandleTask {
+    pub recv: mpsc::Receiver<PtrWrapper>,
+    pub peer_id: u64,
+}
+
+impl PrehandleTask {
+    fn new(recv: mpsc::Receiver<PtrWrapper>, peer_id: u64) -> Self {
+        PrehandleTask { recv, peer_id }
+    }
+}
 unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
 pub struct TiFlashObserver {
     pub peer_id: u64,
-    pub engine_store_server_helper: &'static crate::EngineStoreServerHelper,
+    pub engine_store_server_helper: &'static EngineStoreServerHelper,
     pub engine: TiFlashEngine,
-    pub sst_importer: Arc<SSTImporter>,
+    pub sst_importer: Arc<SstImporter>,
     pub pre_handle_snapshot_ctx: Arc<Mutex<PrehandleContext>>,
 }
 
@@ -75,10 +89,10 @@ impl TiFlashObserver {
     pub fn new(
         peer_id: u64,
         engine: engine_tiflash::RocksEngine,
-        sst_importer: Arc<SSTImporter>,
+        sst_importer: Arc<SstImporter>,
     ) -> Self {
         let engine_store_server_helper =
-            crate::gen_engine_store_server_helper(engine.engine_store_server_helper);
+            gen_engine_store_server_helper(engine.engine_store_server_helper);
         TiFlashObserver {
             peer_id,
             engine_store_server_helper,
