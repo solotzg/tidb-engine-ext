@@ -30,6 +30,7 @@ pub unsafe fn run_proxy(
         args.push(raw.to_str().unwrap());
     }
 
+    // If FFI magic number or version compat.
     engine_store_server_helper.check();
 
     let matches = App::new("RaftStore Proxy")
@@ -242,9 +243,42 @@ pub unsafe fn run_proxy(
     crate::setup::overwrite_config_with_cmd_args(&mut config, &matches);
     config.logger_compatible_adjust();
 
+    let mut proxy_unrecognized_keys = Vec::new();
+    // Double read the same file for proxy-specific arguments.
+    let proxy_config =
+        matches
+            .value_of_os("config")
+            .map_or_else(crate::config::ProxyConfig::default, |path| {
+                let path = Path::new(path);
+                crate::config::ProxyConfig::from_file(
+                    path,
+                    if is_config_check {
+                        Some(&mut proxy_unrecognized_keys)
+                    } else {
+                        None
+                    },
+                )
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "invalid auto generated configuration file {}, err {}",
+                        path.display(),
+                        e
+                    );
+                })
+            });
+
+    // TODO(tiflash) We should later use ProxyConfig for proxy's own settings like `snap_handle_pool_size`
     if is_config_check {
         validate_and_persist_config(&mut config, false);
-        ensure_no_unrecognized_config(&unrecognized_keys);
+        match crate::config::ensure_no_common_unrecognized_keys(
+            &proxy_unrecognized_keys,
+            &unrecognized_keys,
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                crate::fatal!("unknown configuration options: {}", e);
+            }
+        }
         println!("config check successful");
         process::exit(0)
     }

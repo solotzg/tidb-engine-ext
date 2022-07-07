@@ -14,7 +14,6 @@ use tikv_util::crit;
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ProxyConfig {
-    // TODO read from config
     pub snap_handle_pool_size: usize,
 }
 

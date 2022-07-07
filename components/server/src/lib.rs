@@ -6,7 +6,7 @@ extern crate slog_global;
 extern crate tikv_util;
 
 #[macro_use]
-mod setup;
+pub mod setup;
 pub mod config;
 pub mod memory;
 mod proxy;
