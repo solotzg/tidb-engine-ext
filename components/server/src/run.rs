@@ -102,14 +102,17 @@ use tikv_util::{
 };
 use tokio::runtime::Builder;
 
-use crate::{memory::*, raft_engine_switch::*, setup::*, util::ffi_server_info};
+use crate::{
+    config::ProxyConfig, memory::*, raft_engine_switch::*, setup::*, util::ffi_server_info,
+};
 
 #[inline]
-fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
+pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     config: TiKvConfig,
+    proxy_config: ProxyConfig,
     engine_store_server_helper: &EngineStoreServerHelper,
 ) {
-    let mut tikv = TiKvServer::<CER>::init(config);
+    let mut tikv = TiKvServer::<CER>::init(config, proxy_config);
 
     // Must be called after `TiKvServer::init`.
     let memory_limit = tikv.config.memory_usage_limit.unwrap().0;
@@ -214,6 +217,7 @@ fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
 #[inline]
 fn run_impl_only_for_decryption<CER: ConfiguredRaftEngine, F: KvFormat>(
     config: TiKvConfig,
+    proxy_config: ProxyConfig,
     engine_store_server_helper: &EngineStoreServerHelper,
 ) {
     let encryption_key_manager =
@@ -300,6 +304,7 @@ fn run_impl_only_for_decryption<CER: ConfiguredRaftEngine, F: KvFormat>(
 /// case the server will be properly stopped.
 pub unsafe fn run_tikv_proxy(
     config: TiKvConfig,
+    proxy_config: ProxyConfig,
     engine_store_server_helper: &EngineStoreServerHelper,
 ) {
     // Sets the global logger ASAP.
@@ -321,9 +326,13 @@ pub unsafe fn run_tikv_proxy(
 
     dispatch_api_version!(config.storage.api_version(), {
         if !config.raft_engine.enable {
-            run_impl::<engine_rocks::RocksEngine, API>(config, engine_store_server_helper)
+            run_impl::<engine_rocks::RocksEngine, API>(
+                config,
+                proxy_config,
+                engine_store_server_helper,
+            )
         } else {
-            run_impl::<RaftLogEngine, API>(config, engine_store_server_helper)
+            run_impl::<RaftLogEngine, API>(config, proxy_config, engine_store_server_helper)
         }
     })
 }
@@ -332,6 +341,7 @@ pub unsafe fn run_tikv_proxy(
 /// case the server will be properly stopped.
 pub unsafe fn run_tikv_only_decryption(
     config: TiKvConfig,
+    proxy_config: ProxyConfig,
     engine_store_server_helper: &EngineStoreServerHelper,
 ) {
     // Sets the global logger ASAP.
@@ -353,9 +363,17 @@ pub unsafe fn run_tikv_only_decryption(
 
     dispatch_api_version!(config.storage.api_version(), {
         if !config.raft_engine.enable {
-            run_impl_only_for_decryption::<RocksEngine, API>(config, engine_store_server_helper)
+            run_impl_only_for_decryption::<RocksEngine, API>(
+                config,
+                proxy_config,
+                engine_store_server_helper,
+            )
         } else {
-            run_impl_only_for_decryption::<RaftLogEngine, API>(config, engine_store_server_helper)
+            run_impl_only_for_decryption::<RaftLogEngine, API>(
+                config,
+                proxy_config,
+                engine_store_server_helper,
+            )
         }
     })
 }
@@ -437,6 +455,7 @@ const DEFAULT_STORAGE_STATS_INTERVAL: Duration = Duration::from_secs(1);
 /// A complete TiKV server.
 struct TiKvServer<ER: RaftEngine> {
     config: TiKvConfig,
+    proxy_config: ProxyConfig,
     cfg_controller: Option<ConfigController>,
     security_mgr: Arc<SecurityManager>,
     pd_client: Arc<RpcClient>,
@@ -480,7 +499,7 @@ type LocalServer<EK, ER> =
 type LocalRaftKv<EK, ER> = RaftKv<EK, ServerRaftStoreRouter<EK, ER>>;
 
 impl<ER: RaftEngine> TiKvServer<ER> {
-    fn init(mut config: TiKvConfig) -> TiKvServer<ER> {
+    fn init(mut config: TiKvConfig, proxy_config: ProxyConfig) -> TiKvServer<ER> {
         tikv_util::thread_group::set_properties(Some(GroupProperties::default()));
         // It is okay use pd config and security config before `init_config`,
         // because these configs must be provided by command line, and only
@@ -533,6 +552,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         TiKvServer {
             config,
+            proxy_config,
             cfg_controller: Some(cfg_controller),
             security_mgr,
             pd_client,
@@ -571,6 +591,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     /// - If the max open file descriptor limit is not high enough to support
     ///   the main database and the raft database.
     fn init_config(mut config: TiKvConfig) -> ConfigController {
+        // Add {label: {"engine": "tiflash"}} to Config
+        crate::config::address_proxy_config(&mut config);
         validate_and_persist_config(&mut config, true);
 
         ensure_dir_exist(&config.storage.data_dir).unwrap();
@@ -1161,6 +1183,15 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             importer.set_compression_type(cf_name, from_rocks_compression_type(*compression_type));
         }
         let importer = Arc::new(importer);
+
+        // TODO(tiflash) Register TiFlash observer
+        // let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+        //     node.id(),
+        //     self.engines.as_ref().unwrap().engines.kv.clone(),
+        //     importer.clone(),
+        //     self.proxy_config.snap_handle_pool_size,
+        // );
+        // tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 
         let split_check_runner = SplitCheckRunner::new(
             engines.engines.kv.clone(),

@@ -30,7 +30,6 @@ use raftstore::{
 };
 use resource_metering::CollectorRegHandle;
 use tempfile::TempDir;
-use test_raftstore::Config;
 use tikv::{
     config::{ConfigController, Module},
     import::SstImporter,
@@ -45,6 +44,7 @@ use tikv_util::{
 };
 
 use crate::{
+    config::Config,
     mock_cluster::{create_tiflash_test_engine, Cluster, Simulator, TestPdClient, TiFlashEngine},
     transport_simulate::{Filter, SimulateTransport},
 };
@@ -236,6 +236,8 @@ impl Simulator<TiFlashEngine> for NodeCluster {
     ) -> ServerResult<u64> {
         assert!(node_id == 0 || !self.nodes.contains_key(&node_id));
         assert_ne!(engines.kv.engine_store_server_helper, 0);
+        // TODO(tiflash) can be remove when we pre handle snap outside.
+        assert_ne!(cfg.raft_store.engine_store_server_helper, 0);
 
         let pd_worker = LazyWorker::new("test-pd-worker");
 
@@ -293,11 +295,12 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             f(node_id, &mut coprocessor_host);
         }
 
-        // TODO(tiflash) initialize tiflash observers.
+        // TODO(tiflash) Register TiFlash observer
         // let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
         //     node_id,
         //     engines.kv.clone(),
         //     importer.clone(),
+        //     cfg.snap_handle_pool_size,
         // );
         // tiflash_ob.register_to(&mut coprocessor_host);
 

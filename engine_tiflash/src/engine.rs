@@ -29,10 +29,6 @@ use engine_traits::{
     Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable,
 };
 use rocksdb::{DBIterator, Writable, DB};
-use yatp::{
-    pool::{Builder, ThreadPool},
-    task::future::TaskCell,
-};
 
 pub struct FsStatsExt {
     pub used: u64,
@@ -51,7 +47,6 @@ pub struct RocksEngine {
     // Must ensure rocks is the first field, for RocksEngine::from_ref
     pub rocks: engine_rocks::RocksEngine,
     pub engine_store_server_helper: isize,
-    pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicUsize>,
     pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
@@ -77,10 +72,6 @@ impl RocksEngine {
         ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
     ) {
         self.engine_store_server_helper = engine_store_server_helper;
-        let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
-            .max_thread_count(snap_handle_pool_size)
-            .build_future_pool();
-        self.apply_snap_pool = Some(Arc::new(snap_pool));
         self.pool_capacity = snap_handle_pool_size;
         self.pending_applies_count.store(0, Ordering::Relaxed);
         self.ffi_hub = ffi_hub;
@@ -90,7 +81,6 @@ impl RocksEngine {
         RocksEngine {
             rocks,
             engine_store_server_helper: 0,
-            apply_snap_pool: None,
             pool_capacity: 0,
             pending_applies_count: Arc::new(AtomicUsize::new(0)),
             ffi_hub: None,
@@ -101,7 +91,6 @@ impl RocksEngine {
         RocksEngine {
             rocks: engine_rocks::RocksEngine::from_db(db),
             engine_store_server_helper: 0,
-            apply_snap_pool: None,
             pool_capacity: 0,
             pending_applies_count: Arc::new(AtomicUsize::new(0)),
             ffi_hub: None,

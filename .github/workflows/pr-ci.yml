@@ -72,5 +72,5 @@ jobs:
           cargo test --package tests --test failpoints cases::test_merge
           cargo test --package tests --test failpoints cases::test_import_service
           cargo test --package tests --test failpoints cases::test_proxy_replica_read
-          cargo test --features compat_new_proxy --package tests --test proxy test_normal
-          cargo test --package tests --test proxy test_proxy
+          cargo test --features compat_new_proxy --package tests --test proxy normal
+          cargo test --package tests --test proxy proxy

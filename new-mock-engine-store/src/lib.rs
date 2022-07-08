@@ -26,6 +26,7 @@ use tikv_util::{debug, error, info, warn};
 
 use crate::mock_cluster::TiFlashEngine;
 
+pub mod config;
 pub mod mock_cluster;
 pub mod node;
 pub mod transport_simulate;
@@ -402,7 +403,6 @@ impl EngineStoreServerWrap {
                 let res = match req.get_cmd_type() {
                     AdminCmdType::CompactLog => {
                         fail::fail_point!("no_persist_compact_log", |_| {
-                            debug!("!!!!! ZZZ no_persist_compact_log");
                             ffi_interfaces::EngineStoreApplyRes::None
                         });
                         ffi_interfaces::EngineStoreApplyRes::Persist

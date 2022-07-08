@@ -11,7 +11,6 @@ use std::{
     },
 };
 
-// use raftstore::engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 use engine_traits::{
     Error, ExternalSstFileInfo, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey,
     SstExt, SstReader, SstWriter, SstWriterBuilder, WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK,
@@ -37,8 +36,13 @@ use raftstore::{
     engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI},
     store::util::find_peer,
 };
-use server::{config::ensure_no_common_unrecognized_keys, setup::validate_and_persist_config};
+use server::{
+    config::{address_proxy_config, ensure_no_common_unrecognized_keys},
+    run::run_tikv_proxy,
+    setup::validate_and_persist_config,
+};
 use sst_importer::SstImporter;
+use test_raftstore::new_tikv_config;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use tikv::config::TiKvConfig;
 use tikv_util::{
@@ -46,6 +50,8 @@ use tikv_util::{
     time::Duration,
     HandyRwLock,
 };
+
+use crate::test_proxy::new_mock_cluster;
 
 #[test]
 fn test_config() {
@@ -84,4 +90,27 @@ fn test_config() {
     // Will not override ProxyConfig
     let proxy_config_new = ProxyConfig::from_file(path, None).unwrap();
     assert_eq!(proxy_config_new.snap_handle_pool_size, 4);
+}
+
+#[test]
+fn test_store_setup() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+    // Add label to cluster
+    address_proxy_config(&mut cluster.cfg.tikv);
+
+    // Try to start this node, return after persisted some keys.
+    let _ = cluster.start();
+    let store_id = cluster.engines.keys().last().unwrap();
+    let store = pd_client.get_store(*store_id).unwrap();
+    println!("store {:?}", store);
+    assert!(
+        store
+            .get_labels()
+            .iter()
+            .find(|&x| x.key == "engine" && x.value == "tiflash")
+            .is_some()
+    );
+
+    cluster.shutdown();
 }

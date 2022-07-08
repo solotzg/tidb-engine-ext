@@ -54,7 +54,7 @@ use tempfile::TempDir;
 pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
-    new_transfer_leader_cmd, sleep_ms, Config, TestPdClient,
+    new_transfer_leader_cmd, sleep_ms, TestPdClient,
 };
 use tikv::{
     config::TiKvConfig,
@@ -68,6 +68,7 @@ use tikv_util::{
     warn, HandyRwLock,
 };
 
+pub use crate::config::Config;
 use crate::{
     gen_engine_store_server_helper, transport_simulate::Filter, EngineStoreServer,
     EngineStoreServerWrap,
@@ -92,8 +93,6 @@ pub struct EngineHelperSet {
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
     pub ffi_helper_lst: Vec<FFIHelperSet>,
     pub ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
-    pub proxy_cfg: ProxyConfig,
-    pub proxy_compat: bool,
 
     pub cfg: Config,
     leaders: HashMap<u64, metapb::Peer>,
@@ -126,12 +125,12 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         Cluster {
             ffi_helper_lst: Vec::default(),
             ffi_helper_set: Arc::new(Mutex::new(HashMap::default())),
-            proxy_cfg,
-            proxy_compat: false,
 
             cfg: Config {
                 tikv: new_tikv_config(id),
                 prefer_mem: true,
+                proxy_cfg,
+                proxy_compat: false,
             },
             leaders: HashMap::default(),
             count,
@@ -220,7 +219,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             router,
             self.cfg.tikv.clone(),
             self as *const Cluster<T> as isize,
-            self.proxy_compat,
+            self.cfg.proxy_compat,
         )
     }
 
@@ -276,12 +275,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             });
             (helper_ptr, ffi_hub)
         };
-        debug!("!!!!!! create_ffi_helper_set {}", helper_ptr);
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
 
         engines.kv.init(
             helper_ptr,
-            self.proxy_cfg.snap_handle_pool_size,
+            self.cfg.proxy_cfg.snap_handle_pool_size,
             Some(ffi_hub),
         );
 
@@ -356,10 +354,16 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             let key_manager = self.key_managers.last().unwrap().clone();
             let node_id = {
                 let mut sim = self.sim.wl();
+                let mut cfg = self.cfg.clone();
+                {
+                    // TODO(tiflash) remove this when we use observer to pre handle snap.
+                    cfg.raft_store.engine_store_server_helper =
+                        engines.kv.engine_store_server_helper;
+                }
                 // Like TiKVServer::init
                 sim.run_node(
                     0,
-                    self.cfg.clone(),
+                    cfg,
                     engines.clone(),
                     store_meta.clone(),
                     key_manager.clone(),
@@ -385,7 +389,7 @@ pub unsafe fn get_global_engine_helper_set() -> &'static Option<EngineHelperSet>
     &GLOBAL_ENGINE_HELPER_SET
 }
 
-fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
+pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     let mut engine_store_server = Box::new(EngineStoreServer::new(99999, None));
     let engine_store_server_wrap = Box::new(EngineStoreServerWrap::new(
         &mut *engine_store_server,

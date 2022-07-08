@@ -3,13 +3,23 @@ use std::sync::{mpsc, Arc, Mutex};
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
 use sst_importer::SstImporter;
+use tikv_util::debug;
+use yatp::{
+    pool::{Builder, ThreadPool},
+    task::future::TaskCell,
+};
 
 use crate::{
+    coprocessor::{
+        AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
+        BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor, CoprocessorHost,
+        ObserverContext, QueryObserver, RegionChangeEvent, RegionChangeObserver,
+    },
     engine_store_ffi::{
         gen_engine_store_server_helper,
         interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
         ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
-        WriteCmdType,
+        WriteCmdType, WriteCmds,
     },
     store::SnapKey,
 };
@@ -68,6 +78,8 @@ pub struct TiFlashObserver {
     pub engine: TiFlashEngine,
     pub sst_importer: Arc<SstImporter>,
     pub pre_handle_snapshot_ctx: Arc<Mutex<PrehandleContext>>,
+    pub snap_handle_pool_size: usize,
+    pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
 }
 
 impl Clone for TiFlashObserver {
@@ -78,6 +90,8 @@ impl Clone for TiFlashObserver {
             engine: self.engine.clone(),
             sst_importer: self.sst_importer.clone(),
             pre_handle_snapshot_ctx: self.pre_handle_snapshot_ctx.clone(),
+            snap_handle_pool_size: self.snap_handle_pool_size,
+            apply_snap_pool: self.apply_snap_pool.clone(),
         }
     }
 }
@@ -90,15 +104,54 @@ impl TiFlashObserver {
         peer_id: u64,
         engine: engine_tiflash::RocksEngine,
         sst_importer: Arc<SstImporter>,
+        snap_handle_pool_size: usize,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
+        let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
+            .max_thread_count(snap_handle_pool_size)
+            .build_future_pool();
         TiFlashObserver {
             peer_id,
             engine_store_server_helper,
             engine,
             sst_importer,
             pre_handle_snapshot_ctx: Arc::new(Mutex::new(PrehandleContext::default())),
+            snap_handle_pool_size,
+            apply_snap_pool: Some(Arc::new(snap_pool)),
         }
+    }
+
+    // TODO(tiflash) open observers when TiKV merged.
+    pub fn register_to<E: engine_traits::KvEngine>(
+        &self,
+        coprocessor_host: &mut CoprocessorHost<E>,
+    ) {
+        // coprocessor_host.registry.register_query_observer(
+        //     TIFLASH_OBSERVER_PRIORITY,
+        //     BoxQueryObserver::new(self.clone()),
+        // );
+        // coprocessor_host.registry.register_admin_observer(
+        //     TIFLASH_OBSERVER_PRIORITY,
+        //     BoxAdminObserver::new(self.clone()),
+        // );
+        // coprocessor_host.registry.register_apply_snapshot_observer(
+        //     TIFLASH_OBSERVER_PRIORITY,
+        //     BoxApplySnapshotObserver::new(self.clone()),
+        // );
+        // coprocessor_host.registry.register_region_change_observer(
+        //     TIFLASH_OBSERVER_PRIORITY,
+        //     BoxRegionChangeObserver::new(self.clone()),
+        // );
+        // coprocessor_host.registry.register_pd_task_observer(
+        //     TIFLASH_OBSERVER_PRIORITY,
+        //     BoxPdTaskObserver::new(self.clone()),
+        // );
+    }
+}
+
+impl Coprocessor for TiFlashObserver {
+    fn stop(&self) {
+        self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
