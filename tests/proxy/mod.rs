@@ -6,3 +6,7 @@
 
 #[macro_use]
 extern crate slog_global;
+
+mod test_normal;
+mod test_proxy;
+mod util;

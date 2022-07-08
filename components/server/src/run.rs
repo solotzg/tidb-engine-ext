@@ -820,15 +820,15 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         );
 
         // Create cdc.
-        let mut cdc_worker = Box::new(LazyWorker::new("cdc"));
-        let cdc_scheduler = cdc_worker.scheduler();
-        let txn_extra_scheduler = cdc::CdcTxnExtraScheduler::new(cdc_scheduler.clone());
-
-        self.engines
-            .as_mut()
-            .unwrap()
-            .engine
-            .set_txn_extra_scheduler(Arc::new(txn_extra_scheduler));
+        // let mut cdc_worker = Box::new(LazyWorker::new("cdc"));
+        // let cdc_scheduler = cdc_worker.scheduler();
+        // let txn_extra_scheduler = cdc::CdcTxnExtraScheduler::new(cdc_scheduler.clone());
+        //
+        // self.engines
+        //     .as_mut()
+        //     .unwrap()
+        //     .engine
+        //     .set_txn_extra_scheduler(Arc::new(txn_extra_scheduler));
 
         // let lock_mgr = LockManager::new(&self.config.pessimistic_txn);
         let lock_mgr = LockManager::new();
@@ -878,6 +878,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 .unwrap(),
         );
 
+        // TODO(tiflash) Maybe we can remove this service.
         // Start resource metering.
         let (recorder_notifier, collector_reg_handle, resource_tag_factory, recorder_worker) =
             resource_metering::init_recorder(self.config.resource_metering.precision.as_millis());
