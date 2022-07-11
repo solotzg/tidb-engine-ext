@@ -28,6 +28,7 @@ use lazy_static::lazy_static;
 use pd_client::PdClient;
 use protobuf::Message;
 pub use proxy_server::config::ProxyConfig;
+use proxy_server::fatal;
 // mock cluster
 pub use raftstore::engine_store_ffi::TiFlashEngine;
 use raftstore::{
@@ -49,7 +50,6 @@ use raftstore::{
     },
     Error, Result,
 };
-use server::fatal;
 use tempfile::TempDir;
 pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,

@@ -3170,7 +3170,6 @@ dependencies = [
  "raftstore",
  "rand 0.8.3",
  "resource_metering",
- "server",
  "slog",
  "slog-global",
  "tempfile",
