@@ -11,8 +11,12 @@ use std::{
 use clap::{App, Arg};
 use tikv::config::TiKvConfig;
 
-use server::setup::{ensure_no_unrecognized_config, validate_and_persist_config, overwrite_config_with_cmd_args};
-use crate::fatal;
+use crate::{
+    fatal,
+    setup::{
+        ensure_no_unrecognized_config, overwrite_config_with_cmd_args, validate_and_persist_config,
+    },
+};
 
 pub unsafe fn run_proxy(
     argc: c_int,

@@ -66,6 +66,7 @@ use raftstore::{
     },
 };
 use security::SecurityManager;
+use server::{memory::*, raft_engine_switch::*};
 use tikv::{
     config::{ConfigController, DBConfigManger, DBType, TiKvConfig},
     coprocessor::{self, MEMTRACE_ROOT as MEMTRACE_COPROCESSOR},
@@ -102,11 +103,7 @@ use tikv_util::{
 };
 use tokio::runtime::Builder;
 
-use crate::{
-    config::ProxyConfig, util::ffi_server_info,
-};
-use server::{memory::*, raft_engine_switch::*, setup::*};
-use crate::fatal;
+use crate::{config::ProxyConfig, fatal, setup::*, util::ffi_server_info};
 
 #[inline]
 pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(

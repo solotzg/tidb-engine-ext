@@ -37,6 +37,7 @@ lazy_static = "1.3"
 log_wrappers = { path = "../components/log_wrappers" }
 pd_client = { path = "../components/pd_client", default-features = false }
 protobuf = "2.8.0"
+proxy_server = { path = "../components/proxy_server" }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raftstore = { path = "../components/raftstore", default-features = false }
 rand = "0.8"
@@ -49,4 +50,3 @@ test_raftstore = { path = "../components/test_raftstore" }
 test_util = { path = "../components/test_util", default-features = false }
 tikv = { path = "../.", default-features = false }
 tikv_util = { path = "../components/tikv_util", default-features = false }
-proxy_server = { path = "../components/proxy_server" }

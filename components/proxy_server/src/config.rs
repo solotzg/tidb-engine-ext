@@ -9,6 +9,7 @@ use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use tikv::config::TiKvConfig;
 use tikv_util::crit;
+
 use crate::fatal;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]

@@ -27,6 +27,7 @@ use kvproto::{
 use lazy_static::lazy_static;
 use pd_client::PdClient;
 use protobuf::Message;
+pub use proxy_server::config::ProxyConfig;
 // mock cluster
 pub use raftstore::engine_store_ffi::TiFlashEngine;
 use raftstore::{
@@ -48,7 +49,6 @@ use raftstore::{
     },
     Error, Result,
 };
-pub use proxy_server::config::ProxyConfig;
 use server::fatal;
 use tempfile::TempDir;
 pub use test_raftstore::{

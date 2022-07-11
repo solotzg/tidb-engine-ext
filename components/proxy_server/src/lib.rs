@@ -9,9 +9,10 @@ extern crate tikv_util;
 pub mod config;
 pub mod proxy;
 pub mod run;
+pub mod setup;
 pub mod util;
 
-use server::fatal;
+pub use server::fatal;
 
 fn proxy_version_info() -> String {
     let fallback = "Unknown (env var does not exist when building)";
