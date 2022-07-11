@@ -48,7 +48,7 @@ use raftstore::{
     },
     Error, Result,
 };
-pub use server::config::ProxyConfig;
+pub use proxy_server::config::ProxyConfig;
 use server::fatal;
 use tempfile::TempDir;
 pub use test_raftstore::{

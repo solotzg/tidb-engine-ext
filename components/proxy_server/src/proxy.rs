@@ -11,7 +11,8 @@ use std::{
 use clap::{App, Arg};
 use tikv::config::TiKvConfig;
 
-use crate::setup::{ensure_no_unrecognized_config, validate_and_persist_config};
+use server::setup::{ensure_no_unrecognized_config, validate_and_persist_config, overwrite_config_with_cmd_args};
+use crate::fatal;
 
 pub unsafe fn run_proxy(
     argc: c_int,
@@ -240,7 +241,7 @@ pub unsafe fn run_proxy(
         });
 
     check_engine_label(&matches);
-    crate::setup::overwrite_config_with_cmd_args(&mut config, &matches);
+    overwrite_config_with_cmd_args(&mut config, &matches);
     config.logger_compatible_adjust();
 
     let mut proxy_unrecognized_keys = Vec::new();
@@ -276,7 +277,7 @@ pub unsafe fn run_proxy(
         ) {
             Ok(_) => (),
             Err(e) => {
-                crate::fatal!("unknown configuration options: {}", e);
+                fatal!("unknown configuration options: {}", e);
             }
         }
         println!("config check successful");

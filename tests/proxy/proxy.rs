@@ -37,7 +37,8 @@ use raftstore::{
     engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI},
     store::util::find_peer,
 };
-use server::{config::ensure_no_common_unrecognized_keys, setup::validate_and_persist_config};
+use server::{setup::validate_and_persist_config};
+use proxy_server::{config::ensure_no_common_unrecognized_keys};
 use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use tikv::config::TiKvConfig;

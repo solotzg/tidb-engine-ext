@@ -103,8 +103,10 @@ use tikv_util::{
 use tokio::runtime::Builder;
 
 use crate::{
-    config::ProxyConfig, memory::*, raft_engine_switch::*, setup::*, util::ffi_server_info,
+    config::ProxyConfig, util::ffi_server_info,
 };
+use server::{memory::*, raft_engine_switch::*, setup::*};
+use crate::fatal;
 
 #[inline]
 pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(

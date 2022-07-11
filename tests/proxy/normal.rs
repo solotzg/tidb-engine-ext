@@ -36,9 +36,11 @@ use raftstore::{
     engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI},
     store::util::find_peer,
 };
-use server::{
+use proxy_server::{
     config::{address_proxy_config, ensure_no_common_unrecognized_keys},
     run::run_tikv_proxy,
+};
+use server::{
     setup::validate_and_persist_config,
 };
 use sst_importer::SstImporter;
@@ -51,7 +53,7 @@ use tikv_util::{
     HandyRwLock,
 };
 
-use crate::test_proxy::new_mock_cluster;
+use crate::proxy::new_mock_cluster;
 
 #[test]
 fn test_config() {

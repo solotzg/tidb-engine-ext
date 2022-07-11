@@ -3064,6 +3064,7 @@ dependencies = [
  "keys",
  "kvproto",
  "protobuf",
+ "proxy_server",
  "raftstore",
  "server",
  "slog",
@@ -3164,6 +3165,7 @@ dependencies = [
  "log_wrappers",
  "pd_client",
  "protobuf",
+ "proxy_server",
  "raft",
  "raftstore",
  "rand 0.8.3",
@@ -4098,6 +4100,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxy_server"
+version = "0.0.1"
+dependencies = [
+ "api_version",
+ "backup",
+ "backup-stream",
+ "causal_ts",
+ "cdc",
+ "chrono",
+ "clap",
+ "collections",
+ "concurrency_manager",
+ "crossbeam",
+ "encryption",
+ "encryption_export",
+ "engine_rocks",
+ "engine_rocks_helper",
+ "engine_traits",
+ "error_code",
+ "file_system",
+ "fs2",
+ "futures 0.3.15",
+ "grpcio",
+ "grpcio-health",
+ "hex 0.4.2",
+ "itertools 0.10.0",
+ "keys",
+ "kvproto",
+ "libc 0.2.125",
+ "log",
+ "log_wrappers",
+ "nix 0.23.0",
+ "online_config",
+ "pd_client",
+ "prometheus",
+ "protobuf",
+ "raft",
+ "raft_log_engine",
+ "raftstore",
+ "rand 0.8.3",
+ "resolved_ts",
+ "resource_metering",
+ "security",
+ "serde",
+ "serde_derive",
+ "serde_ignored",
+ "serde_json",
+ "server",
+ "signal",
+ "slog",
+ "slog-global",
+ "tempfile",
+ "tikv",
+ "tikv_alloc",
+ "tikv_util",
+ "tokio",
+ "toml",
+ "txn_types",
+ "yatp",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4265,7 +4329,7 @@ dependencies = [
 name = "raftstore-proxy"
 version = "0.0.1"
 dependencies = [
- "server",
+ "proxy_server",
 ]
 
 [[package]]
@@ -5754,6 +5818,7 @@ dependencies = [
  "procinfo",
  "profiler",
  "protobuf",
+ "proxy_server",
  "raft",
  "raft_log_engine",
  "raftstore",
