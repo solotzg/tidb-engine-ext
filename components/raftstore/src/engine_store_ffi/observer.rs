@@ -25,6 +25,7 @@ use crate::{
     },
     store::SnapKey,
 };
+use kvproto::raft_cmdpb::{AdminRequest, AdminCmdType};
 
 impl Into<engine_tiflash::FsStatsExt> for ffi_interfaces::StoreStats {
     fn into(self) -> FsStatsExt {
@@ -133,10 +134,10 @@ impl TiFlashObserver {
         //     TIFLASH_OBSERVER_PRIORITY,
         //     BoxQueryObserver::new(self.clone()),
         // );
-        // coprocessor_host.registry.register_admin_observer(
-        //     TIFLASH_OBSERVER_PRIORITY,
-        //     BoxAdminObserver::new(self.clone()),
-        // );
+        coprocessor_host.registry.register_admin_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxAdminObserver::new(self.clone()),
+        );
         // coprocessor_host.registry.register_apply_snapshot_observer(
         //     TIFLASH_OBSERVER_PRIORITY,
         //     BoxApplySnapshotObserver::new(self.clone()),
@@ -155,5 +156,31 @@ impl TiFlashObserver {
 impl Coprocessor for TiFlashObserver {
     fn stop(&self) {
         self.apply_snap_pool.as_ref().unwrap().shutdown();
+    }
+}
+
+
+impl AdminObserver for TiFlashObserver {
+    fn pre_exec_admin(&self, ob_ctx: &mut ObserverContext<'_>, req: &AdminRequest) -> bool {
+        match req.get_cmd_type() {
+            AdminCmdType::CompactLog => {
+                if !self
+                    .engine_store_server_helper
+                    .try_flush_data(ob_ctx.region().get_id(), false)
+                {
+                    debug!("can't flush data, should filter CompactLog";
+                        "region" => ?ob_ctx.region(),
+                        "req" => ?req,
+                    );
+                    return true;
+                }
+            }
+            AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
+                // TiFlash don't support.
+                return true;
+            }
+            _ => (),
+        };
+        false
     }
 }

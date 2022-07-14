@@ -1242,19 +1242,19 @@ where
         // E.g. `RaftApplyState` must not be changed.
 
         let mut origin_epoch = None;
-        let (resp, exec_result) = if ctx.host.pre_exec(&self.region, req) {
+        let (resp, exec_result, flash_res) = if ctx.host.pre_exec(&self.region, req) {
             // One of the observers want to filter execution of the command.
             let mut resp = RaftCmdResponse::default();
             if !req.get_header().get_uuid().is_empty() {
                 let uuid = req.get_header().get_uuid().to_vec();
                 resp.mut_header().set_uuid(uuid);
             }
-            (resp, ApplyResult::None)
+            (resp, ApplyResult::None, EngineStoreApplyRes::None)
         } else {
             ctx.exec_log_index = index;
             ctx.exec_log_term = term;
             ctx.kv_wb_mut().set_save_point();
-            let (resp, exec_result) = match self.exec_raft_cmd(ctx, req) {
+            let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, req) {
                 Ok(a) => {
                     ctx.kv_wb_mut().pop_save_point().unwrap();
                     if req.has_admin_request() {
@@ -1293,7 +1293,7 @@ where
                     )
                 }
             };
-            (resp, exec_result)
+            (resp, exec_result, flash_res)
         };
         if let ApplyResult::WaitMergeSource(_) = exec_result {
             return (resp, exec_result);
