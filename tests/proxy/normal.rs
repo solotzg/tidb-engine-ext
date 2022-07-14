@@ -173,3 +173,4 @@ fn test_empty_cmd() {
 
     cluster.shutdown();
 }
+

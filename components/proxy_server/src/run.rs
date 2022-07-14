@@ -1185,7 +1185,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         }
         let importer = Arc::new(importer);
 
-        // TODO(tiflash) Register TiFlash observer
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node.id(),
             self.engines.as_ref().unwrap().engines.kv.clone(),

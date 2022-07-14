@@ -420,7 +420,7 @@ fn test_receive_old_snapshot() {
     cluster.sim.wl().add_recv_filter(2, recv_filter);
     cluster.clear_send_filters();
 
-    for _ in 0..20 {
+    for _ in 0..50 {
         let guard = dropped_msgs.lock().unwrap();
         if !guard.is_empty() {
             break;
@@ -432,7 +432,7 @@ fn test_receive_old_snapshot() {
         let mut guard = dropped_msgs.lock().unwrap();
         if guard.is_empty() {
             drop(guard);
-            panic!("do not receive snapshot msg in 200ms");
+            panic!("do not receive snapshot msg");
         }
         std::mem::take(guard.as_mut())
     };

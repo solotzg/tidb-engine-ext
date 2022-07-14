@@ -295,7 +295,6 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             f(node_id, &mut coprocessor_host);
         }
 
-        // TODO(tiflash) Register TiFlash observer
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node_id,
             engines.kv.clone(),
