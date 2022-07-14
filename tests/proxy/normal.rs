@@ -256,7 +256,7 @@ fn test_get_region_local_state() {
     let k = b"k1";
     let v = b"v1";
     cluster.must_put(k, v);
-    for id in cluster.raw.engines.keys() {
+    for id in cluster.engines.keys() {
         must_get_equal(&cluster.get_engine(*id), k, v);
     }
     let region_id = cluster.get_region(k).get_id();

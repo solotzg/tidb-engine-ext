@@ -1261,7 +1261,7 @@ where
                         origin_epoch = Some(self.region.get_region_epoch().clone());
                     }
                     a
-                },
+                }
                 Err(e) => {
                     // clear dirty values.
                     ctx.kv_wb_mut().rollback_to_save_point().unwrap();

@@ -4,6 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
+use kvproto::raft_cmdpb::{AdminCmdType, AdminRequest};
 use sst_importer::SstImporter;
 use tikv_util::debug;
 use yatp::{
@@ -25,7 +26,6 @@ use crate::{
     },
     store::SnapKey,
 };
-use kvproto::raft_cmdpb::{AdminRequest, AdminCmdType};
 
 impl Into<engine_tiflash::FsStatsExt> for ffi_interfaces::StoreStats {
     fn into(self) -> FsStatsExt {
@@ -158,7 +158,6 @@ impl Coprocessor for TiFlashObserver {
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
-
 
 impl AdminObserver for TiFlashObserver {
     fn pre_exec_admin(&self, ob_ctx: &mut ObserverContext<'_>, req: &AdminRequest) -> bool {
