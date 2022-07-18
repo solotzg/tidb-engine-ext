@@ -180,9 +180,10 @@ impl AdminObserver for TiFlashObserver {
                     );
                     return true;
                 }
+                // Otherwise, we can exec CompactLog, without later rolling back.
             }
             AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
-                // TiFlash don't support.
+                // We can't support.
                 return true;
             }
             AdminCmdType::TransferLeader => {

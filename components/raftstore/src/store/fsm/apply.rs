@@ -1469,12 +1469,6 @@ where
             }
         }
 
-        let ori_apply_state = if cmd_type == AdminCmdType::CompactLog {
-            Some(self.apply_state.clone())
-        } else {
-            None
-        };
-
         let (mut response, mut exec_result) = match cmd_type {
             AdminCmdType::ChangePeer => self.exec_change_peer(ctx, request),
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
@@ -1507,17 +1501,6 @@ where
                 RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
             )
         };
-
-        match flash_res {
-            EngineStoreApplyRes::None => {
-                if cmd_type == AdminCmdType::CompactLog {
-                    response = AdminResponse::new();
-                    exec_result = ApplyResult::None;
-                    self.apply_state = ori_apply_state.unwrap();
-                }
-            }
-            _ => {}
-        }
 
         resp.set_admin_response(response);
         Ok((resp, exec_result, flash_res))
