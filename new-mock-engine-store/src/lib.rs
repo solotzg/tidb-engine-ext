@@ -182,10 +182,15 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region: &mut Box<Region>) 
     }
 }
 
-unsafe fn write_to_db_data(store: &mut EngineStoreServer, region: &mut Box<Region>) {
+unsafe fn write_to_db_data(
+    store: &mut EngineStoreServer,
+    region: &mut Box<Region>,
+    reason: String,
+) {
     info!("mock flush to engine";
         "region" => ?region.region,
         "store_id" => store.id,
+        "reason" => reason
     );
     let kv = &mut store.engines.as_mut().unwrap().kv;
     for cf in 0..3 {
@@ -231,11 +236,23 @@ impl EngineStoreServerWrap {
         let region_id = header.region_id;
         let node_id = (*self.engine_store_server).id;
         info!("handle_admin_raft_cmd";
-            "request"=>?req, "response"=>?resp, "index"=>header.index, "region-id"=>header.region_id);
+            "node_id"=>node_id,
+            "request"=>?req,
+            "response"=>?resp,
+            "header"=>?header,
+            "region_id"=>header.region_id,
+        );
         let do_handle_admin_raft_cmd =
             move |region: &mut Box<Region>, engine_store_server: &mut EngineStoreServer| {
                 if region.apply_state.get_applied_index() >= header.index {
-                    return ffi_interfaces::EngineStoreApplyRes::Persist;
+                    // If it is a old entry.
+                    error!("obsolete admin index";
+                    "apply_state"=>?region.apply_state,
+                    "header"=>?header,
+                    "node_id"=>node_id,
+                    );
+                    panic!("observe obsolete admin index");
+                    return ffi_interfaces::EngineStoreApplyRes::None;
                 }
                 match req.get_cmd_type() {
                     AdminCmdType::ChangePeer | AdminCmdType::ChangePeerV2 => {
@@ -414,6 +431,7 @@ impl EngineStoreServerWrap {
                 if req.get_cmd_type() == AdminCmdType::CompactLog
                     && res == ffi_interfaces::EngineStoreApplyRes::Persist
                 {
+                    debug!("persist for CompactLog");
                     let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                     let state = &mut region.apply_state;
                     let compact_index = req.get_compact_log().get_compact_index();
@@ -452,7 +470,11 @@ impl EngineStoreServerWrap {
         match res {
             ffi_interfaces::EngineStoreApplyRes::Persist => {
                 if let Some(region) = region {
-                    write_to_db_data(&mut (*self.engine_store_server), region);
+                    write_to_db_data(
+                        &mut (*self.engine_store_server),
+                        region,
+                        format!("admin {:?}", req),
+                    );
                 }
             }
             _ => (),
@@ -467,11 +489,17 @@ impl EngineStoreServerWrap {
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
         let server = &mut (*self.engine_store_server);
+        let node_id = (*self.engine_store_server).id;
         let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
         let proxy_compat = server.proxy_compat;
-
         let mut do_handle_write_raft_cmd = move |region: &mut Box<Region>| {
             if region.apply_state.get_applied_index() >= header.index {
+                debug!("obsolete write index";
+                "apply_state"=>?region.apply_state,
+                "header"=>?header,
+                "node_id"=>node_id,
+                );
+                panic!("observe obsolete write index");
                 return ffi_interfaces::EngineStoreApplyRes::None;
             }
             for i in 0..cmds.len {
@@ -483,13 +511,12 @@ impl EngineStoreServerWrap {
                 let cf = &*cmds.cmd_cf.add(i as _);
                 let cf_index = (*cf) as u8;
                 debug!(
-                    "handle_write_raft_cmd";
+                    "handle_write_raft_cmd with kv";
                     "k" => ?&k[..std::cmp::min(4usize, k.len())],
                     "v" => ?&v[..std::cmp::min(4usize, v.len())],
                     "region_id" => region_id,
                     "node_id" => server.id,
                     "header" => ?header,
-                    "proxy_compat" => proxy_compat,
                 );
                 let data = &mut region.data[cf_index as usize];
                 match tp {
@@ -504,7 +531,8 @@ impl EngineStoreServerWrap {
             // Advance apply index, but do not persist
             region.set_applied(header.index, header.term);
             if !proxy_compat {
-                write_to_db_data(server, region);
+                // If we don't support new proxy
+                write_to_db_data(server, region, format!("write"));
             }
             ffi_interfaces::EngineStoreApplyRes::None
         };
@@ -929,7 +957,11 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         "apply snaps peer_id {} region {:?}",
         node_id, &region.region
     );
-    write_to_db_data(&mut (*store.engine_store_server), region);
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        String::from("prehandle-snap"),
+    );
 }
 
 unsafe extern "C" fn ffi_handle_ingest_sst(
@@ -988,7 +1020,11 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_term(term);
     }
 
-    write_to_db_data(&mut (*store.engine_store_server), region);
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        String::from("ingest-sst"),
+    );
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

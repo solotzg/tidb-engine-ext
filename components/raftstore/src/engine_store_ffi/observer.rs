@@ -4,9 +4,18 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use kvproto::raft_cmdpb::{AdminCmdType, AdminRequest};
+use kvproto::{
+    import_sstpb::SstMeta,
+    metapb::Region,
+    raft_cmdpb::{
+        AdminCmdType, AdminRequest, AdminResponse, ChangePeerRequest, CmdType, CommitMergeRequest,
+        RaftCmdRequest, RaftCmdResponse, Request,
+    },
+    raft_serverpb::RaftApplyState,
+};
 use sst_importer::SstImporter;
-use tikv_util::{debug, error};
+use tikv_util::{box_err, debug, error, info};
+use uuid::Builder as UuidBuilder;
 use yatp::{
     pool::{Builder, ThreadPool},
     task::future::TaskCell,
@@ -16,15 +25,16 @@ use crate::{
     coprocessor::{
         AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
         BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor, CoprocessorHost,
-        ObserverContext, QueryObserver, RegionChangeEvent, RegionChangeObserver,
+        ObserverContext, QueryObserver, RegionChangeEvent, RegionChangeObserver, RegionState,
     },
     engine_store_ffi::{
         gen_engine_store_server_helper,
         interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
-        ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
-        WriteCmdType, WriteCmds,
+        name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr,
+        TiFlashEngine, WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
     },
-    store::SnapKey,
+    store::{util, SnapKey},
+    Error, Result,
 };
 
 impl Into<engine_tiflash::FsStatsExt> for ffi_interfaces::StoreStats {
@@ -102,6 +112,38 @@ impl Clone for TiFlashObserver {
 // TiFlash observer's priority should be higher than all other observers, to avoid being bypassed.
 const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
 
+fn check_sst_for_ingestion(sst: &SstMeta, region: &Region) -> Result<()> {
+    let uuid = sst.get_uuid();
+    if let Err(e) = UuidBuilder::from_slice(uuid) {
+        return Err(box_err!("invalid uuid {:?}: {:?}", uuid, e));
+    }
+
+    let cf_name = sst.get_cf_name();
+    if cf_name != CF_DEFAULT && cf_name != CF_WRITE {
+        return Err(box_err!("invalid cf name {}", cf_name));
+    }
+
+    let region_id = sst.get_region_id();
+    if region_id != region.get_id() {
+        return Err(Error::RegionNotFound(region_id));
+    }
+
+    let epoch = sst.get_region_epoch();
+    let region_epoch = region.get_region_epoch();
+    if epoch.get_conf_ver() != region_epoch.get_conf_ver()
+        || epoch.get_version() != region_epoch.get_version()
+    {
+        let error = format!("{:?} != {:?}", epoch, region_epoch);
+        return Err(Error::EpochNotMatch(error, vec![region.clone()]));
+    }
+
+    let range = sst.get_range();
+    util::check_key_in_region(range.get_start(), region)?;
+    util::check_key_in_region(range.get_end(), region)?;
+
+    Ok(())
+}
+
 impl TiFlashObserver {
     pub fn new(
         peer_id: u64,
@@ -132,6 +174,7 @@ impl TiFlashObserver {
         &self,
         coprocessor_host: &mut CoprocessorHost<E>,
     ) {
+        // If a observer is repeatedly registered, it can run repeated logic.
         coprocessor_host.registry.register_admin_observer(
             TIFLASH_OBSERVER_PRIORITY,
             BoxAdminObserver::new(self.clone()),
@@ -140,10 +183,6 @@ impl TiFlashObserver {
             TIFLASH_OBSERVER_PRIORITY,
             BoxQueryObserver::new(self.clone()),
         );
-        // coprocessor_host.registry.register_admin_observer(
-        //     TIFLASH_OBSERVER_PRIORITY,
-        //     BoxAdminObserver::new(self.clone()),
-        // );
         // coprocessor_host.registry.register_apply_snapshot_observer(
         //     TIFLASH_OBSERVER_PRIORITY,
         //     BoxApplySnapshotObserver::new(self.clone()),
@@ -156,6 +195,70 @@ impl TiFlashObserver {
         //     TIFLASH_OBSERVER_PRIORITY,
         //     BoxPdTaskObserver::new(self.clone()),
         // );
+    }
+
+    fn handle_ingest_sst_for_engine_store(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        ssts: &Vec<engine_traits::SstMetaInfo>,
+        index: u64,
+        term: u64,
+    ) -> EngineStoreApplyRes {
+        let mut ssts_wrap = vec![];
+        let mut sst_views = vec![];
+
+        for sst in ssts {
+            let sst = &sst.meta;
+            if sst.get_cf_name() == engine_traits::CF_LOCK {
+                panic!("should not ingest sst of lock cf");
+            }
+
+            // We still need this to filter error ssts.
+            // TODO(tiflash) We will remove this as soon as TiKv publicize corresponding function.
+            if let Err(e) = check_sst_for_ingestion(sst, &ob_ctx.region()) {
+                error!(?e;
+                 "proxy ingest fail";
+                 "sst" => ?sst,
+                 "region" => ?&ob_ctx.region(),
+                );
+                break;
+            }
+
+            ssts_wrap.push((
+                self.sst_importer.get_path(sst),
+                name_to_cf(sst.get_cf_name()),
+            ));
+        }
+
+        for (path, cf) in &ssts_wrap {
+            sst_views.push((path.to_str().unwrap().as_bytes(), *cf));
+        }
+
+        let res = self.engine_store_server_helper.handle_ingest_sst(
+            sst_views,
+            RaftCmdHeader::new(ob_ctx.region().get_id(), index, term),
+        );
+        res
+    }
+
+    fn handle_error_apply(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        cmd: &Cmd,
+
+        region_state: &RegionState,
+    ) -> bool {
+        // We still need to pass a dummy cmd, to forward updates.
+        let cmd_dummy = WriteCmds::new();
+        let flash_res = self.engine_store_server_helper.handle_write_raft_cmd(
+            &cmd_dummy,
+            RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+        );
+        match flash_res {
+            EngineStoreApplyRes::None => false,
+            EngineStoreApplyRes::Persist => !region_state.pending_remove,
+            EngineStoreApplyRes::NotFound => false,
+        }
     }
 }
 
@@ -198,7 +301,6 @@ impl AdminObserver for TiFlashObserver {
         false
     }
 
-
     fn post_exec_admin(
         &self,
         ob_ctx: &mut ObserverContext<'_>,
@@ -219,12 +321,7 @@ impl AdminObserver for TiFlashObserver {
                 "error occurs when apply_raft_cmd, {:?}",
                 response.get_header().get_error()
             );
-            // We still need to pass a dummy cmd, to forward updates.
-            let cmd_dummy = crate::WriteCmds::new();
-            self.engine_store_server_helper.handle_write_raft_cmd(
-                &cmd_dummy,
-                RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
-            );
+            return self.handle_error_apply(ob_ctx, cmd, region_state);
         }
 
         match cmd_type {
@@ -292,8 +389,11 @@ impl AdminObserver for TiFlashObserver {
         let persist = match flash_res {
             EngineStoreApplyRes::None => {
                 if cmd_type == AdminCmdType::CompactLog {
+                    // This could only happen in mock-engine-store when we perform some related tests.
+                    // Formal code should never return None for CompactLog now.
+                    // If CompactLog can't be done, the engine-store should return `false` in previous `try_flush_data`.
                     error!("applying CompactLog should not return None"; "region_id" => ob_ctx.region().get_id(),
-                            "peer_id" => region_state.peer_id, "state" => ?apply_state);
+                            "peer_id" => region_state.peer_id, "apply_state" => ?apply_state, "cmd" => ?cmd);
                 }
                 false
             }
@@ -347,33 +447,28 @@ impl QueryObserver for TiFlashObserver {
                 "error occurs when apply_raft_cmd, {:?}",
                 response.get_header().get_error()
             );
-            // We still need to pass a dummy cmd, to forward updates.
-            let cmd_dummy = crate::WriteCmds::new();
-            self.engine_store_server_helper.handle_write_raft_cmd(
-                &cmd_dummy,
-                RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
-            );
+            return self.handle_error_apply(ob_ctx, cmd, region_state);
         }
 
         let mut ssts = vec![];
-        let mut cmds = crate::WriteCmds::with_capacity(requests.len());
+        let mut cmds = WriteCmds::with_capacity(requests.len());
         for req in requests {
             let cmd_type = req.get_cmd_type();
             match cmd_type {
                 CmdType::Put => {
                     let put = req.get_put();
-                    let cf = crate::name_to_cf(put.get_cf());
+                    let cf = name_to_cf(put.get_cf());
                     let (key, value) = (put.get_key(), put.get_value());
                     cmds.push(key, value, WriteCmdType::Put, cf);
                 }
                 CmdType::Delete => {
                     let del = req.get_delete();
-                    let cf = crate::name_to_cf(del.get_cf());
+                    let cf = name_to_cf(del.get_cf());
                     let key = del.get_key();
                     cmds.push(key, NONE_STR.as_ref(), WriteCmdType::Del, cf);
                 }
                 CmdType::IngestSst => {
-                    ssts.push(engine_traits::SSTMetaInfo {
+                    ssts.push(engine_traits::SstMetaInfo {
                         total_bytes: 0,
                         total_kvs: 0,
                         meta: req.get_ingest_sst().get_sst().clone(),
@@ -397,6 +492,9 @@ impl QueryObserver for TiFlashObserver {
                     // Before, BR/Lightning may let ingest sst cmd contain only one cf,
                     // which may cause that TiFlash can not flush all region cache into column.
                     // so we have a optimization proxy@cee1f003.
+                    // The optimization is to introduce a `pending_clean_ssts`,
+                    // which holds ssts from being cleaned(by adding into `delete_ssts`),
+                    // when engine-store returns None.
                     // However, since this is fixed in tiflash#1811,
                     // this optimization is no longer necessary.
                     // We will print a error here.
@@ -421,7 +519,7 @@ impl QueryObserver for TiFlashObserver {
                         "ssts_to_clean" => ?ssts,
                         "sst cf" => ssts.len(),
                     );
-                    true
+                    !region_state.pending_remove
                 }
             }
         } else {

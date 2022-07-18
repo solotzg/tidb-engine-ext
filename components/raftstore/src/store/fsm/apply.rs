@@ -71,7 +71,9 @@ use self::memtrace::*;
 use super::metrics::*;
 use crate::{
     bytes_capacity,
-    coprocessor::{Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel, RegionState},
+    coprocessor::{
+        Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel, RegionState,
+    },
     engine_store_ffi::{
         ColumnFamilyType, EngineStoreApplyRes, RaftCmdHeader, WriteCmdType, WriteCmds,
     },
@@ -492,8 +494,14 @@ where
     /// write the changes into rocksdb.
     ///
     /// This call is valid only when it's between a `prepare_for` and `finish_for`.
-    pub fn commit(&mut self, _delegate: &mut ApplyDelegate<EK>) {
-        unreachable!()
+    pub fn commit(&mut self, delegate: &mut ApplyDelegate<EK>) {
+        // TODO(tiflash): pengding PR https://github.com/tikv/tikv/pull/12957.
+        // We always persist advanced apply state here.
+        // However, it should not be called from `handle_raft_entry_normal`.
+        if delegate.last_flush_applied_index < delegate.apply_state.get_applied_index() {
+            delegate.write_apply_state(self.kv_wb_mut());
+        }
+        self.commit_opt(delegate, true);
     }
 
     fn commit_opt(&mut self, delegate: &mut ApplyDelegate<EK>, persistent: bool) {
@@ -1240,19 +1248,19 @@ where
         // E.g. `RaftApplyState` must not be changed.
 
         let mut origin_epoch = None;
-        let (resp, exec_result, flash_res) = if ctx.host.pre_exec(&self.region, req) {
+        let (resp, exec_result) = if ctx.host.pre_exec(&self.region, req) {
             // One of the observers want to filter execution of the command.
             let mut resp = RaftCmdResponse::default();
             if !req.get_header().get_uuid().is_empty() {
                 let uuid = req.get_header().get_uuid().to_vec();
                 resp.mut_header().set_uuid(uuid);
             }
-            (resp, ApplyResult::None, EngineStoreApplyRes::None)
+            (resp, ApplyResult::None)
         } else {
             ctx.exec_log_index = index;
             ctx.exec_log_term = term;
             ctx.kv_wb_mut().set_save_point();
-            let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, req) {
+            let (resp, exec_result) = match self.exec_raft_cmd(ctx, req) {
                 Ok(a) => {
                     ctx.kv_wb_mut().pop_save_point().unwrap();
                     if req.has_admin_request() {
@@ -1276,22 +1284,10 @@ where
                             "peer_id" => self.id(),
                         ),
                     }
-                    {
-                        // hacked by solotzg.
-                        let cmds = WriteCmds::new();
-                        ctx.engine_store_server_helper.handle_write_raft_cmd(
-                            &cmds,
-                            RaftCmdHeader::new(self.region.get_id(), index, term),
-                        );
-                    }
-                    (
-                        cmd_resp::new_error(e),
-                        ApplyResult::None,
-                        EngineStoreApplyRes::None,
-                    )
+                    (cmd_resp::new_error(e), ApplyResult::None)
                 }
             };
-            (resp, exec_result, flash_res)
+            (resp, exec_result)
         };
         if let ApplyResult::WaitMergeSource(_) = exec_result {
             return (resp, exec_result, false);
@@ -1421,11 +1417,7 @@ where
         &mut self,
         ctx: &mut ApplyContext<EK>,
         req: &RaftCmdRequest,
-    ) -> Result<(
-        RaftCmdResponse,
-        ApplyResult<EK::Snapshot>,
-        EngineStoreApplyRes,
-    )> {
+    ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
         // Include region for epoch not match after merge may cause key not in range.
         let include_region =
             req.get_header().get_region_epoch().get_version() >= self.last_merge_version;
@@ -1441,46 +1433,29 @@ where
         &mut self,
         ctx: &mut ApplyContext<EK>,
         req: &RaftCmdRequest,
-    ) -> Result<(
-        RaftCmdResponse,
-        ApplyResult<EK::Snapshot>,
-        EngineStoreApplyRes,
-    )> {
+    ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
         let request = req.get_admin_request();
         let cmd_type = request.get_cmd_type();
-
-        match cmd_type {
-            AdminCmdType::CompactLog | AdminCmdType::CommitMerge => {}
-            AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
-                info!(
-                    "useless admin command";
-                    "region_id" => self.region_id(),
-                    "term" => ctx.exec_log_term,
-                    "index" => ctx.exec_log_index,
-                    "type" => ?cmd_type,
-                );
-            }
-            _ => {
-                info!(
-                    "execute admin command";
-                    "region_id" => self.region_id(),
-                    "peer_id" => self.id(),
-                    "term" => ctx.exec_log_term,
-                    "index" => ctx.exec_log_index,
-                    "command" => ?request
-                );
-            }
+        if cmd_type != AdminCmdType::CompactLog && cmd_type != AdminCmdType::CommitMerge {
+            info!(
+                "execute admin command";
+                "region_id" => self.region_id(),
+                "peer_id" => self.id(),
+                "term" => ctx.exec_log_term,
+                "index" => ctx.exec_log_index,
+                "command" => ?request,
+            );
         }
 
-        let (mut response, mut exec_result) = match cmd_type {
+        let (mut response, exec_result) = match cmd_type {
             AdminCmdType::ChangePeer => self.exec_change_peer(ctx, request),
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
             AdminCmdType::Split => self.exec_split(ctx, request),
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
             AdminCmdType::CompactLog => self.exec_compact_log(request),
             AdminCmdType::TransferLeader => self.exec_transfer_leader(request, ctx.exec_log_term),
-            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request), // Will filtered by pre_exec
-            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request), // Will filtered by pre_exec
+            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request),
+            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request),
             // TODO: is it backward compatible to add new cmd_type?
             AdminCmdType::PrepareMerge => self.exec_prepare_merge(ctx, request),
             AdminCmdType::CommitMerge => self.exec_commit_merge(ctx, request),
@@ -1494,79 +1469,65 @@ where
             let uuid = req.get_header().get_uuid().to_vec();
             resp.mut_header().set_uuid(uuid);
         }
-
-        let flash_res = if let ApplyResult::WaitMergeSource(_) = &exec_result {
-            EngineStoreApplyRes::None
-        } else {
-            ctx.engine_store_server_helper.handle_admin_raft_cmd(
-                &request,
-                &response,
-                RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
-            )
-        };
-
         resp.set_admin_response(response);
-        Ok((resp, exec_result, flash_res))
+        Ok((resp, exec_result))
     }
 
     fn exec_write_cmd(
         &mut self,
         ctx: &mut ApplyContext<EK>,
         req: &RaftCmdRequest,
-    ) -> Result<(
-        RaftCmdResponse,
-        ApplyResult<EK::Snapshot>,
-        EngineStoreApplyRes,
-    )> {
-        const NONE_STR: &str = "";
+    ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
+        fail_point!(
+            "on_apply_write_cmd",
+            cfg!(release) || self.id() == 3,
+            |_| {
+                unimplemented!();
+            }
+        );
+
         let requests = req.get_requests();
+
+        let mut ranges = vec![];
         let mut ssts = vec![];
-        let mut cmds = WriteCmds::with_capacity(requests.len());
         for req in requests {
             let cmd_type = req.get_cmd_type();
             match cmd_type {
-                CmdType::Put => {
-                    let put = req.get_put();
-                    let cf = crate::engine_store_ffi::name_to_cf(put.get_cf());
-                    let (key, value) = (put.get_key(), put.get_value());
-                    if cf != ColumnFamilyType::Lock {
-                        self.metrics.size_diff_hint += key.len() as i64 + value.len() as i64;
-                        self.metrics.written_bytes += key.len() as u64 + value.len() as u64;
-                        self.metrics.written_keys += 1;
-                    }
-                    cmds.push(key, value, WriteCmdType::Put, cf);
+                CmdType::Put => self.handle_put(ctx, req),
+                CmdType::Delete => self.handle_delete(ctx, req),
+                CmdType::DeleteRange => {
+                    self.handle_delete_range(&ctx.engine, req, &mut ranges, ctx.use_delete_range)
                 }
-                CmdType::Delete => {
-                    let del = req.get_delete();
-                    let cf = crate::engine_store_ffi::name_to_cf(del.get_cf());
-                    let key = del.get_key();
-                    if cf != ColumnFamilyType::Lock {
-                        self.metrics.size_diff_hint -= key.len() as i64;
-                        self.metrics.delete_keys_hint += 1;
-                        self.metrics.written_bytes += key.len() as u64;
-                        self.metrics.written_keys += 1;
-                    }
-                    cmds.push(key, NONE_STR.as_ref(), WriteCmdType::Del, cf);
-                }
-                CmdType::IngestSst => {
-                    ssts.push(SstMetaInfo {
-                        total_bytes: 0,
-                        total_kvs: 0,
-                        meta: req.get_ingest_sst().get_sst().clone(),
-                    });
-                }
-                CmdType::Snap | CmdType::Get | CmdType::DeleteRange => {
-                    // engine-store will drop table, no need DeleteRange
+                CmdType::IngestSst => self.handle_ingest_sst(ctx, req, &mut ssts),
+                // Readonly commands are handled in raftstore directly.
+                // Don't panic here in case there are old entries need to be applied.
+                // It's also safe to skip them here, because a restart must have happened,
+                // hence there is no callback to be called.
+                CmdType::Snap | CmdType::Get => {
+                    warn!(
+                        "skip readonly command";
+                        "region_id" => self.region_id(),
+                        "peer_id" => self.id(),
+                        "command" => ?req,
+                    );
                     continue;
                 }
                 CmdType::Prewrite | CmdType::Invalid | CmdType::ReadIndex => {
-                    panic!("invalid cmd type, message maybe currupted");
+                    Err(box_err!("invalid cmd type, message maybe corrupted"))
                 }
-            }
+            }?;
         }
 
-        return if !ssts.is_empty() {
-            assert_eq!(cmds.len(), 0);
+        let mut resp = RaftCmdResponse::default();
+        if !req.get_header().get_uuid().is_empty() {
+            let uuid = req.get_header().get_uuid().to_vec();
+            resp.mut_header().set_uuid(uuid);
+        }
+
+        assert!(ranges.is_empty() || ssts.is_empty());
+        let exec_res = if !ranges.is_empty() {
+            ApplyResult::Res(ExecResult::DeleteRange { ranges })
+        } else if !ssts.is_empty() {
             #[cfg(feature = "failpoints")]
             {
                 let mut dont_delete_ingested_sst_fp = || {
@@ -1576,51 +1537,13 @@ where
                 };
                 dont_delete_ingested_sst_fp();
             }
-            match self.handle_ingest_sst_for_engine_store(&ctx, &ssts) {
-                EngineStoreApplyRes::None => {
-                    self.pending_clean_ssts.append(&mut ssts);
-                    info!(
-                        "skip persist for ingest sst";
-                        "region_id" => self.region_id(),
-                        "peer_id" => self.id(),
-                        "term" => ctx.exec_log_term,
-                        "index" => ctx.exec_log_index,
-                        "pending_ssts" => ?self.pending_clean_ssts
-                    );
-
-                    Ok((
-                        RaftCmdResponse::new(),
-                        ApplyResult::None,
-                        EngineStoreApplyRes::None,
-                    ))
-                }
-                EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
-                    ssts.append(&mut self.pending_clean_ssts);
-                    info!(
-                        "ingest sst success";
-                        "region_id" => self.region_id(),
-                        "peer_id" => self.id(),
-                        "term" => ctx.exec_log_term,
-                        "index" => ctx.exec_log_index,
-                        "ssts_to_clean" => ?ssts
-                    );
-                    ctx.delete_ssts.append(&mut ssts.clone());
-                    Ok((
-                        RaftCmdResponse::new(),
-                        ApplyResult::Res(ExecResult::IngestSst { ssts }),
-                        EngineStoreApplyRes::Persist,
-                    ))
-                }
-            }
+            ctx.delete_ssts.append(&mut ssts.clone());
+            ApplyResult::Res(ExecResult::IngestSst { ssts })
         } else {
-            let flash_res = {
-                ctx.engine_store_server_helper.handle_write_raft_cmd(
-                    &cmds,
-                    RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
-                )
-            };
-            Ok((RaftCmdResponse::new(), ApplyResult::None, flash_res))
+            ApplyResult::None
         };
+
+        Ok((resp, exec_res))
     }
 }
 
@@ -1651,26 +1574,28 @@ where
                 self.metrics.lock_cf_written_bytes += value.len() as u64;
             }
             // TODO: check whether cf exists or not.
-            ctx.kv_wb.put_cf(cf, key, value).unwrap_or_else(|e| {
-                panic!(
-                    "{} failed to write ({}, {}) to cf {}: {:?}",
-                    self.tag,
-                    log_wrappers::Value::key(key),
-                    log_wrappers::Value::value(value),
-                    cf,
-                    e
-                )
-            });
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // ctx.kv_wb.put_cf(cf, key, value).unwrap_or_else(|e| {
+            //     panic!(
+            //         "{} failed to write ({}, {}) to cf {}: {:?}",
+            //         self.tag,
+            //         log_wrappers::Value::key(key),
+            //         log_wrappers::Value::value(value),
+            //         cf,
+            //         e
+            //     )
+            // });
         } else {
-            ctx.kv_wb.put(key, value).unwrap_or_else(|e| {
-                panic!(
-                    "{} failed to write ({}, {}): {:?}",
-                    self.tag,
-                    log_wrappers::Value::key(key),
-                    log_wrappers::Value::value(value),
-                    e
-                );
-            });
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // ctx.kv_wb.put(key, value).unwrap_or_else(|e| {
+            //     panic!(
+            //         "{} failed to write ({}, {}): {:?}",
+            //         self.tag,
+            //         log_wrappers::Value::key(key),
+            //         log_wrappers::Value::value(value),
+            //         e
+            //     );
+            // });
         }
         Ok(())
     }
@@ -1692,14 +1617,15 @@ where
         if !req.get_delete().get_cf().is_empty() {
             let cf = req.get_delete().get_cf();
             // TODO: check whether cf exists or not.
-            ctx.kv_wb.delete_cf(cf, key).unwrap_or_else(|e| {
-                panic!(
-                    "{} failed to delete {}: {}",
-                    self.tag,
-                    log_wrappers::Value::key(key),
-                    e
-                )
-            });
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // ctx.kv_wb.delete_cf(cf, key).unwrap_or_else(|e| {
+            //     panic!(
+            //         "{} failed to delete {}: {}",
+            //         self.tag,
+            //         log_wrappers::Value::key(key),
+            //         e
+            //     )
+            // });
 
             if cf == CF_LOCK {
                 // delete is a kind of write for RocksDB.
@@ -1708,14 +1634,15 @@ where
                 self.metrics.delete_keys_hint += 1;
             }
         } else {
-            ctx.kv_wb.delete(key).unwrap_or_else(|e| {
-                panic!(
-                    "{} failed to delete {}: {}",
-                    self.tag,
-                    log_wrappers::Value::key(key),
-                    e
-                )
-            });
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // ctx.kv_wb.delete(key).unwrap_or_else(|e| {
+            //     panic!(
+            //         "{} failed to delete {}: {}",
+            //         self.tag,
+            //         log_wrappers::Value::key(key),
+            //         e
+            //     )
+            // });
             self.metrics.delete_keys_hint += 1;
         }
 
@@ -1771,22 +1698,26 @@ where
                     e
                 )
             };
-            engine
-                .delete_ranges_cf(cf, DeleteStrategy::DeleteFiles, &range)
-                .unwrap_or_else(|e| fail_f(e, DeleteStrategy::DeleteFiles));
+
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // engine
+            //     .delete_ranges_cf(cf, DeleteStrategy::DeleteFiles, &range)
+            //     .unwrap_or_else(|e| fail_f(e, DeleteStrategy::DeleteFiles));
 
             let strategy = if use_delete_range {
                 DeleteStrategy::DeleteByRange
             } else {
                 DeleteStrategy::DeleteByKey
             };
+
+            // TOOD(tiflash): open this comment if we finish engine_tiflash.
             // Delete all remaining keys.
-            engine
-                .delete_ranges_cf(cf, strategy.clone(), &range)
-                .unwrap_or_else(move |e| fail_f(e, strategy));
-            engine
-                .delete_ranges_cf(cf, DeleteStrategy::DeleteBlobs, &range)
-                .unwrap_or_else(move |e| fail_f(e, DeleteStrategy::DeleteBlobs));
+            // engine
+            //     .delete_ranges_cf(cf, strategy.clone(), &range)
+            //     .unwrap_or_else(move |e| fail_f(e, strategy));
+            // engine
+            //     .delete_ranges_cf(cf, DeleteStrategy::DeleteBlobs, &range)
+            //     .unwrap_or_else(move |e| fail_f(e, DeleteStrategy::DeleteBlobs));
         }
 
         // TODO: Should this be executed when `notify_only` is set?
