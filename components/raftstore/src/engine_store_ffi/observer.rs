@@ -15,7 +15,6 @@ use kvproto::{
 };
 use sst_importer::SstImporter;
 use tikv_util::{box_err, debug, error, info};
-use uuid::Builder as UuidBuilder;
 use yatp::{
     pool::{Builder, ThreadPool},
     task::future::TaskCell,
@@ -33,7 +32,7 @@ use crate::{
         name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr,
         TiFlashEngine, WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
     },
-    store::{util, SnapKey},
+    store::{check_sst_for_ingestion, SnapKey},
     Error, Result,
 };
 
@@ -111,38 +110,6 @@ impl Clone for TiFlashObserver {
 
 // TiFlash observer's priority should be higher than all other observers, to avoid being bypassed.
 const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
-
-fn check_sst_for_ingestion(sst: &SstMeta, region: &Region) -> Result<()> {
-    let uuid = sst.get_uuid();
-    if let Err(e) = UuidBuilder::from_slice(uuid) {
-        return Err(box_err!("invalid uuid {:?}: {:?}", uuid, e));
-    }
-
-    let cf_name = sst.get_cf_name();
-    if cf_name != CF_DEFAULT && cf_name != CF_WRITE {
-        return Err(box_err!("invalid cf name {}", cf_name));
-    }
-
-    let region_id = sst.get_region_id();
-    if region_id != region.get_id() {
-        return Err(Error::RegionNotFound(region_id));
-    }
-
-    let epoch = sst.get_region_epoch();
-    let region_epoch = region.get_region_epoch();
-    if epoch.get_conf_ver() != region_epoch.get_conf_ver()
-        || epoch.get_version() != region_epoch.get_version()
-    {
-        let error = format!("{:?} != {:?}", epoch, region_epoch);
-        return Err(Error::EpochNotMatch(error, vec![region.clone()]));
-    }
-
-    let range = sst.get_range();
-    util::check_key_in_region(range.get_start(), region)?;
-    util::check_key_in_region(range.get_end(), region)?;
-
-    Ok(())
-}
 
 impl TiFlashObserver {
     pub fn new(
