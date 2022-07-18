@@ -196,6 +196,120 @@ impl AdminObserver for TiFlashObserver {
         };
         false
     }
+
+
+    fn post_exec_admin(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        cmd: &Cmd,
+        apply_state: &RaftApplyState,
+        region_state: &RegionState,
+    ) -> bool {
+        fail::fail_point!("on_post_exec_admin", |e| {
+            e.unwrap().parse::<bool>().unwrap()
+        });
+        let request = cmd.request.get_admin_request();
+        let response = &cmd.response;
+        let admin_reponse = response.get_admin_response();
+        let cmd_type = request.get_cmd_type();
+
+        if response.get_header().has_error() {
+            debug!(
+                "error occurs when apply_raft_cmd, {:?}",
+                response.get_header().get_error()
+            );
+            // We still need to pass a dummy cmd, to forward updates.
+            let cmd_dummy = crate::WriteCmds::new();
+            self.engine_store_server_helper.handle_write_raft_cmd(
+                &cmd_dummy,
+                RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+            );
+        }
+
+        match cmd_type {
+            AdminCmdType::CompactLog | AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
+                info!(
+                    "useless admin command";
+                    "region_id" => ob_ctx.region().get_id(),
+                    "peer_id" => region_state.peer_id,
+                    "term" => cmd.term,
+                    "index" => cmd.index,
+                    "type" => ?cmd_type,
+                );
+            }
+            _ => {
+                info!(
+                    "execute admin command";
+                    "region_id" => ob_ctx.region().get_id(),
+                    "peer_id" => region_state.peer_id,
+                    "term" => cmd.term,
+                    "index" => cmd.index,
+                    "command" => ?request
+                );
+            }
+        }
+
+        // We wrap `modified_region` into `mut_split()`
+        let mut new_response = None;
+        match cmd_type {
+            AdminCmdType::CommitMerge
+            | AdminCmdType::PrepareMerge
+            | AdminCmdType::RollbackMerge => {
+                let mut r = AdminResponse::default();
+                match region_state.modified_region.as_ref() {
+                    Some(region) => r.mut_split().set_left(region.clone()),
+                    None => {
+                        error!("empty modified region";
+                            "region_id" => ob_ctx.region().get_id(),
+                            "peer_id" => region_state.peer_id,
+                            "term" => cmd.term,
+                            "index" => cmd.index,
+                            "command" => ?request
+                        );
+                        panic!("empty modified region");
+                    }
+                }
+                new_response = Some(r);
+            }
+            _ => (),
+        }
+
+        let flash_res = {
+            match new_response {
+                Some(r) => self.engine_store_server_helper.handle_admin_raft_cmd(
+                    request,
+                    &r,
+                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                ),
+                None => self.engine_store_server_helper.handle_admin_raft_cmd(
+                    request,
+                    admin_reponse,
+                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                ),
+            }
+        };
+        let persist = match flash_res {
+            EngineStoreApplyRes::None => {
+                if cmd_type == AdminCmdType::CompactLog {
+                    error!("applying CompactLog should not return None"; "region_id" => ob_ctx.region().get_id(),
+                            "peer_id" => region_state.peer_id, "state" => ?apply_state);
+                }
+                false
+            }
+            EngineStoreApplyRes::Persist => !region_state.pending_remove,
+            EngineStoreApplyRes::NotFound => {
+                error!(
+                    "region not found in engine-store, maybe have exec `RemoveNode` first";
+                    "region_id" => ob_ctx.region().get_id(),
+                    "peer_id" => region_state.peer_id,
+                    "term" => cmd.term,
+                    "index" => cmd.index,
+                );
+                !region_state.pending_remove
+            }
+        };
+        persist
+    }
 }
 
 impl QueryObserver for TiFlashObserver {
@@ -212,5 +326,119 @@ impl QueryObserver for TiFlashObserver {
             &cmd_dummy,
             RaftCmdHeader::new(ob_ctx.region().get_id(), index, term),
         );
+    }
+
+    fn post_exec_query(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        cmd: &Cmd,
+        apply_state: &RaftApplyState,
+        region_state: &RegionState,
+    ) -> bool {
+        fail::fail_point!("on_post_exec_normal", |e| {
+            e.unwrap().parse::<bool>().unwrap()
+        });
+        const NONE_STR: &str = "";
+        let requests = cmd.request.get_requests();
+        let response = &cmd.response;
+        if response.get_header().has_error() {
+            debug!(
+                "error occurs when apply_raft_cmd, {:?}",
+                response.get_header().get_error()
+            );
+            // We still need to pass a dummy cmd, to forward updates.
+            let cmd_dummy = crate::WriteCmds::new();
+            self.engine_store_server_helper.handle_write_raft_cmd(
+                &cmd_dummy,
+                RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+            );
+        }
+
+        let mut ssts = vec![];
+        let mut cmds = crate::WriteCmds::with_capacity(requests.len());
+        for req in requests {
+            let cmd_type = req.get_cmd_type();
+            match cmd_type {
+                CmdType::Put => {
+                    let put = req.get_put();
+                    let cf = crate::name_to_cf(put.get_cf());
+                    let (key, value) = (put.get_key(), put.get_value());
+                    cmds.push(key, value, WriteCmdType::Put, cf);
+                }
+                CmdType::Delete => {
+                    let del = req.get_delete();
+                    let cf = crate::name_to_cf(del.get_cf());
+                    let key = del.get_key();
+                    cmds.push(key, NONE_STR.as_ref(), WriteCmdType::Del, cf);
+                }
+                CmdType::IngestSst => {
+                    ssts.push(engine_traits::SSTMetaInfo {
+                        total_bytes: 0,
+                        total_kvs: 0,
+                        meta: req.get_ingest_sst().get_sst().clone(),
+                    });
+                }
+                CmdType::Snap | CmdType::Get | CmdType::DeleteRange => {
+                    // engine-store will drop table, no need DeleteRange
+                    // We will filter delete range in engine_tiflash
+                    continue;
+                }
+                CmdType::Prewrite | CmdType::Invalid | CmdType::ReadIndex => {
+                    panic!("invalid cmd type, message maybe corrupted");
+                }
+            }
+        }
+
+        let persist = if !ssts.is_empty() {
+            assert_eq!(cmds.len(), 0);
+            match self.handle_ingest_sst_for_engine_store(ob_ctx, &ssts, cmd.index, cmd.term) {
+                EngineStoreApplyRes::None => {
+                    // Before, BR/Lightning may let ingest sst cmd contain only one cf,
+                    // which may cause that TiFlash can not flush all region cache into column.
+                    // so we have a optimization proxy@cee1f003.
+                    // However, since this is fixed in tiflash#1811,
+                    // this optimization is no longer necessary.
+                    // We will print a error here.
+                    error!(
+                        "should not skip persist for ingest sst";
+                        "region_id" => ob_ctx.region().get_id(),
+                        "peer_id" => region_state.peer_id,
+                        "term" => cmd.term,
+                        "index" => cmd.index,
+                        "ssts_to_clean" => ?ssts,
+                        "sst cf" => ssts.len(),
+                    );
+                    false
+                }
+                EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
+                    info!(
+                        "ingest sst success";
+                        "region_id" => ob_ctx.region().get_id(),
+                        "peer_id" => region_state.peer_id,
+                        "term" => cmd.term,
+                        "index" => cmd.index,
+                        "ssts_to_clean" => ?ssts,
+                        "sst cf" => ssts.len(),
+                    );
+                    true
+                }
+            }
+        } else {
+            let flash_res = {
+                self.engine_store_server_helper.handle_write_raft_cmd(
+                    &cmds,
+                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                )
+            };
+            match flash_res {
+                EngineStoreApplyRes::None => false,
+                EngineStoreApplyRes::Persist => !region_state.pending_remove,
+                EngineStoreApplyRes::NotFound => false,
+            }
+        };
+        fail::fail_point!("on_post_exec_normal_end", |e| {
+            e.unwrap().parse::<bool>().unwrap()
+        });
+        persist
     }
 }

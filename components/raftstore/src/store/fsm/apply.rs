@@ -71,7 +71,7 @@ use self::memtrace::*;
 use super::metrics::*;
 use crate::{
     bytes_capacity,
-    coprocessor::{Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel},
+    coprocessor::{Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel, RegionState},
     engine_store_ffi::{
         ColumnFamilyType, EngineStoreApplyRes, RaftCmdHeader, WriteCmdType, WriteCmds,
     },
@@ -294,6 +294,7 @@ pub enum ExecResult<S> {
 }
 
 /// The possible returned value when applying logs.
+#[derive(Debug)]
 pub enum ApplyResult<S> {
     None,
     Yield,
@@ -1189,7 +1190,8 @@ where
         apply_ctx.sync_log_hint |= should_sync_log(&cmd);
 
         apply_ctx.host.pre_apply(&self.region, &cmd);
-        let (mut resp, exec_result) = self.apply_raft_cmd(apply_ctx, index, term, &cmd);
+        let (mut resp, exec_result, should_write) =
+            self.apply_raft_cmd(apply_ctx, index, term, &cmd);
         if let ApplyResult::WaitMergeSource(_) = exec_result {
             return exec_result;
         }
@@ -1205,10 +1207,14 @@ where
         // store will call it after handing exec result.
         cmd_resp::bind_term(&mut resp, self.term);
         let cmd_cb = self.find_pending(index, term, is_conf_change_cmd(&cmd));
-        let cmd = Cmd::new(index, cmd, resp);
+        let cmd = Cmd::new(index, term, cmd, resp);
         apply_ctx
             .applied_batch
             .push(cmd_cb, cmd, &self.observe_info, self.region_id());
+        if should_write {
+            debug!("persist data and apply state"; "region_id" => self.region_id(), "peer_id" => self.id(), "state" => ?self.apply_state);
+            apply_ctx.commit(self);
+        }
         exec_result
     }
 
@@ -1226,7 +1232,7 @@ where
         index: u64,
         term: u64,
         req: &RaftCmdRequest,
-    ) -> (RaftCmdResponse, ApplyResult<EK::Snapshot>) {
+    ) -> (RaftCmdResponse, ApplyResult<EK::Snapshot>, bool) {
         // if pending remove, apply should be aborted already.
         assert!(!self.pending_remove);
 
@@ -1288,35 +1294,32 @@ where
             (resp, exec_result, flash_res)
         };
         if let ApplyResult::WaitMergeSource(_) = exec_result {
-            return (resp, exec_result);
+            return (resp, exec_result, false);
         }
 
         self.apply_state.set_applied_index(index);
         self.applied_index_term = term;
 
-        let need_write_apply_state = match flash_res {
-            EngineStoreApplyRes::Persist => true,
-            EngineStoreApplyRes::NotFound => {
-                if req.has_admin_request() {
-                    error!(
-                        "region not found in engine-store, maybe have exec `RemoveNode` first";
-                        "region_id" => self.region_id(),
-                        "peer_id" => self.id(),
-                        "term" => term,
-                        "index" => index,
-                    );
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
-
-        if need_write_apply_state && !self.pending_remove {
-            info!("persist apply state"; "region_id" => self.region_id(), "peer_id" => self.id(), "state" => ?self.apply_state);
-            self.write_apply_state(ctx.kv_wb_mut());
-        }
+        let cmd = Cmd::new(index, term, req.clone(), resp.clone());
+        let should_write = ctx.host.post_exec(
+            &self.region,
+            &cmd,
+            &self.apply_state,
+            &RegionState {
+                peer_id: self.id(),
+                pending_remove: self.pending_remove,
+                modified_region: match exec_result {
+                    ApplyResult::Res(ref e) => match e {
+                        ExecResult::SplitRegion { ref derived, .. } => Some(derived.clone()),
+                        ExecResult::PrepareMerge { ref region, .. } => Some(region.clone()),
+                        ExecResult::CommitMerge { ref region, .. } => Some(region.clone()),
+                        ExecResult::RollbackMerge { ref region, .. } => Some(region.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+            },
+        );
 
         if let ApplyResult::Res(ref exec_result) = exec_result {
             match *exec_result {
@@ -1368,7 +1371,7 @@ where
             }
         }
 
-        (resp, exec_result)
+        (resp, exec_result, should_write)
     }
 
     fn destroy(&mut self, apply_ctx: &mut ApplyContext<EK>) {
@@ -5024,6 +5027,14 @@ mod tests {
             self
         }
 
+        fn prepare_merge(mut self, target: metapb::Region) -> EntryBuilder {
+            let mut request = AdminRequest::default();
+            request.set_cmd_type(AdminCmdType::PrepareMerge);
+            request.mut_prepare_merge().set_target(target);
+            self.req.set_admin_request(request);
+            self
+        }
+
         fn compact_log(mut self, index: u64, term: u64) -> EntryBuilder {
             let mut req = AdminRequest::default();
             req.set_cmd_type(AdminCmdType::CompactLog);
@@ -5070,6 +5081,27 @@ mod tests {
     }
 
     impl AdminObserver for ApplyObserver {
+        fn post_exec_admin(
+            &self,
+            _: &mut ObserverContext<'_>,
+            cmd: &Cmd,
+            _: &RaftApplyState,
+            region_state: &RegionState,
+        ) -> bool {
+            let request = cmd.request.get_admin_request();
+            match request.get_cmd_type() {
+                AdminCmdType::CompactLog => true,
+                AdminCmdType::CommitMerge
+                | AdminCmdType::PrepareMerge
+                | AdminCmdType::RollbackMerge => {
+                    assert!(region_state.modified_region.is_some());
+                    true
+                }
+                AdminCmdType::BatchSplit => true,
+                _ => false,
+            }
+        }
+
         fn pre_exec_admin(&self, _: &mut ObserverContext<'_>, req: &AdminRequest) -> bool {
             let cmd_type = req.get_cmd_type();
             if cmd_type == AdminCmdType::CompactLog
@@ -5742,7 +5774,7 @@ mod tests {
             region_scheduler,
             coprocessor_host: host,
             importer,
-            engine,
+            engine: engine.clone(),
             router: router.clone(),
             store_id: 1,
             pending_create_peers,
@@ -5762,13 +5794,16 @@ mod tests {
         router.schedule_task(1, Msg::Registration(reg));
 
         let mut index_id = 1;
-        let put_entry = EntryBuilder::new(1, 1)
+        let put_entry = EntryBuilder::new(index_id, 1)
             .put(b"k1", b"v1")
+            .put(b"k2", b"v2")
+            .put(b"k3", b"v3")
             .epoch(1, 3)
             .build();
         router.schedule_task(1, Msg::apply(apply(peer_id, 1, 1, vec![put_entry], vec![])));
         fetch_apply_res(&rx);
 
+        // Phase 1: we test if pre_exec will filter execution of commands correctly.
         index_id += 1;
         let compact_entry = EntryBuilder::new(index_id, 1)
             .compact_log(index_id - 1, 2)
@@ -5824,6 +5859,51 @@ mod tests {
         // We can't get exec result of ComputeHash.
         assert_eq!(apply_res.exec_res.len(), 0);
         obs.filter_consistency_check.store(false, Ordering::SeqCst);
+
+        // Phase 2: we test if post_exec will persist when need.
+        // We choose BatchSplit in order to make sure `modified_region` is filled.
+        index_id += 1;
+        let mut splits = BatchSplitRequest::default();
+        splits.set_right_derive(true);
+        splits.mut_requests().push(new_split_req(b"k2", 8, vec![7]));
+        let split = EntryBuilder::new(index_id, 1)
+            .split(splits)
+            .epoch(1, 3)
+            .build();
+        router.schedule_task(1, Msg::apply(apply(peer_id, 1, 1, vec![split], vec![])));
+        let apply_res = fetch_apply_res(&rx);
+        assert_eq!(apply_res.apply_state.get_applied_index(), index_id);
+        assert_eq!(apply_res.applied_index_term, 1);
+        let (_, r8) = if let ExecResult::SplitRegion {
+            regions,
+            derived: _,
+            new_split_regions: _,
+        } = apply_res.exec_res.front().unwrap()
+        {
+            let r8 = regions.get(0).unwrap();
+            let r1 = regions.get(1).unwrap();
+            assert_eq!(r8.get_id(), 8);
+            assert_eq!(r1.get_id(), 1);
+            (r1, r8)
+        } else {
+            panic!("error split exec_res");
+        };
+
+        index_id += 1;
+        let merge = EntryBuilder::new(index_id, 1)
+            .prepare_merge(r8.clone())
+            .epoch(1, 3)
+            .build();
+        router.schedule_task(1, Msg::apply(apply(peer_id, 1, 1, vec![merge], vec![])));
+        let apply_res = fetch_apply_res(&rx);
+        assert_eq!(apply_res.apply_state.get_applied_index(), index_id);
+        assert_eq!(apply_res.applied_index_term, 1);
+        // PrepareMerge will trigger commit.
+        let state: RaftApplyState = engine
+            .get_msg_cf(CF_RAFT, &keys::apply_state_key(1))
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(apply_res.apply_state, state);
 
         system.shutdown();
     }
