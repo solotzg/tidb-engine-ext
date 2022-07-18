@@ -1481,9 +1481,9 @@ where
             AdminCmdType::Split => self.exec_split(ctx, request),
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
             AdminCmdType::CompactLog => self.exec_compact_log(request),
-            AdminCmdType::TransferLeader => Err(box_err!("transfer leader won't exec")),
-            AdminCmdType::ComputeHash => Ok((AdminResponse::new(), ApplyResult::None)),
-            AdminCmdType::VerifyHash => Ok((AdminResponse::new(), ApplyResult::None)),
+            AdminCmdType::TransferLeader => self.exec_transfer_leader(request, ctx.exec_log_term),
+            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request), // Will filtered by pre_exec
+            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request), // Will filtered by pre_exec
             // TODO: is it backward compatible to add new cmd_type?
             AdminCmdType::PrepareMerge => self.exec_prepare_merge(ctx, request),
             AdminCmdType::CommitMerge => self.exec_commit_merge(ctx, request),

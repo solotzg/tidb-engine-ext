@@ -6,7 +6,7 @@ use collections::HashMap;
 use engine_tiflash::FsStatsExt;
 use kvproto::raft_cmdpb::{AdminCmdType, AdminRequest};
 use sst_importer::SstImporter;
-use tikv_util::debug;
+use tikv_util::{debug, error};
 use yatp::{
     pool::{Builder, ThreadPool},
     task::future::TaskCell,
@@ -183,6 +183,13 @@ impl AdminObserver for TiFlashObserver {
             }
             AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
                 // TiFlash don't support.
+                return true;
+            }
+            AdminCmdType::TransferLeader => {
+                error!("transfer leader won't exec";
+                        "region" => ?ob_ctx.region(),
+                        "req" => ?req,
+                );
                 return true;
             }
             _ => (),
