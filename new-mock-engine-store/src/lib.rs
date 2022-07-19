@@ -428,7 +428,7 @@ impl EngineStoreServerWrap {
                     }
                 }
                 // Do persist or not
-                let mut res = match req.get_cmd_type() {
+                let res = match req.get_cmd_type() {
                     AdminCmdType::CompactLog => {
                         fail::fail_point!("no_persist_compact_log", |_| {
                             // Persist data, but don't persist meta.
@@ -919,7 +919,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         "snap len" => snaps.len,
     );
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views.add(i as usize);
+        let snapshot = snaps.views.add(i as usize);
         let view = &*(snapshot as *mut ffi_interfaces::SSTView);
         let mut sst_reader = SSTReader::new(proxy_helper, view);
 
@@ -1006,7 +1006,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let _kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
 
     match kvstore.entry(region_id) {
-        std::collections::hash_map::Entry::Occupied(o) => {}
+        std::collections::hash_map::Entry::Occupied(_) => {}
         std::collections::hash_map::Entry::Vacant(v) => {
             // When we remove hacked code in handle_raft_entry_normal during migration,
             // some tests in handle_raft_entry_normal may fail, since it can observe a empty cmd,
@@ -1029,7 +1029,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     );
 
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views.add(i as usize);
+        let snapshot = snaps.views.add(i as usize);
         // let _path = std::str::from_utf8_unchecked((*snapshot).path.to_slice());
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
@@ -1055,6 +1055,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region,
         String::from("ingest-sst"),
     );
+    fail::fail_point!("on_handle_ingest_sst_return", |e| ffi_interfaces::EngineStoreApplyRes::None);
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     io::{self, Read, Write},
     ops::{Deref, DerefMut},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc, Arc, Once, RwLock,
@@ -17,10 +17,13 @@ use engine_traits::{
     CF_RAFT, CF_WRITE,
 };
 use kvproto::{
-    raft_cmdpb::{AdminCmdType, AdminRequest},
+    import_sstpb::SstMeta,
+    metapb::RegionEpoch,
+    raft_cmdpb::{AdminCmdType, AdminRequest, CmdType, Request},
     raft_serverpb::{RaftApplyState, RegionLocalState, StoreIdent},
 };
 use new_mock_engine_store::{
+    config::Config,
     mock_cluster::FFIHelperSet,
     node::NodeCluster,
     transport_simulate::{
@@ -134,7 +137,7 @@ fn test_interaction() {
     let prev_states = collect_all_states(&cluster, region_id);
     let compact_log = test_raftstore::new_compact_log_request(100, 10);
     let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
-    let res = cluster
+    let _ = cluster
         .call_command_on_leader(req.clone(), Duration::from_secs(3))
         .unwrap();
 
@@ -175,7 +178,7 @@ fn test_interaction() {
 
     fail::cfg("on_empty_cmd_normal", "return").unwrap();
     let prev_states = collect_all_states(&cluster, region_id);
-    let res = cluster
+    let _ = cluster
         .call_command_on_leader(req, Duration::from_secs(3))
         .unwrap();
 
@@ -207,7 +210,7 @@ fn test_leadership_change_impl(filter: bool) {
     // Test if a empty command can be observed when leadership changes.
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
-    // Disable compact log, otherwise is may advance and persist apply state after leadership change.
+    // Disable AUTO generated compact log.
     // This will not totally disable, so we use some failpoints later.
     cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
     cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
@@ -605,3 +608,164 @@ fn test_compact_log() {
     cluster.shutdown();
 }
 
+// TODO(tiflash) Test a KV will not be write twice by not only handle_put but also observer. When we fully enable engine_tiflash.
+
+pub fn new_ingest_sst_cmd(meta: SstMeta) -> Request {
+    let mut cmd = Request::default();
+    cmd.set_cmd_type(CmdType::IngestSst);
+    cmd.mut_ingest_sst().set_sst(meta);
+    cmd
+}
+
+pub fn create_tmp_importer(cfg: &Config, kv_path: &str) -> (PathBuf, Arc<SstImporter>) {
+    let dir = Path::new(kv_path).join("import-sst");
+    let importer = {
+        Arc::new(
+            SstImporter::new(&cfg.import, dir.clone(), None, cfg.storage.api_version()).unwrap(),
+        )
+    };
+    (dir, importer)
+}
+
+mod ingest {
+    use tempfile::TempDir;
+    use test_sst_importer::gen_sst_file_with_kvs;
+    use txn_types::TimeStamp;
+
+    use super::*;
+
+    fn make_sst(
+        cluster: &Cluster<NodeCluster>,
+        region_id: u64,
+        region_epoch: RegionEpoch,
+        keys_count: usize,
+    ) -> (PathBuf, SstMeta, PathBuf) {
+        let path = cluster.engines.iter().last().unwrap().1.kv.rocks.path();
+        let (import_dir, importer) = create_tmp_importer(&cluster.cfg, path);
+
+        // Prepare data
+        let mut kvs: Vec<(&[u8], &[u8])> = Vec::new();
+        let mut keys = Vec::new();
+        for i in 0..keys_count {
+            keys.push(format!("k{}", i))
+        }
+        keys.sort();
+        for i in 0..keys_count {
+            kvs.push((keys[i].as_bytes(), b"2"));
+        }
+
+        // Make file
+        let sst_path = import_dir.join("test.sst");
+        let (mut meta, data) = gen_sst_file_with_kvs(&sst_path, &kvs);
+        meta.set_region_id(region_id);
+        meta.set_region_epoch(region_epoch);
+        let mut file = importer.create(&meta).unwrap();
+        file.append(&data).unwrap();
+        file.finish().unwrap();
+
+        // copy file to save dir.
+        let src = sst_path.clone();
+        let dst = file.path.save.to_str().unwrap();
+        std::fs::copy(src.clone(), dst);
+
+        (file.path.save.clone(), meta, sst_path)
+    }
+
+    #[test]
+    fn test_handle_ingest_sst() {
+        let (mut cluster, pd_client) = new_mock_cluster(0, 1);
+        let _ = cluster.run();
+
+        let key = "k";
+        cluster.must_put(key.as_bytes(), b"v");
+        let region = cluster.get_region(key.as_bytes());
+
+        let (file, meta, sst_path) = make_sst(
+            &cluster,
+            region.get_id(),
+            region.get_region_epoch().clone(),
+            100,
+        );
+
+        let req = new_ingest_sst_cmd(meta);
+        let _ = cluster.request(
+            key.as_bytes(),
+            vec![req],
+            false,
+            Duration::from_secs(5),
+            true,
+        );
+
+        check_key(&cluster, b"k66", b"2", None, Some(true), None);
+
+        assert!(sst_path.as_path().is_file());
+        assert!(!file.as_path().is_file());
+        std::fs::remove_file(sst_path.as_path()).unwrap();
+        cluster.shutdown();
+    }
+
+    #[test]
+    fn test_invalid_ingest_sst() {
+        let (mut cluster, pd_client) = new_mock_cluster(0, 1);
+        let _ = cluster.run();
+
+        let key = "k";
+        cluster.must_put(key.as_bytes(), b"v");
+        let region = cluster.get_region(key.as_bytes());
+
+        let mut bad_epoch = RegionEpoch::default();
+        bad_epoch.set_conf_ver(999);
+        bad_epoch.set_version(999);
+        let (file, meta, sst_path) = make_sst(&cluster, region.get_id(), bad_epoch, 100);
+
+        let req = new_ingest_sst_cmd(meta);
+        let _ = cluster.request(
+            key.as_bytes(),
+            vec![req],
+            false,
+            Duration::from_secs(5),
+            false,
+        );
+        check_key(&cluster, b"k66", b"2", None, Some(false), None);
+
+        assert!(sst_path.as_path().is_file());
+        assert!(!file.as_path().is_file());
+        std::fs::remove_file(sst_path.as_path()).unwrap();
+        cluster.shutdown();
+    }
+
+    // #[test]
+    // fn test_ingest_return_none() {
+    //     let (mut cluster, pd_client) = new_mock_cluster(0, 1);
+    //     let _ = cluster.run();
+    //
+    //     let key = "k";
+    //     cluster.must_put(key.as_bytes(), b"v");
+    //     let region = cluster.get_region(key.as_bytes());
+    //
+    //     let (file, meta, sst_path) = make_sst(
+    //         &cluster,
+    //         region.get_id(),
+    //         region.get_region_epoch().clone(),
+    //         100,
+    //     );
+    //
+    //     fail::cfg("on_handle_ingest_sst_return", "return").unwrap();
+    //
+    //     let req = new_ingest_sst_cmd(meta);
+    //     let _ = cluster.request(
+    //         key.as_bytes(),
+    //         vec![req],
+    //         false,
+    //         Duration::from_secs(5),
+    //         true,
+    //     );
+    //
+    //     fail::remove("on_handle_ingest_sst_return");
+    //
+    //     assert!(sst_path.as_path().is_file());
+    //     assert!(!file.as_path().is_file());
+    //     std::fs::remove_file(sst_path.as_path()).unwrap();
+    //     cluster.shutdown();
+    // }
+}
