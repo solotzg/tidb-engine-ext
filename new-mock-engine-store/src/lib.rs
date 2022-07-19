@@ -201,7 +201,7 @@ unsafe fn write_to_db_data(
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             if !pending_remove.contains(&k) {
-                kv.put_cf(cf_name, &tikv_key.as_slice(), &v);
+                kv.rocks.put_cf(cf_name, &tikv_key.as_slice(), &v);
             } else {
                 pending_remove.remove(&k);
             }
@@ -209,7 +209,7 @@ unsafe fn write_to_db_data(
         let cf_name = cf_to_name(cf.into());
         for k in pending_remove.into_iter() {
             let tikv_key = keys::data_key(k.as_slice());
-            kv.delete_cf(cf_name, &tikv_key);
+            kv.rocks.delete_cf(cf_name, &tikv_key);
         }
     }
 }
@@ -411,7 +411,13 @@ impl EngineStoreServerWrap {
                         region.set_applied(header.index, header.term);
                     }
                     AdminCmdType::CompactLog => {
-                        // We will modify truncated_state when returns Persist.
+                        // We can always do compact, since a executed CompactLog must follow a successful persist.
+                        let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
+                        let state = &mut region.apply_state;
+                        let compact_index = req.get_compact_log().get_compact_index();
+                        let compact_term = req.get_compact_log().get_compact_term();
+                        state.mut_truncated_state().set_index(compact_index);
+                        state.mut_truncated_state().set_term(compact_term);
                         region.set_applied(header.index, header.term);
                     }
                     _ => {
@@ -419,26 +425,16 @@ impl EngineStoreServerWrap {
                     }
                 }
                 // Do persist or not
-                let res = match req.get_cmd_type() {
+                let mut res = match req.get_cmd_type() {
                     AdminCmdType::CompactLog => {
                         fail::fail_point!("no_persist_compact_log", |_| {
+                            // Persist data, but don't persist meta.
                             ffi_interfaces::EngineStoreApplyRes::None
                         });
                         ffi_interfaces::EngineStoreApplyRes::Persist
                     }
                     _ => ffi_interfaces::EngineStoreApplyRes::Persist,
                 };
-                if req.get_cmd_type() == AdminCmdType::CompactLog
-                    && res == ffi_interfaces::EngineStoreApplyRes::Persist
-                {
-                    debug!("persist for CompactLog");
-                    let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
-                    let state = &mut region.apply_state;
-                    let compact_index = req.get_compact_log().get_compact_index();
-                    let compact_term = req.get_compact_log().get_compact_term();
-                    state.mut_truncated_state().set_index(compact_index);
-                    state.mut_truncated_state().set_term(compact_term);
-                }
                 res
             };
 
@@ -469,12 +465,18 @@ impl EngineStoreServerWrap {
         };
         match res {
             ffi_interfaces::EngineStoreApplyRes::Persist => {
+                // Persist tells ApplyDelegate to do a commit.
+                // So we also need a persist of actual data on engine-store' side.
                 if let Some(region) = region {
-                    write_to_db_data(
-                        &mut (*self.engine_store_server),
-                        region,
-                        format!("admin {:?}", req),
-                    );
+                    if req.get_cmd_type() == AdminCmdType::CompactLog {
+                        // We already persist when fn_try_flush_data.
+                    } else {
+                        write_to_db_data(
+                            &mut (*self.engine_store_server),
+                            region,
+                            format!("admin {:?}", req),
+                        );
+                    }
                 }
             }
             _ => (),
@@ -665,12 +667,30 @@ extern "C" fn ffi_need_flush_data(
     true as u8
 }
 
-extern "C" fn ffi_try_flush_data(
-    _arg1: *mut ffi_interfaces::EngineStoreServerWrap,
-    _region_id: u64,
+unsafe extern "C" fn ffi_try_flush_data(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    region_id: u64,
     _try_until_succeed: u8,
 ) -> u8 {
-    fail::fail_point!("try_flush_data", |e| e.unwrap().parse::<u8>().unwrap());
+    let store = into_engine_store_server_wrap(arg1);
+    let kvstore = &mut (*store.engine_store_server).kvstore;
+    let region = kvstore.get_mut(&region_id).unwrap();
+    fail::fail_point!("try_flush_data", |e| {
+        let b = e.unwrap().parse::<u8>().unwrap();
+        if b == 1 {
+            write_to_db_data(
+                &mut (*store.engine_store_server),
+                region,
+                format!("fn_try_flush_data"),
+            );
+        }
+        b
+    });
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        format!("fn_try_flush_data"),
+    );
     true as u8
 }
 

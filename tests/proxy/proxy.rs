@@ -212,7 +212,7 @@ pub fn check_key(
         };
         match in_mem {
             Some(b) => {
-                let mut lock = cluster.ffi_helper_set.lock().unwrap();
+                let lock = cluster.ffi_helper_set.lock().unwrap();
                 let server = &lock.get(&id).unwrap().engine_store_server;
                 if b {
                     must_get_mem(server, region_id, k, Some(v));
