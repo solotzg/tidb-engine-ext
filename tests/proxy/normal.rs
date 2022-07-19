@@ -604,3 +604,4 @@ fn test_compact_log() {
 
     cluster.shutdown();
 }
+
