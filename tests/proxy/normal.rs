@@ -143,40 +143,6 @@ fn test_consistency_check() {
 }
 
 #[test]
-fn test_old_compact_log() {
-    // TODO If we just return None for CompactLog, the region state in ApplyFsm will change.
-    // because, there are no rollback in new implementation.
-    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
-    cluster.run();
-
-    // We don't return Persist after handling CompactLog.
-    fail::cfg("no_persist_compact_log", "return").unwrap();
-    for i in 0..10 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        cluster.must_put(k.as_bytes(), v.as_bytes());
-    }
-
-    for i in 0..10 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
-    }
-
-    let region = cluster.get_region(b"k1");
-    let region_id = region.get_id();
-    let prev_state = collect_all_states(&cluster, region_id);
-    let (compact_index, compact_term) = get_valid_compact_index(&prev_state);
-    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
-    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
-    let res = cluster
-        .call_command_on_leader(req, Duration::from_secs(3))
-        .unwrap();
-
-    cluster.shutdown();
-}
-
-#[test]
 fn test_compact_log() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     cluster.run();
@@ -249,6 +215,7 @@ fn test_compact_log() {
 
 #[test]
 fn test_empty_cmd() {
+    // Test if a empty command can be observed when leadership changes.
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     // Disable compact log
     cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
