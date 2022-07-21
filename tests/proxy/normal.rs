@@ -171,6 +171,7 @@ fn test_compact_log() {
     assert!(!res.get_header().has_error(), "{:?}", res);
 
     // CompactLog is filtered, because we can't flush data.
+    // However, we can still observe apply index advanced
     let new_state = collect_all_states(&cluster, region_id);
     for i in prev_state.keys() {
         let old = prev_state.get(i).unwrap();
@@ -182,6 +183,15 @@ fn test_compact_log() {
         assert_eq!(
             old.in_disk_apply_state.get_truncated_state(),
             new.in_disk_apply_state.get_truncated_state()
+        );
+        assert_eq!(
+            old.in_memory_apply_state.get_applied_index() + 1,
+            new.in_memory_apply_state.get_applied_index()
+        );
+        // Persist is before.
+        assert_eq!(
+            old.in_disk_apply_state.get_applied_index(),
+            new.in_disk_apply_state.get_applied_index()
         );
     }
 
