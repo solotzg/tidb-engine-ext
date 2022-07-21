@@ -218,6 +218,10 @@ fn test_compact_log() {
             old.in_memory_apply_state.get_truncated_state(),
             new.in_memory_apply_state.get_truncated_state()
         );
+        assert_eq!(
+            old.in_memory_apply_state.get_applied_index() + 1,
+            new.in_memory_apply_state.get_applied_index()
+        );
     }
 
     cluster.shutdown();
