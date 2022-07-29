@@ -168,7 +168,7 @@ impl AdminObserver for TiFlashObserver {
             AdminCmdType::CompactLog => {
                 if !self
                     .engine_store_server_helper
-                    .try_flush_data(ob_ctx.region().get_id(), false)
+                    .try_flush_data(ob_ctx.region().get_id(), false, 0, 0)
                 {
                     debug!("can't flush data, should filter CompactLog";
                         "region" => ?ob_ctx.region(),
