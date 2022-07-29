@@ -163,12 +163,12 @@ impl Coprocessor for TiFlashObserver {
 }
 
 impl AdminObserver for TiFlashObserver {
-    fn pre_exec_admin(&self, ob_ctx: &mut ObserverContext<'_>, req: &AdminRequest) -> bool {
+    fn pre_exec_admin(&self, ob_ctx: &mut ObserverContext<'_>, req: &AdminRequest, index: u64, term: u64) -> bool {
         match req.get_cmd_type() {
             AdminCmdType::CompactLog => {
                 if !self
                     .engine_store_server_helper
-                    .try_flush_data(ob_ctx.region().get_id(), false, 0, 0)
+                    .try_flush_data(ob_ctx.region().get_id(), false, index, term)
                 {
                     debug!("can't flush data, should filter CompactLog";
                         "region" => ?ob_ctx.region(),
