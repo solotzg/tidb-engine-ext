@@ -950,7 +950,13 @@ impl EngineStoreServerHelper {
         }
     }
 
-    pub fn try_flush_data(&self, region_id: u64, try_until_succeed: bool, index: u64, term: u64) -> bool {
+    pub fn try_flush_data(
+        &self,
+        region_id: u64,
+        try_until_succeed: bool,
+        index: u64,
+        term: u64,
+    ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
         unsafe {
             (self.fn_try_flush_data.into_inner())(
