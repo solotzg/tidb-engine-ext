@@ -265,6 +265,8 @@ pub struct Config {
 
     // Interval to inspect the latency of raftstore for slow store detection.
     pub inspect_interval: ReadableDuration,
+
+    pub unreachable_backoff: ReadableDuration,
 }
 
 impl Default for Config {
@@ -352,6 +354,7 @@ impl Default for Config {
             region_split_size: ReadableSize(0),
             clean_stale_peer_delay: ReadableDuration::minutes(0),
             inspect_interval: ReadableDuration::millis(500),
+            unreachable_backoff: ReadableDuration::secs(10),
         }
     }
 }
