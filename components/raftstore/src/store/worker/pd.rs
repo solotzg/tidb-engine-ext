@@ -824,7 +824,6 @@ where
     ER: RaftEngine,
     T: PdClient + 'static,
 {
-    engine_store_server_helper: &'static crate::engine_store_ffi::EngineStoreServerHelper,
     store_id: u64,
     pd_client: Arc<T>,
     router: RaftRouter<EK, ER>,
@@ -896,9 +895,6 @@ where
         );
 
         Runner {
-            engine_store_server_helper: crate::engine_store_ffi::gen_engine_store_server_helper(
-                cfg.engine_store_server_helper,
-            ),
             store_id,
             pd_client,
             router,
@@ -1155,10 +1151,12 @@ where
             warn!("no available space");
         }
         stats.set_available(available);
-        stats.set_bytes_written(store_stats.engine_bytes_written);
-        stats.set_keys_written(store_stats.engine_keys_written);
-        stats.set_bytes_read(store_stats.engine_bytes_read);
-        stats.set_keys_read(store_stats.engine_keys_read);
+
+        // Don't support on TiFlash side
+        // stats.set_bytes_written(store_stats.engine_bytes_written);
+        // stats.set_keys_written(store_stats.engine_keys_written);
+        // stats.set_bytes_read(store_stats.engine_bytes_read);
+        // stats.set_keys_read(store_stats.engine_keys_read);
 
         let mut interval = pdpb::TimeInterval::default();
         interval.set_start_timestamp(self.store_stat.last_report_ts.into_inner());
@@ -1177,7 +1175,7 @@ where
             .set(available as i64);
         STORE_SIZE_GAUGE_VEC
             .with_label_values(&["used"])
-            .set(store_stats.fs_stats.used_size as i64);
+            .set(used_size as i64);
 
         let slow_score = self.slow_score.get();
         stats.set_slow_score(slow_score as u64);
