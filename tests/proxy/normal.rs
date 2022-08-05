@@ -98,7 +98,7 @@ fn test_store_stats() {
 
     let _ = cluster.run();
 
-    for id in cluster.raw.engines.keys() {
+    for id in cluster.engines.keys() {
         let engine = cluster.get_tiflash_engine(*id);
         assert_eq!(
             engine.ffi_hub.as_ref().unwrap().get_store_stats().capacity,
@@ -106,12 +106,12 @@ fn test_store_stats() {
         );
     }
 
-    for id in cluster.raw.engines.keys() {
-        cluster.raw.must_send_store_heartbeat(*id);
+    for id in cluster.engines.keys() {
+        cluster.must_send_store_heartbeat(*id);
     }
     std::thread::sleep(std::time::Duration::from_millis(1000));
     // let resp = block_on(pd_client.store_heartbeat(Default::default(), None, None)).unwrap();
-    for id in cluster.raw.engines.keys() {
+    for id in cluster.engines.keys() {
         let store_stat = pd_client.get_store_stats(*id).unwrap();
         assert_eq!(store_stat.get_capacity(), 444444);
         assert_eq!(store_stat.get_available(), 333333);
