@@ -18,7 +18,7 @@ use crate::{
         AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
         BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor,
         CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent,
-        RegionChangeObserver, StoreSizeInfo
+        RegionChangeObserver, StoreSizeInfo,
     },
     engine_store_ffi::{
         gen_engine_store_server_helper,
