@@ -59,7 +59,7 @@ use crate::{
         worker::{
             query_stats::QueryStats,
             split_controller::{SplitInfo, TOP_N},
-            AutoSplitController, ReadStats, SplitConfigChange, WriteStats,
+            AutoSplitController, ReadStat, WriteStats,
         },
         Callback, CasualMessage, Config, PeerMsg, RaftCmdExtraOpts, RaftCommand, RaftRouter,
         RegionReadProgressRegistry, SignificantMsg, SnapManager, StoreInfo, StoreMsg, TxnExt,

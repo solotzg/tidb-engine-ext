@@ -18,7 +18,7 @@ use crate::{
         AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
         BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor,
         CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent,
-        RegionChangeObserver,
+        RegionChangeObserver, StoreSizeInfo
     },
     engine_store_ffi::{
         gen_engine_store_server_helper,
@@ -237,9 +237,9 @@ impl RegionChangeObserver for TiFlashObserver {
 }
 
 impl PdTaskObserver for TiFlashObserver {
-    fn on_compute_engine_size(&self, store_size: &mut Option<EngineSize>) {
+    fn on_compute_engine_size(&self, store_size: &mut Option<StoreSizeInfo>) {
         let stats = self.engine_store_server_helper.handle_compute_store_stats();
-        store_size.insert(EngineSize {
+        store_size.insert(StoreSizeInfo {
             capacity: stats.fs_stats.capacity_size,
             used: stats.fs_stats.used_size,
             avail: stats.fs_stats.avail_size,
