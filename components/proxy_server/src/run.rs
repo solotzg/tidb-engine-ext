@@ -1077,31 +1077,30 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
         let raft_store = Arc::new(VersionTrack::new(self.config.raft_store.clone()));
         let health_service = HealthService::default();
-        let mut default_store = metapb::Store::default();
+        let mut default_store = kvproto::metapb::Store::default();
 
-        let server_cfg = &server_config.value().clone();
-        if !server_cfg.engine_store_version.is_empty() {
-            default_store.set_version(server_cfg.engine_store_version.clone());
+        if !self.proxy_config.engine_store_version.is_empty() {
+            default_store.set_version(self.proxy_config.engine_store_version.clone());
         }
-        if !server_cfg.engine_store_git_hash.is_empty() {
-            default_store.set_git_hash(server_cfg.engine_store_git_hash.clone());
+        if !self.proxy_config.engine_store_git_hash.is_empty() {
+            default_store.set_git_hash(self.proxy_config.engine_store_git_hash.clone());
         }
-        // addr -> peer_address
-        if server_cfg.advertise_addr.is_empty() {
-            default_store.set_peer_address(server_cfg.addr.clone());
+        // addr -> store.peer_address
+        if self.config.server.advertise_addr.is_empty() {
+            default_store.set_peer_address(self.config.server.addr.clone());
         } else {
-            default_store.set_peer_address(server_cfg.advertise_addr.clone())
+            default_store.set_peer_address(self.config.server.advertise_addr.clone())
         }
-        // engine_addr -> addr
-        if !cfg.engine_addr.is_empty() {
-            default_store.set_address(server_cfg.engine_addr.clone());
+        // engine_addr -> store.addr
+        if !self.proxy_config.engine_addr.is_empty() {
+            default_store.set_address(self.proxy_config.engine_addr.clone());
         } else {
             panic!("engine address is empty");
         }
 
         let mut node = Node::new(
             self.system.take().unwrap(),
-            server_cfg,
+            &server_config.value().clone(),
             raft_store.clone(),
             self.config.storage.api_version(),
             self.pd_client.clone(),

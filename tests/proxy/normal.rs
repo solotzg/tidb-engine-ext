@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+use clap::{App, Arg, ArgMatches};
 use engine_traits::{
     Error, ExternalSstFileInfo, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey,
     SstExt, SstReader, SstWriter, SstWriterBuilder, WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK,
@@ -31,6 +32,7 @@ use new_mock_engine_store::{
 use pd_client::PdClient;
 use proxy_server::{
     config::{address_proxy_config, ensure_no_common_unrecognized_keys},
+    proxy::{gen_tikv_config, TIFLASH_DEFAULT_LISTENING_ADDR, TIFLASH_DEFAULT_STATUS_ADDR},
     run::run_tikv_proxy,
 };
 use raft::eraftpb::MessageType;
@@ -90,6 +92,34 @@ fn test_config() {
     // Will not override ProxyConfig
     let proxy_config_new = ProxyConfig::from_file(path, None).unwrap();
     assert_eq!(proxy_config_new.snap_handle_pool_size, 4);
+}
+
+#[test]
+fn test_config_addr() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    let text = "memory-usage-high-water=0.65\nsnap-handle-pool-size=4\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
+    write!(file, "{}", text).unwrap();
+    let path = file.path();
+    let mut args: Vec<&str> = vec![];
+    let matches = App::new("RaftStore Proxy")
+        .arg(
+            Arg::with_name("config")
+                .short("C")
+                .long("config")
+                .value_name("FILE")
+                .help("Set the configuration file")
+                .takes_value(true),
+        )
+        .get_matches_from(args);
+    let c = format!("--config {}", path.to_str().unwrap());
+    let mut v = vec![c];
+    let config = gen_tikv_config(&matches, false, &mut v);
+    assert_eq!(config.server.addr, TIFLASH_DEFAULT_LISTENING_ADDR);
+    assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
+    assert_eq!(
+        config.server.advertise_status_addr,
+        TIFLASH_DEFAULT_STATUS_ADDR
+    );
 }
 
 #[test]
