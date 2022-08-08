@@ -24,10 +24,14 @@ pub const TIFLASH_DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20292";
 
 fn make_tikv_config() -> TiKvConfig {
     let mut default = TiKvConfig::default();
+    setup_default_tikv_config(&mut default);
+    default
+}
+
+pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-    default
 }
 
 pub fn gen_tikv_config(

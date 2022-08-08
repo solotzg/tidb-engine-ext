@@ -32,7 +32,10 @@ use new_mock_engine_store::{
 use pd_client::PdClient;
 use proxy_server::{
     config::{address_proxy_config, ensure_no_common_unrecognized_keys},
-    proxy::{gen_tikv_config, TIFLASH_DEFAULT_LISTENING_ADDR, TIFLASH_DEFAULT_STATUS_ADDR},
+    proxy::{
+        gen_tikv_config, setup_default_tikv_config, TIFLASH_DEFAULT_LISTENING_ADDR,
+        TIFLASH_DEFAULT_STATUS_ADDR,
+    },
     run::run_tikv_proxy,
 };
 use raft::eraftpb::MessageType;
@@ -64,8 +67,11 @@ fn test_config() {
 
     let mut unrecognized_keys = Vec::new();
     let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
+    // Othersize we have no default addr for TiKv.
+    setup_default_tikv_config(&mut config);
     assert_eq!(config.memory_usage_high_water, 0.65);
     assert_eq!(config.rocksdb.max_open_files, 111);
+    assert_eq!(config.server.addr, TIFLASH_DEFAULT_LISTENING_ADDR);
     assert_eq!(unrecognized_keys.len(), 3);
 
     let mut proxy_unrecognized_keys = Vec::new();
