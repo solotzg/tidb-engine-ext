@@ -674,6 +674,8 @@ unsafe extern "C" fn ffi_try_flush_data(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,
     _try_until_succeed: u8,
+    _index: u64,
+    _term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let kvstore = &mut (*store.engine_store_server).kvstore;
@@ -1006,7 +1008,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let _kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
 
     match kvstore.entry(region_id) {
-        std::collections::hash_map::Entry::Occupied(_) => {}
+        std::collections::hash_map::Entry::Occupied(_o) => {}
         std::collections::hash_map::Entry::Vacant(v) => {
             // When we remove hacked code in handle_raft_entry_normal during migration,
             // some tests in handle_raft_entry_normal may fail, since it can observe a empty cmd,
@@ -1055,7 +1057,9 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region,
         String::from("ingest-sst"),
     );
-    fail::fail_point!("on_handle_ingest_sst_return", |e| ffi_interfaces::EngineStoreApplyRes::None);
+    fail::fail_point!("on_handle_ingest_sst_return", |e| {
+        ffi_interfaces::EngineStoreApplyRes::None
+    });
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 
@@ -1064,9 +1068,9 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
 ) -> ffi_interfaces::StoreStats {
     ffi_interfaces::StoreStats {
         fs_stats: ffi_interfaces::FsStats {
-            used_size: 0,
-            avail_size: 0,
-            capacity_size: 0,
+            capacity_size: 444444,
+            used_size: 111111,
+            avail_size: 333333,
             ok: 1,
         },
         engine_bytes_written: 0,

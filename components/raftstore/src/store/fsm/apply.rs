@@ -622,6 +622,7 @@ where
         let is_synced = self.write_to_db();
 
         if !self.apply_res.is_empty() {
+            fail_point!("before_nofity_apply_res");
             let apply_res = mem::take(&mut self.apply_res);
             self.notifier.notify(apply_res);
         }
@@ -1248,19 +1249,28 @@ where
         // E.g. `RaftApplyState` must not be changed.
 
         let mut origin_epoch = None;
-        let (resp, exec_result) = if ctx.host.pre_exec(&self.region, req) {
+        let (resp, exec_result, flash_res) = if ctx.host.pre_exec(&self.region, req, index, term) {
             // One of the observers want to filter execution of the command.
             let mut resp = RaftCmdResponse::default();
             if !req.get_header().get_uuid().is_empty() {
                 let uuid = req.get_header().get_uuid().to_vec();
                 resp.mut_header().set_uuid(uuid);
             }
-            (resp, ApplyResult::None)
+            {
+                // TODO(tiflash) This can be removed when we merged `post_exec`
+                // hacked by CalvinNeo.
+                let cmds = WriteCmds::new();
+                ctx.engine_store_server_helper.handle_write_raft_cmd(
+                    &cmds,
+                    RaftCmdHeader::new(self.region.get_id(), index, term),
+                );
+            }
+            (resp, ApplyResult::None, EngineStoreApplyRes::None)
         } else {
             ctx.exec_log_index = index;
             ctx.exec_log_term = term;
             ctx.kv_wb_mut().set_save_point();
-            let (resp, exec_result) = match self.exec_raft_cmd(ctx, req) {
+            let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, req) {
                 Ok(a) => {
                     ctx.kv_wb_mut().pop_save_point().unwrap();
                     if req.has_admin_request() {
@@ -1447,15 +1457,15 @@ where
             );
         }
 
-        let (mut response, exec_result) = match cmd_type {
+        let (mut response, mut exec_result) = match cmd_type {
             AdminCmdType::ChangePeer => self.exec_change_peer(ctx, request),
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
             AdminCmdType::Split => self.exec_split(ctx, request),
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
             AdminCmdType::CompactLog => self.exec_compact_log(request),
             AdminCmdType::TransferLeader => self.exec_transfer_leader(request, ctx.exec_log_term),
-            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request),
-            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request),
+            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request), // Will filtered by pre_exec
+            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request), // Will filtered by pre_exec
             // TODO: is it backward compatible to add new cmd_type?
             AdminCmdType::PrepareMerge => self.exec_prepare_merge(ctx, request),
             AdminCmdType::CommitMerge => self.exec_commit_merge(ctx, request),
@@ -1469,6 +1479,7 @@ where
             let uuid = req.get_header().get_uuid().to_vec();
             resp.mut_header().set_uuid(uuid);
         }
+
         resp.set_admin_response(response);
         Ok((resp, exec_result))
     }
@@ -5019,7 +5030,13 @@ mod tests {
             }
         }
 
-        fn pre_exec_admin(&self, _: &mut ObserverContext<'_>, req: &AdminRequest) -> bool {
+        fn pre_exec_admin(
+            &self,
+            _: &mut ObserverContext<'_>,
+            req: &AdminRequest,
+            _: u64,
+            _: u64,
+        ) -> bool {
             let cmd_type = req.get_cmd_type();
             if cmd_type == AdminCmdType::CompactLog
                 && self.filter_compact_log.deref().load(Ordering::SeqCst)

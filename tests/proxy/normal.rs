@@ -96,6 +96,34 @@ fn test_config() {
 }
 
 #[test]
+fn test_store_stats() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 1);
+
+    let _ = cluster.run();
+
+    for id in cluster.engines.keys() {
+        let engine = cluster.get_tiflash_engine(*id);
+        assert_eq!(
+            engine.ffi_hub.as_ref().unwrap().get_store_stats().capacity,
+            444444
+        );
+    }
+
+    for id in cluster.engines.keys() {
+        cluster.must_send_store_heartbeat(*id);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // let resp = block_on(pd_client.store_heartbeat(Default::default(), None, None)).unwrap();
+    for id in cluster.engines.keys() {
+        let store_stat = pd_client.get_store_stats(*id).unwrap();
+        assert_eq!(store_stat.get_capacity(), 444444);
+        assert_eq!(store_stat.get_available(), 333333);
+    }
+    // The same to mock-engine-store
+    cluster.shutdown();
+}
+
+#[test]
 fn test_store_setup() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
@@ -768,4 +796,61 @@ mod ingest {
     //     std::fs::remove_file(sst_path.as_path()).unwrap();
     //     cluster.shutdown();
     // }
+}
+
+#[test]
+fn test_handle_destroy() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+    // Disable raft log gc in this test case.
+    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::secs(60);
+
+    // Disable default max peer count check.
+    pd_client.disable_default_operator();
+
+    cluster.run();
+    cluster.must_put(b"k1", b"v1");
+    let eng_ids = cluster
+        .engines
+        .iter()
+        .map(|e| e.0.to_owned())
+        .collect::<Vec<_>>();
+
+    let region = cluster.get_region(b"k1");
+    let region_id = region.get_id();
+    let peer_1 = find_peer(&region, eng_ids[0]).cloned().unwrap();
+    let peer_2 = find_peer(&region, eng_ids[1]).cloned().unwrap();
+    cluster.must_transfer_leader(region_id, peer_1);
+
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![eng_ids[1]]),
+        &mut |_, _, ffi: &mut FFIHelperSet| {
+            let server = &ffi.engine_store_server;
+            assert!(server.kvstore.contains_key(&region_id));
+        },
+    );
+
+    pd_client.must_remove_peer(region_id, peer_2);
+
+    check_key(
+        &cluster,
+        b"k1",
+        b"k2",
+        Some(false),
+        None,
+        Some(vec![eng_ids[1]]),
+    );
+
+    // Region removed in server.
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![eng_ids[1]]),
+        &mut |_, _, ffi: &mut FFIHelperSet| {
+            let server = &ffi.engine_store_server;
+            assert!(!server.kvstore.contains_key(&region_id));
+        },
+    );
+
+    cluster.shutdown();
 }
