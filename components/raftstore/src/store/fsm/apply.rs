@@ -1249,7 +1249,7 @@ where
         // E.g. `RaftApplyState` must not be changed.
 
         let mut origin_epoch = None;
-        let (resp, exec_result, flash_res) = if ctx.host.pre_exec(&self.region, req, index, term) {
+        let (resp, exec_result) = if ctx.host.pre_exec(&self.region, req, index, term) {
             // One of the observers want to filter execution of the command.
             let mut resp = RaftCmdResponse::default();
             if !req.get_header().get_uuid().is_empty() {
@@ -1257,12 +1257,12 @@ where
                 resp.mut_header().set_uuid(uuid);
             }
             // We do not need to hack here. A filtered command can also be handled by post_exec.
-            (resp, ApplyResult::None, EngineStoreApplyRes::None)
+            (resp, ApplyResult::None)
         } else {
             ctx.exec_log_index = index;
             ctx.exec_log_term = term;
             ctx.kv_wb_mut().set_save_point();
-            let (resp, exec_result, flash_res) = match self.exec_raft_cmd(ctx, req) {
+            let (resp, exec_result) = match self.exec_raft_cmd(ctx, req) {
                 Ok(a) => {
                     ctx.kv_wb_mut().pop_save_point().unwrap();
                     if req.has_admin_request() {

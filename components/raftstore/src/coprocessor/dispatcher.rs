@@ -439,7 +439,7 @@ impl<E: KvEngine> CoprocessorHost<E> {
             let admin = cmd.get_admin_request();
             for observer in &self.registry.admin_observers {
                 let observer = observer.observer.inner();
-                if observer.pre_exec_admin(&mut ctx, admin) {
+                if observer.pre_exec_admin(&mut ctx, admin, index, term) {
                     return true;
                 }
             }
