@@ -568,6 +568,13 @@ fn test_old_compact_log() {
 #[test]
 fn test_compact_log() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+    // Disable auto compact log
+    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
+    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
+    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
+    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+
     cluster.run();
 
     cluster.must_put(b"k", b"v");
@@ -577,11 +584,17 @@ fn test_compact_log() {
     fail::cfg("on_empty_cmd_normal", "return").unwrap();
     fail::cfg("try_flush_data", "return(0)").unwrap();
     for i in 0..10 {
-        let k = format!("k{}", i);
+        let k = format!("k{}", i);test_compact_log
         let v = format!("v{}", i);
         cluster.must_put(k.as_bytes(), v.as_bytes());
     }
+    for i in 0..10 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
+    }
 
+    std::thread::sleep(std::time::Duration::from_millis(500));
     let prev_state = collect_all_states(&cluster, region_id);
 
     let (compact_index, compact_term) = get_valid_compact_index(&prev_state);
@@ -593,7 +606,12 @@ fn test_compact_log() {
     // compact index should less than applied index
     assert!(!res.get_header().has_error(), "{:?}", res);
 
+    // TODO(tiflash) Make sure compact log is filtered successfully.
+    // Can be abstract to a retry function.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
     // CompactLog is filtered, because we can't flush data.
+    // However, we can still observe apply index advanced
     let new_state = collect_all_states(&cluster, region_id);
     for i in prev_state.keys() {
         let old = prev_state.get(i).unwrap();
@@ -606,12 +624,22 @@ fn test_compact_log() {
             old.in_disk_apply_state.get_truncated_state(),
             new.in_disk_apply_state.get_truncated_state()
         );
+        assert_eq!(
+            old.in_memory_apply_state.get_applied_index() + 1,
+            new.in_memory_apply_state.get_applied_index()
+        );
+        // Persist is before.
+        assert_eq!(
+            old.in_disk_apply_state.get_applied_index(),
+            new.in_disk_apply_state.get_applied_index()
+        );
     }
 
     fail::remove("on_empty_cmd_normal");
     fail::remove("try_flush_data");
 
     let (compact_index, compact_term) = get_valid_compact_index(&new_state);
+    let prev_state = new_state;
     let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
     let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
     let res = cluster
@@ -630,6 +658,10 @@ fn test_compact_log() {
         assert_ne!(
             old.in_memory_apply_state.get_truncated_state(),
             new.in_memory_apply_state.get_truncated_state()
+        );
+        assert_eq!(
+            old.in_memory_apply_state.get_applied_index() + 2, // compact log + (kz,vz)
+            new.in_memory_apply_state.get_applied_index()
         );
     }
 
