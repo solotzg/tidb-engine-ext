@@ -584,7 +584,7 @@ fn test_compact_log() {
     fail::cfg("on_empty_cmd_normal", "return").unwrap();
     fail::cfg("try_flush_data", "return(0)").unwrap();
     for i in 0..10 {
-        let k = format!("k{}", i);test_compact_log
+        let k = format!("k{}", i);
         let v = format!("v{}", i);
         cluster.must_put(k.as_bytes(), v.as_bytes());
     }
