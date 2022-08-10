@@ -1577,28 +1577,28 @@ where
                 self.metrics.lock_cf_written_bytes += value.len() as u64;
             }
             // TODO: check whether cf exists or not.
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
-            // ctx.kv_wb.put_cf(cf, key, value).unwrap_or_else(|e| {
-            //     panic!(
-            //         "{} failed to write ({}, {}) to cf {}: {:?}",
-            //         self.tag,
-            //         log_wrappers::Value::key(key),
-            //         log_wrappers::Value::value(value),
-            //         cf,
-            //         e
-            //     )
-            // });
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
+            ctx.kv_wb.put_cf(cf, key, value).unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to write ({}, {}) to cf {}: {:?}",
+                    self.tag,
+                    log_wrappers::Value::key(key),
+                    log_wrappers::Value::value(value),
+                    cf,
+                    e
+                )
+            });
         } else {
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
-            // ctx.kv_wb.put(key, value).unwrap_or_else(|e| {
-            //     panic!(
-            //         "{} failed to write ({}, {}): {:?}",
-            //         self.tag,
-            //         log_wrappers::Value::key(key),
-            //         log_wrappers::Value::value(value),
-            //         e
-            //     );
-            // });
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
+            ctx.kv_wb.put(key, value).unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to write ({}, {}): {:?}",
+                    self.tag,
+                    log_wrappers::Value::key(key),
+                    log_wrappers::Value::value(value),
+                    e
+                );
+            });
         }
         Ok(())
     }
@@ -1620,15 +1620,15 @@ where
         if !req.get_delete().get_cf().is_empty() {
             let cf = req.get_delete().get_cf();
             // TODO: check whether cf exists or not.
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
-            // ctx.kv_wb.delete_cf(cf, key).unwrap_or_else(|e| {
-            //     panic!(
-            //         "{} failed to delete {}: {}",
-            //         self.tag,
-            //         log_wrappers::Value::key(key),
-            //         e
-            //     )
-            // });
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
+            ctx.kv_wb.delete_cf(cf, key).unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to delete {}: {}",
+                    self.tag,
+                    log_wrappers::Value::key(key),
+                    e
+                )
+            });
 
             if cf == CF_LOCK {
                 // delete is a kind of write for RocksDB.
@@ -1637,15 +1637,15 @@ where
                 self.metrics.delete_keys_hint += 1;
             }
         } else {
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
-            // ctx.kv_wb.delete(key).unwrap_or_else(|e| {
-            //     panic!(
-            //         "{} failed to delete {}: {}",
-            //         self.tag,
-            //         log_wrappers::Value::key(key),
-            //         e
-            //     )
-            // });
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
+            ctx.kv_wb.delete(key).unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to delete {}: {}",
+                    self.tag,
+                    log_wrappers::Value::key(key),
+                    e
+                )
+            });
             self.metrics.delete_keys_hint += 1;
         }
 
@@ -1702,10 +1702,10 @@ where
                 )
             };
 
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
-            // engine
-            //     .delete_ranges_cf(cf, DeleteStrategy::DeleteFiles, &range)
-            //     .unwrap_or_else(|e| fail_f(e, DeleteStrategy::DeleteFiles));
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
+            engine
+                .delete_ranges_cf(cf, DeleteStrategy::DeleteFiles, &range)
+                .unwrap_or_else(|e| fail_f(e, DeleteStrategy::DeleteFiles));
 
             let strategy = if use_delete_range {
                 DeleteStrategy::DeleteByRange
@@ -1713,14 +1713,14 @@ where
                 DeleteStrategy::DeleteByKey
             };
 
-            // TOOD(tiflash): open this comment if we finish engine_tiflash.
+            // TODO(tiflash): open this comment if we finish engine_tiflash.
             // Delete all remaining keys.
-            // engine
-            //     .delete_ranges_cf(cf, strategy.clone(), &range)
-            //     .unwrap_or_else(move |e| fail_f(e, strategy));
-            // engine
-            //     .delete_ranges_cf(cf, DeleteStrategy::DeleteBlobs, &range)
-            //     .unwrap_or_else(move |e| fail_f(e, DeleteStrategy::DeleteBlobs));
+            engine
+                .delete_ranges_cf(cf, strategy.clone(), &range)
+                .unwrap_or_else(move |e| fail_f(e, strategy));
+            engine
+                .delete_ranges_cf(cf, DeleteStrategy::DeleteBlobs, &range)
+                .unwrap_or_else(move |e| fail_f(e, DeleteStrategy::DeleteBlobs));
         }
 
         // TODO: Should this be executed when `notify_only` is set?

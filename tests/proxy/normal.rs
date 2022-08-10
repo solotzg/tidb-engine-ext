@@ -45,8 +45,8 @@ use raftstore::{
 };
 use server::setup::validate_and_persist_config;
 use sst_importer::SstImporter;
-use test_raftstore::new_tikv_config;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
+use test_raftstore::{new_node_cluster, new_tikv_config};
 use tikv::config::TiKvConfig;
 use tikv_util::{
     config::{LogFormat, ReadableDuration, ReadableSize},
