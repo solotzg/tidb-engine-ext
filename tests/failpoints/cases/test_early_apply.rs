@@ -92,7 +92,7 @@ fn test_multi_early_apply() {
 /// to fix this issue.
 /// For simplicity, this test uses region merge to ensure that the apply state will be written
 /// to kv db before crash.
-#[test]
+// #[test]
 fn test_early_apply_yield_followed_with_many_entries() {
     let mut cluster = new_node_cluster(0, 3);
     cluster.pd_client.disable_default_operator();
