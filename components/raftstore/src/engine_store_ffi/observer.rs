@@ -254,7 +254,7 @@ impl AdminObserver for TiFlashObserver {
                     index,
                     term,
                 ) {
-                    debug!("can't flush data, should filter CompactLog";
+                    info!("can't flush data, should filter CompactLog";
                         "region" => ?ob_ctx.region(),
                         "req" => ?req,
                     );
@@ -294,7 +294,7 @@ impl AdminObserver for TiFlashObserver {
         let cmd_type = request.get_cmd_type();
 
         if response.get_header().has_error() {
-            debug!(
+            info!(
                 "error occurs when apply_raft_cmd, {:?}",
                 response.get_header().get_error()
             );
@@ -420,7 +420,7 @@ impl QueryObserver for TiFlashObserver {
         let requests = cmd.request.get_requests();
         let response = &cmd.response;
         if response.get_header().has_error() {
-            debug!(
+            info!(
                 "error occurs when apply_raft_cmd, {:?}",
                 response.get_header().get_error()
             );
