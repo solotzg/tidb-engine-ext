@@ -576,7 +576,8 @@ where
         delegate: &mut ApplyDelegate<EK>,
         results: VecDeque<ExecResult<EK::Snapshot>>,
     ) {
-        #[cfg(any(test, feature = "testexport"))]{
+        #[cfg(any(test, feature = "testexport"))]
+        {
             if cfg!(feature = "compat_old_proxy") {
                 if !delegate.pending_remove {
                     delegate.write_apply_state(self.kv_wb_mut());
