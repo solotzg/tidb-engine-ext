@@ -304,7 +304,7 @@ impl AdminObserver for TiFlashObserver {
         match cmd_type {
             AdminCmdType::CompactLog | AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
                 info!(
-                    "useless admin command";
+                    "observe useless admin command";
                     "region_id" => ob_ctx.region().get_id(),
                     "peer_id" => region_state.peer_id,
                     "term" => cmd.term,
@@ -314,7 +314,7 @@ impl AdminObserver for TiFlashObserver {
             }
             _ => {
                 info!(
-                    "execute admin command";
+                    "observe admin command";
                     "region_id" => ob_ctx.region().get_id(),
                     "peer_id" => region_state.peer_id,
                     "term" => cmd.term,
@@ -386,6 +386,9 @@ impl AdminObserver for TiFlashObserver {
                 !region_state.pending_remove
             }
         };
+        if persist {
+            info!("should persist query"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
+        }
         persist
     }
 }
@@ -515,6 +518,9 @@ impl QueryObserver for TiFlashObserver {
         fail::fail_point!("on_post_exec_normal_end", |e| {
             e.unwrap().parse::<bool>().unwrap()
         });
+        if persist {
+            info!("should persist query"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
+        }
         persist
     }
 }
