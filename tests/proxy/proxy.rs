@@ -296,12 +296,13 @@ pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
 fn test_kv_write() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
+    cluster.cfg.proxy_compat = false;
     // No persist will be triggered by CompactLog
     fail::cfg("no_persist_compact_log", "return").unwrap();
     let _ = cluster.run();
 
     cluster.must_put(b"k0", b"v0");
-    check_key(&cluster, b"k0", b"v0", Some(false), Some(false), None);
+    // check_key(&cluster, b"k0", b"v0", Some(false), Some(false), None);
 
     // We can read initial raft state, since we don't persist meta either.
     let r1 = cluster.get_region(b"k0").get_id();

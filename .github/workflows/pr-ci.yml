@@ -75,4 +75,4 @@ jobs:
           # tests based on new-mock-engine-store, with compat for new proxy
           cargo test --package tests --test proxy normal
           # tests based on new-mock-engine-store, for some tests not available for new proxy
-          cargo test --features compat_old_proxy --package tests --test proxy proxy
+          cargo test --package tests --test proxy proxy
