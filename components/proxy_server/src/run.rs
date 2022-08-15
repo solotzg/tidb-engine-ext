@@ -79,7 +79,6 @@ use tikv::{
         config::{Config as ServerConfig, ServerConfigManager},
         create_raft_storage,
         gc_worker::{AutoGcConfig, GcWorker},
-        lock_manager::HackedLockManager as LockManager,
         raftkv::ReplicaReadLockChecker,
         resolve,
         service::{DebugService, DiagnosticsService},
@@ -105,7 +104,10 @@ use tikv_util::{
 };
 use tokio::runtime::Builder;
 
-use crate::{config::ProxyConfig, fatal, setup::*, util::ffi_server_info};
+use crate::{
+    config::ProxyConfig, fatal, hacked_lock_mgr::HackedLockManager as LockManager, setup::*,
+    util::ffi_server_info,
+};
 
 #[inline]
 pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
@@ -948,7 +950,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             in_memory_pessimistic_lock: Arc::new(AtomicBool::new(true)),
         };
 
-        let storage = create_raft_storage::<_, _, _, F>(
+        let storage = create_raft_storage::<_, _, _, F, _>(
             engines.engine.clone(),
             &self.config.storage,
             storage_read_pool_handle,
