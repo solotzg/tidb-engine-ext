@@ -469,17 +469,17 @@ impl QueryObserver for TiFlashObserver {
             assert_eq!(cmds.len(), 0);
             match self.handle_ingest_sst_for_engine_store(ob_ctx, &ssts, cmd.index, cmd.term) {
                 EngineStoreApplyRes::None => {
-                    // Before, BR/Lightning may let ingest sst cmd contain only one cf,
-                    // which may cause that TiFlash can not flush all region cache into column.
-                    // so we have a optimization proxy@cee1f003.
-                    // The optimization is to introduce a `pending_clean_ssts`,
-                    // which holds ssts from being cleaned(by adding into `delete_ssts`),
-                    // when engine-store returns None.
-                    // However, since this is fixed in tiflash#1811,
-                    // this optimization is no longer necessary.
-                    // We will print a error here.
-                    error!(
-                        "should not skip persist for ingest sst";
+                    /// Before, BR/Lightning may let ingest sst cmd contain only one cf,
+                    /// which may cause that TiFlash can not flush all region cache into column.
+                    /// so we have a optimization proxy@cee1f003.
+                    /// The optimization is to introduce a `pending_clean_ssts`,
+                    /// which holds ssts from being cleaned(by adding into `delete_ssts`),
+                    /// when engine-store returns None.
+                    /// Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
+                    /// since TiKV's compaction filter can also cause mismatch between default and write.
+                    /// According to tiflash#1811》
+                    info!(
+                        "skip persist for ingest sst";
                         "region_id" => ob_ctx.region().get_id(),
                         "peer_id" => region_state.peer_id,
                         "term" => cmd.term,
@@ -487,6 +487,7 @@ impl QueryObserver for TiFlashObserver {
                         "ssts_to_clean" => ?ssts,
                         "sst cf" => ssts.len(),
                     );
+                    // We must hereby move all ssts to `pending_delete_ssts` for protection.
                     false
                 }
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
