@@ -2,6 +2,7 @@
 
 use std::{path::PathBuf, rc::Rc, sync::Arc};
 
+use engine_rocks::RocksSstWriterBuilder;
 use engine_traits::{
     Error, ExternalSstFileInfo, IterOptions, Iterable, Iterator, Result, SeekKey,
     SstCompressionType, SstExt, SstMetaInfo, SstReader, SstWriter, SstWriterBuilder, CF_DEFAULT,
@@ -142,102 +143,102 @@ impl Iterator for RocksSstIterator {
     }
 }
 
-pub struct RocksSstWriterBuilder {
-    cf: Option<String>,
-    db: Option<Arc<DB>>,
-    in_memory: bool,
-    compression_type: Option<DBCompressionType>,
-    compression_level: i32,
-}
+// pub struct RocksSstWriterBuilder {
+//     cf: Option<String>,
+//     db: Option<Arc<DB>>,
+//     in_memory: bool,
+//     compression_type: Option<DBCompressionType>,
+//     compression_level: i32,
+// }
 
-impl SstWriterBuilder<RocksEngine> for RocksSstWriterBuilder {
-    fn new() -> Self {
-        RocksSstWriterBuilder {
-            cf: None,
-            in_memory: false,
-            db: None,
-            compression_type: None,
-            compression_level: 0,
-        }
-    }
-
-    fn set_db(mut self, db: &RocksEngine) -> Self {
-        self.db = Some(db.as_inner().clone());
-        self
-    }
-
-    fn set_cf(mut self, cf: &str) -> Self {
-        self.cf = Some(cf.to_string());
-        self
-    }
-
-    fn set_in_memory(mut self, in_memory: bool) -> Self {
-        self.in_memory = in_memory;
-        self
-    }
-
-    fn set_compression_type(mut self, compression: Option<SstCompressionType>) -> Self {
-        self.compression_type = compression.map(to_rocks_compression_type);
-        self
-    }
-
-    fn set_compression_level(mut self, level: i32) -> Self {
-        self.compression_level = level;
-        self
-    }
-
-    fn build(self, path: &str) -> Result<RocksSstWriter> {
-        let mut env = None;
-        let mut io_options = if let Some(db) = self.db.as_ref() {
-            env = db.env();
-            let handle = db
-                .cf_handle(self.cf.as_deref().unwrap_or(CF_DEFAULT))
-                .ok_or_else(|| format!("CF {:?} is not found", self.cf))?;
-            db.get_options_cf(handle)
-        } else {
-            ColumnFamilyOptions::new()
-        };
-        if self.in_memory {
-            // Set memenv.
-            let mem_env = Arc::new(Env::new_mem());
-            io_options.set_env(mem_env.clone());
-            env = Some(mem_env);
-        } else if let Some(env) = env.as_ref() {
-            io_options.set_env(env.clone());
-        }
-        let compress_type = if let Some(ct) = self.compression_type {
-            let all_supported_compression = supported_compression();
-            if !all_supported_compression.contains(&ct) {
-                return Err(Error::Other(
-                    format!(
-                        "compression type '{}' is not supported by rocksdb",
-                        fmt_db_compression_type(ct)
-                    )
-                    .into(),
-                ));
-            }
-            ct
-        } else {
-            get_fastest_supported_compression_type()
-        };
-        // TODO: 0 is a valid value for compression_level
-        if self.compression_level != 0 {
-            // other three fields are default value.
-            // see: https://github.com/facebook/rocksdb/blob/8cb278d11a43773a3ac22e523f4d183b06d37d88/include/rocksdb/advanced_options.h#L146-L153
-            io_options.set_compression_options(-14, self.compression_level, 0, 0, 0);
-        }
-        io_options.compression(compress_type);
-        // in rocksdb 5.5.1, SstFileWriter will try to use bottommost_compression and
-        // compression_per_level first, so to make sure our specified compression type
-        // being used, we must set them empty or disabled.
-        io_options.compression_per_level(&[]);
-        io_options.bottommost_compression(DBCompressionType::Disable);
-        let mut writer = SstFileWriter::new(EnvOptions::new(), io_options);
-        fail_point!("on_open_sst_writer");
-        writer.open(path)?;
-        Ok(RocksSstWriter { writer, env })
-    }
-}
+// impl SstWriterBuilder<RocksEngine> for RocksSstWriterBuilder {
+//     fn new() -> Self {
+//         RocksSstWriterBuilder {
+//             cf: None,
+//             in_memory: false,
+//             db: None,
+//             compression_type: None,
+//             compression_level: 0,
+//         }
+//     }
+//
+//     fn set_db(mut self, db: &RocksEngine) -> Self {
+//         self.db = Some(db.as_inner().clone());
+//         self
+//     }
+//
+//     fn set_cf(mut self, cf: &str) -> Self {
+//         self.cf = Some(cf.to_string());
+//         self
+//     }
+//
+//     fn set_in_memory(mut self, in_memory: bool) -> Self {
+//         self.in_memory = in_memory;
+//         self
+//     }
+//
+//     fn set_compression_type(mut self, compression: Option<SstCompressionType>) -> Self {
+//         self.compression_type = compression.map(to_rocks_compression_type);
+//         self
+//     }
+//
+//     fn set_compression_level(mut self, level: i32) -> Self {
+//         self.compression_level = level;
+//         self
+//     }
+//
+//     fn build(self, path: &str) -> Result<RocksSstWriter> {
+//         let mut env = None;
+//         let mut io_options = if let Some(db) = self.db.as_ref() {
+//             env = db.env();
+//             let handle = db
+//                 .cf_handle(self.cf.as_deref().unwrap_or(CF_DEFAULT))
+//                 .ok_or_else(|| format!("CF {:?} is not found", self.cf))?;
+//             db.get_options_cf(handle)
+//         } else {
+//             ColumnFamilyOptions::new()
+//         };
+//         if self.in_memory {
+//             // Set memenv.
+//             let mem_env = Arc::new(Env::new_mem());
+//             io_options.set_env(mem_env.clone());
+//             env = Some(mem_env);
+//         } else if let Some(env) = env.as_ref() {
+//             io_options.set_env(env.clone());
+//         }
+//         let compress_type = if let Some(ct) = self.compression_type {
+//             let all_supported_compression = supported_compression();
+//             if !all_supported_compression.contains(&ct) {
+//                 return Err(Error::Other(
+//                     format!(
+//                         "compression type '{}' is not supported by rocksdb",
+//                         fmt_db_compression_type(ct)
+//                     )
+//                     .into(),
+//                 ));
+//             }
+//             ct
+//         } else {
+//             get_fastest_supported_compression_type()
+//         };
+//         // TODO: 0 is a valid value for compression_level
+//         if self.compression_level != 0 {
+//             // other three fields are default value.
+//             // see: https://github.com/facebook/rocksdb/blob/8cb278d11a43773a3ac22e523f4d183b06d37d88/include/rocksdb/advanced_options.h#L146-L153
+//             io_options.set_compression_options(-14, self.compression_level, 0, 0, 0);
+//         }
+//         io_options.compression(compress_type);
+//         // in rocksdb 5.5.1, SstFileWriter will try to use bottommost_compression and
+//         // compression_per_level first, so to make sure our specified compression type
+//         // being used, we must set them empty or disabled.
+//         io_options.compression_per_level(&[]);
+//         io_options.bottommost_compression(DBCompressionType::Disable);
+//         let mut writer = SstFileWriter::new(EnvOptions::new(), io_options);
+//         fail_point!("on_open_sst_writer");
+//         writer.open(path)?;
+//         Ok(RocksSstWriter { writer, env })
+//     }
+// }
 
 pub struct RocksSstWriter {
     writer: SstFileWriter,
