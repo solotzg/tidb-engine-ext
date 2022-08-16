@@ -825,7 +825,7 @@ mod ingest {
             Duration::from_secs(5),
             false,
         );
-        check_key(&cluster, b"k66", b"2", Some(true), Some(false), None);
+        check_key(&cluster, b"k66", b"2", Some(false), Some(false), None);
 
         assert!(sst_path.as_path().is_file());
         assert!(!file.as_path().is_file());

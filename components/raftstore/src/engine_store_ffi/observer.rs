@@ -470,15 +470,15 @@ impl QueryObserver for TiFlashObserver {
             assert_eq!(cmds.len(), 0);
             match self.handle_ingest_sst_for_engine_store(ob_ctx, &ssts, cmd.index, cmd.term) {
                 EngineStoreApplyRes::None => {
-                    /// Before, BR/Lightning may let ingest sst cmd contain only one cf,
-                    /// which may cause that TiFlash can not flush all region cache into column.
-                    /// so we have a optimization proxy@cee1f003.
-                    /// The optimization is to introduce a `pending_clean_ssts`,
-                    /// which holds ssts from being cleaned(by adding into `delete_ssts`),
-                    /// when engine-store returns None.
-                    /// Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
-                    /// since TiKV's compaction filter can also cause mismatch between default and write.
-                    /// According to tiflash#1811.
+                    // Before, BR/Lightning may let ingest sst cmd contain only one cf,
+                    // which may cause that TiFlash can not flush all region cache into column.
+                    // so we have a optimization proxy@cee1f003.
+                    // The optimization is to introduce a `pending_clean_ssts`,
+                    // which holds ssts from being cleaned(by adding into `delete_ssts`),
+                    // when engine-store returns None.
+                    // Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
+                    // since TiKV's compaction filter can also cause mismatch between default and write.
+                    // According to tiflash#1811.
                     info!(
                         "skip persist for ingest sst";
                         "region_id" => ob_ctx.region().get_id(),
@@ -563,7 +563,7 @@ impl RegionChangeObserver for TiFlashObserver {
 impl PdTaskObserver for TiFlashObserver {
     fn on_compute_engine_size(&self, store_size: &mut Option<StoreSizeInfo>) {
         let stats = self.engine_store_server_helper.handle_compute_store_stats();
-        store_size.insert(StoreSizeInfo {
+        let _ = store_size.insert(StoreSizeInfo {
             capacity: stats.fs_stats.capacity_size,
             used: stats.fs_stats.used_size,
             avail: stats.fs_stats.avail_size,

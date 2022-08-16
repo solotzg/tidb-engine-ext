@@ -74,8 +74,8 @@ impl RocksWriteBatch {
     }
     #[cfg(any(test, feature = "testexport"))]
     fn check_double_write(&self) {
-        /// It will fire if we write by both observer(compat_old_proxy is not enabled)
-        /// and TiKV's WriteBatch.
+        // It will fire if we write by both observer(compat_old_proxy is not enabled)
+        // and TiKV's WriteBatch.
         tikv_util::debug!("check if double write happens");
         if cfg!(feature = "compat_old_proxy") {
             // We need write to RocksEngine by WriteBatch other than observer.
@@ -157,7 +157,10 @@ pub fn do_write(cf: &str, key: &[u8]) -> bool {
             _ => false,
         };
     }
-    return true;
+    #[cfg(feature = "compat_old_proxy")]
+    {
+        return true;
+    }
 }
 
 impl RocksWriteBatch {
