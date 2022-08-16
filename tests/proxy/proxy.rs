@@ -173,10 +173,12 @@ pub fn must_get_mem(
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    let s = std::str::from_utf8(key).unwrap_or("");
     panic!(
-        "can't get mem value {:?} for key {} in {}, actual {:?}",
+        "can't get mem value {:?} for key {}({}) in {}, actual {:?}",
         value.map(tikv_util::escape),
         log_wrappers::hex_encode_upper(key),
+        s,
         engine_store_server.id,
         last_res,
     )

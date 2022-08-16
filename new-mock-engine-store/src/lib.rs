@@ -1052,14 +1052,14 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_term(term);
     }
 
+    fail::fail_point!("on_handle_ingest_sst_return", |e| {
+        ffi_interfaces::EngineStoreApplyRes::None
+    });
     write_to_db_data(
         &mut (*store.engine_store_server),
         region,
         String::from("ingest-sst"),
     );
-    fail::fail_point!("on_handle_ingest_sst_return", |e| {
-        ffi_interfaces::EngineStoreApplyRes::None
-    });
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

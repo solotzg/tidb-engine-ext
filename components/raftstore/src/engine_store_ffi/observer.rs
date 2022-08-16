@@ -4,6 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
+use engine_traits::SstMetaInfo;
 use kvproto::{
     import_sstpb::SstMeta,
     metapb::Region,
@@ -23,10 +24,10 @@ use yatp::{
 
 use crate::{
     coprocessor::{
-        AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
-        BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor,
-        CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent,
-        RegionChangeObserver, RegionState, StoreSizeInfo,
+        AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
+        BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
+        Cmd, Coprocessor, CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver,
+        RegionChangeEvent, RegionChangeObserver, RegionState, StoreSizeInfo,
     },
     engine_store_ffi::{
         gen_engine_store_server_helper,
@@ -183,7 +184,6 @@ impl TiFlashObserver {
             }
 
             // We still need this to filter error ssts.
-            // TODO(tiflash) We will remove this as soon as TiKv publicize corresponding function.
             if let Err(e) = check_sst_for_ingestion(sst, &ob_ctx.region()) {
                 error!(?e;
                  "proxy ingest fail";
@@ -214,7 +214,6 @@ impl TiFlashObserver {
         &self,
         ob_ctx: &mut ObserverContext<'_>,
         cmd: &Cmd,
-
         region_state: &RegionState,
     ) -> bool {
         // We still need to pass a dummy cmd, to forward updates.
@@ -284,6 +283,7 @@ impl AdminObserver for TiFlashObserver {
         cmd: &Cmd,
         apply_state: &RaftApplyState,
         region_state: &RegionState,
+        _: &mut ApplyCtxInfo<'_>,
     ) -> bool {
         fail::fail_point!("on_post_exec_admin", |e| {
             e.unwrap().parse::<bool>().unwrap()
@@ -415,6 +415,7 @@ impl QueryObserver for TiFlashObserver {
         cmd: &Cmd,
         apply_state: &RaftApplyState,
         region_state: &RegionState,
+        apply_ctx_info: &mut ApplyCtxInfo<'_>,
     ) -> bool {
         fail::fail_point!("on_post_exec_normal", |e| {
             e.unwrap().parse::<bool>().unwrap()
@@ -477,7 +478,7 @@ impl QueryObserver for TiFlashObserver {
                     /// when engine-store returns None.
                     /// Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
                     /// since TiKV's compaction filter can also cause mismatch between default and write.
-                    /// According to tiflash#1811》
+                    /// According to tiflash#1811.
                     info!(
                         "skip persist for ingest sst";
                         "region_id" => ob_ctx.region().get_id(),
@@ -488,6 +489,12 @@ impl QueryObserver for TiFlashObserver {
                         "sst cf" => ssts.len(),
                     );
                     // We must hereby move all ssts to `pending_delete_ssts` for protection.
+                    match apply_ctx_info.pending_handle_ssts {
+                        None => (),
+                        Some(v) => {
+                            apply_ctx_info.pending_delete_ssts.append(v);
+                        }
+                    }
                     false
                 }
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
@@ -500,6 +507,19 @@ impl QueryObserver for TiFlashObserver {
                         "ssts_to_clean" => ?ssts,
                         "sst cf" => ssts.len(),
                     );
+                    match apply_ctx_info.pending_handle_ssts {
+                        None => (),
+                        Some(v) => {
+                            let mut sst_in_region: Vec<SstMetaInfo> = apply_ctx_info
+                                .pending_delete_ssts
+                                .drain_filter(|e| {
+                                    e.meta.get_region_id() == ob_ctx.region().get_id()
+                                })
+                                .collect();
+                            apply_ctx_info.delete_ssts.append(&mut sst_in_region);
+                            apply_ctx_info.delete_ssts.append(v);
+                        }
+                    }
                     !region_state.pending_remove
                 }
             }
