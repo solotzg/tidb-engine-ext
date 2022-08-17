@@ -522,6 +522,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Initialize and check config
         let cfg_controller = Self::init_config(config);
+        info!("using proxy config"; "config" => ?proxy_config);
         let config = cfg_controller.get_current();
 
         let store_path = Path::new(&config.storage.data_dir).to_owned();
