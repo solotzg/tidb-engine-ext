@@ -31,8 +31,8 @@ pub use self::{
     consistency_check::{ConsistencyCheckObserver, Raw as RawConsistencyCheckObserver},
     dispatcher::{
         BoxAdminObserver, BoxApplySnapshotObserver, BoxCmdObserver, BoxConsistencyCheckObserver,
-        BoxQueryObserver, BoxRegionChangeObserver, BoxRoleObserver, BoxSplitCheckObserver,
-        CoprocessorHost, Registry,
+        BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, BoxRoleObserver,
+        BoxSplitCheckObserver, CoprocessorHost, Registry,
     },
     error::{Error, Result},
     region_info_accessor::{
@@ -86,6 +86,18 @@ pub trait AdminObserver: Coprocessor {
     /// Hook to call after applying admin request.
     /// For now, the `region` in `ObserverContext` is an empty region.
     fn post_apply_admin(&self, _: &mut ObserverContext<'_>, _: &AdminResponse) {}
+
+    /// Hook before exec admin request, returns whether we should skip this
+    /// admin.
+    fn pre_exec_admin(
+        &self,
+        _: &mut ObserverContext<'_>,
+        _: &AdminRequest,
+        _: u64,
+        _: u64,
+    ) -> bool {
+        false
+    }
 }
 
 pub trait QueryObserver: Coprocessor {
@@ -105,6 +117,12 @@ pub trait QueryObserver: Coprocessor {
     /// Hook to call after applying write request.
     /// For now, the `region` in `ObserverContext` is an empty region.
     fn post_apply_query(&self, _: &mut ObserverContext<'_>, _: &Cmd) {}
+
+    /// Hook before exec write request, returns whether we should skip this
+    /// write.
+    fn pre_exec_query(&self, _: &mut ObserverContext<'_>, _: &[Request], _: u64, _: u64) -> bool {
+        false
+    }
 }
 
 pub trait ApplySnapshotObserver: Coprocessor {
@@ -149,6 +167,24 @@ pub trait SplitCheckObserver<E>: Coprocessor {
         _: &E,
         policy: CheckPolicy,
     );
+}
+
+/// Describes size information about all stores.
+/// There is guarantee that capacity >= used + avail.
+/// since some space can be reserved.
+#[derive(Debug, Default)]
+pub struct StoreSizeInfo {
+    /// The capacity of the store.
+    pub capacity: u64,
+    /// Size of actual data.
+    pub used: u64,
+    /// Available space that can be written with actual data.
+    pub avail: u64,
+}
+
+pub trait PdTaskObserver: Coprocessor {
+    /// Compute capacity/used/available size of this store.
+    fn on_compute_engine_size(&self, _: &mut Option<StoreSizeInfo>) {}
 }
 
 pub struct RoleChange {

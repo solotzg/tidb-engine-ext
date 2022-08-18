@@ -4,8 +4,10 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
+use kvproto::raft_cmdpb::{AdminCmdType, AdminRequest};
+use raft::{eraftpb, StateRole};
 use sst_importer::SstImporter;
-use tikv_util::debug;
+use tikv_util::{debug, error};
 use yatp::{
     pool::{Builder, ThreadPool},
     task::future::TaskCell,
@@ -14,8 +16,9 @@ use yatp::{
 use crate::{
     coprocessor::{
         AdminObserver, ApplySnapshotObserver, BoxAdminObserver, BoxApplySnapshotObserver,
-        BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor, CoprocessorHost,
-        ObserverContext, QueryObserver, RegionChangeEvent, RegionChangeObserver,
+        BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, Cmd, Coprocessor,
+        CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent,
+        RegionChangeObserver, StoreSizeInfo,
     },
     engine_store_ffi::{
         gen_engine_store_server_helper,
@@ -131,26 +134,26 @@ impl TiFlashObserver {
         &self,
         coprocessor_host: &mut CoprocessorHost<E>,
     ) {
+        coprocessor_host.registry.register_admin_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxAdminObserver::new(self.clone()),
+        );
         coprocessor_host.registry.register_query_observer(
             TIFLASH_OBSERVER_PRIORITY,
             BoxQueryObserver::new(self.clone()),
         );
-        // coprocessor_host.registry.register_admin_observer(
-        //     TIFLASH_OBSERVER_PRIORITY,
-        //     BoxAdminObserver::new(self.clone()),
-        // );
         // coprocessor_host.registry.register_apply_snapshot_observer(
         //     TIFLASH_OBSERVER_PRIORITY,
         //     BoxApplySnapshotObserver::new(self.clone()),
         // );
-        // coprocessor_host.registry.register_region_change_observer(
-        //     TIFLASH_OBSERVER_PRIORITY,
-        //     BoxRegionChangeObserver::new(self.clone()),
-        // );
-        // coprocessor_host.registry.register_pd_task_observer(
-        //     TIFLASH_OBSERVER_PRIORITY,
-        //     BoxPdTaskObserver::new(self.clone()),
-        // );
+        coprocessor_host.registry.register_region_change_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxRegionChangeObserver::new(self.clone()),
+        );
+        coprocessor_host.registry.register_pd_task_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxPdTaskObserver::new(self.clone()),
+        );
     }
 }
 
@@ -158,6 +161,47 @@ impl Coprocessor for TiFlashObserver {
     fn stop(&self) {
         // TODO(tiflash)
         // self.apply_snap_pool.as_ref().unwrap().shutdown();
+    }
+}
+
+impl AdminObserver for TiFlashObserver {
+    fn pre_exec_admin(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        req: &AdminRequest,
+        index: u64,
+        term: u64,
+    ) -> bool {
+        match req.get_cmd_type() {
+            AdminCmdType::CompactLog => {
+                if !self.engine_store_server_helper.try_flush_data(
+                    ob_ctx.region().get_id(),
+                    false,
+                    index,
+                    term,
+                ) {
+                    debug!("can't flush data, should filter CompactLog";
+                        "region" => ?ob_ctx.region(),
+                        "req" => ?req,
+                    );
+                    return true;
+                }
+                // Otherwise, we can exec CompactLog, without later rolling back.
+            }
+            AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
+                // We can't support.
+                return true;
+            }
+            AdminCmdType::TransferLeader => {
+                error!("transfer leader won't exec";
+                        "region" => ?ob_ctx.region(),
+                        "req" => ?req,
+                );
+                return true;
+            }
+            _ => (),
+        };
+        false
     }
 }
 
@@ -175,5 +219,30 @@ impl QueryObserver for TiFlashObserver {
             &cmd_dummy,
             RaftCmdHeader::new(ob_ctx.region().get_id(), index, term),
         );
+    }
+}
+
+impl RegionChangeObserver for TiFlashObserver {
+    fn on_region_changed(
+        &self,
+        ob_ctx: &mut ObserverContext<'_>,
+        e: RegionChangeEvent,
+        _: StateRole,
+    ) {
+        if e == RegionChangeEvent::Destroy {
+            self.engine_store_server_helper
+                .handle_destroy(ob_ctx.region().get_id());
+        }
+    }
+}
+
+impl PdTaskObserver for TiFlashObserver {
+    fn on_compute_engine_size(&self, store_size: &mut Option<StoreSizeInfo>) {
+        let stats = self.engine_store_server_helper.handle_compute_store_stats();
+        store_size.insert(StoreSizeInfo {
+            capacity: stats.fs_stats.capacity_size,
+            used: stats.fs_stats.used_size,
+            avail: stats.fs_stats.avail_size,
+        });
     }
 }

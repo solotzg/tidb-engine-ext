@@ -79,11 +79,9 @@ use tikv::{
         config::{Config as ServerConfig, ServerConfigManager},
         create_raft_storage,
         gc_worker::{AutoGcConfig, GcWorker},
-        lock_manager::HackedLockManager as LockManager,
         raftkv::ReplicaReadLockChecker,
         resolve,
         service::{DebugService, DiagnosticsService},
-        status_server::StatusServer,
         ttl::TtlChecker,
         KvEngineFactoryBuilder, Node, RaftKv, Server, CPU_CORES_QUOTA_GAUGE, DEFAULT_CLUSTER_ID,
         GRPC_THREAD_PREFIX,
@@ -105,7 +103,10 @@ use tikv_util::{
 };
 use tokio::runtime::Builder;
 
-use crate::{config::ProxyConfig, fatal, setup::*, util::ffi_server_info};
+use crate::{
+    config::ProxyConfig, fatal, hacked_lock_mgr::HackedLockManager as LockManager, setup::*,
+    status_server::StatusServer, util::ffi_server_info,
+};
 
 #[inline]
 pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
@@ -520,6 +521,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Initialize and check config
         let cfg_controller = Self::init_config(config);
+        info!("using proxy config"; "config" => ?proxy_config);
         let config = cfg_controller.get_current();
 
         let store_path = Path::new(&config.storage.data_dir).to_owned();
@@ -948,7 +950,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             in_memory_pessimistic_lock: Arc::new(AtomicBool::new(true)),
         };
 
-        let storage = create_raft_storage::<_, _, _, F>(
+        let storage = create_raft_storage::<_, _, _, F, _>(
             engines.engine.clone(),
             &self.config.storage,
             storage_read_pool_handle,
@@ -1077,6 +1079,27 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
         let raft_store = Arc::new(VersionTrack::new(self.config.raft_store.clone()));
         let health_service = HealthService::default();
+        let mut default_store = kvproto::metapb::Store::default();
+
+        if !self.proxy_config.server.engine_store_version.is_empty() {
+            default_store.set_version(self.proxy_config.server.engine_store_version.clone());
+        }
+        if !self.proxy_config.server.engine_store_git_hash.is_empty() {
+            default_store.set_git_hash(self.proxy_config.server.engine_store_git_hash.clone());
+        }
+        // addr -> store.peer_address
+        if self.config.server.advertise_addr.is_empty() {
+            default_store.set_peer_address(self.config.server.addr.clone());
+        } else {
+            default_store.set_peer_address(self.config.server.advertise_addr.clone())
+        }
+        // engine_addr -> store.addr
+        if !self.proxy_config.server.engine_addr.is_empty() {
+            default_store.set_address(self.proxy_config.server.engine_addr.clone());
+        } else {
+            panic!("engine address is empty");
+        }
+
         let mut node = Node::new(
             self.system.take().unwrap(),
             &server_config.value().clone(),
@@ -1086,6 +1109,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             self.state.clone(),
             self.background_worker.clone(),
             Some(health_service.clone()),
+            Some(default_store),
         );
         node.try_bootstrap_store(engines.engines.clone())
             .unwrap_or_else(|e| fatal!("failed to bootstrap node id: {}", e));
@@ -1189,7 +1213,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             node.id(),
             self.engines.as_ref().unwrap().engines.kv.clone(),
             importer.clone(),
-            self.proxy_config.snap_handle_pool_size,
+            self.proxy_config.raft_store.snap_handle_pool_size,
         );
         tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 
@@ -1282,23 +1306,22 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         }
 
         // Debug service.
-        // TODO(tiflash) make this usable when tikv merged.
-        // let debug_service = DebugService::new(
-        //     Engines {
-        //         kv: engines.engines.kv.rocks.clone(),
-        //         raft: engines.engines.raft.clone(),
-        //     },
-        //     servers.server.get_debug_thread_pool().clone(),
-        //     self.router.clone(),
-        //     self.cfg_controller.as_ref().unwrap().clone(),
-        // );
-        // if servers
-        //     .server
-        //     .register_service(create_debug(debug_service))
-        //     .is_some()
-        // {
-        //     fatal!("failed to register debug service");
-        // }
+        let debug_service = DebugService::new(
+            Engines {
+                kv: engines.engines.kv.rocks.clone(),
+                raft: engines.engines.raft.clone(),
+            },
+            servers.server.get_debug_thread_pool().clone(),
+            self.router.clone(),
+            self.cfg_controller.as_ref().unwrap().clone(),
+        );
+        if servers
+            .server
+            .register_service(create_debug(debug_service))
+            .is_some()
+        {
+            fatal!("failed to register debug service");
+        }
 
         // Create Diagnostics service
         let diag_service = DiagnosticsService::new(
