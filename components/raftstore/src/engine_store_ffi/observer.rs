@@ -387,7 +387,7 @@ impl AdminObserver for TiFlashObserver {
             }
         };
         if persist {
-            info!("should persist query"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
+            info!("should persist admin"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
         }
         persist
     }
