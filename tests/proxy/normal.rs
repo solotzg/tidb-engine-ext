@@ -1064,3 +1064,31 @@ fn test_empty_cmd() {
 
     cluster.shutdown();
 }
+
+#[test]
+fn test_restart() {
+    // Test if a empty command can be observed when leadership changes.
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+    // Disable AUTO generated compact log.
+    // This will not totally disable, so we use some failpoints later.
+    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
+    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
+    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
+    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+
+    // We don't handle CompactLog at all.
+    fail::cfg("try_flush_data", "return(0)").unwrap();
+    let _ = cluster.run();
+
+    cluster.must_put(b"k0", b"v0");
+    let region = cluster.get_region(b"k0");
+    let region_id = region.get_id();
+
+    let eng_ids = cluster
+        .engines
+        .iter()
+        .map(|e| e.0.to_owned())
+        .collect::<Vec<_>>();
+
+}
