@@ -1446,6 +1446,7 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
             &*cfg.value(),
             engines.kv.clone(),
             mgr.clone(),
+            cfg.value().snap_apply_batch_size.0 as usize,
             cfg.value().region_worker_tick_interval,
             cfg.value().use_delete_range,
             cfg.value().snap_generator_pool_size,

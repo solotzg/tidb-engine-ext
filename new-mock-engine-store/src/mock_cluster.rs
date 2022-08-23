@@ -55,6 +55,7 @@ use raftstore::{
     Error, Result,
 };
 use tempfile::TempDir;
+use test_raftstore::FilterFactory;
 pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
@@ -622,6 +623,15 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 }
             }
             self.pd_client.put_store(store).unwrap();
+        }
+    }
+
+    pub fn add_send_filter<F: FilterFactory>(&self, factory: F) {
+        let mut sim = self.sim.wl();
+        for node_id in sim.get_node_ids() {
+            for filter in factory.generate(node_id) {
+                sim.add_send_filter(node_id, filter);
+            }
         }
     }
 
