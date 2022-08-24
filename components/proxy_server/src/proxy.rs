@@ -10,6 +10,7 @@ use std::{
 
 use clap::{App, Arg, ArgMatches};
 use tikv::config::TiKvConfig;
+use tikv_util::config::ReadableDuration;
 
 use crate::{
     fatal,
@@ -32,8 +33,12 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
+    default.raft_store.region_worker_tick_interval = 500;
+    let clean_stale_tick_max = (10_000 / default.raft_store.region_worker_tick_interval) as usize;
+    default.raft_store.clean_stale_tick_max = clean_stale_tick_max;
 }
 
+/// Generate default TiKvConfig, but with some Proxy's default values.
 pub fn gen_tikv_config(
     matches: &ArgMatches,
     is_config_check: bool,

@@ -593,9 +593,10 @@ fn retrieve_sst_files(snap: &crate::store::Snapshot) -> Vec<(PathBuf, ColumnFami
             assert!(cf_file.cf == CF_LOCK);
         }
         // We have only one file for each cf for now.
-        let full_paths = cf_file.file_paths();
+        let mut full_paths = cf_file.file_paths();
+        assert!(full_paths.len() != 0);
         {
-            ssts.push((full_paths[0].clone(), name_to_cf(cf_file.cf)));
+            ssts.push((full_paths.remove(0), name_to_cf(cf_file.cf)));
         }
     }
     for (s, cf) in ssts.iter() {

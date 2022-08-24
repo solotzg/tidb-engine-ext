@@ -53,17 +53,6 @@ const GENERATE_POOL_SIZE: usize = 2;
 
 // used to periodically check whether we should delete a stale peer's range in region runner
 const CLEANUP_MAX_REGION_COUNT: usize = 64;
-#[cfg(test)]
-pub const STALE_PEER_CHECK_TICK: usize = 1; // 1000 milliseconds
-
-#[cfg(not(test))]
-pub const STALE_PEER_CHECK_TICK: usize = 10; // 10000 milliseconds
-
-// used to periodically check whether schedule pending applies in region runner
-#[cfg(not(test))]
-pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 1_000; // 1000 milliseconds
-#[cfg(test)]
-pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 200; // 200 milliseconds
 
 const TIFLASH: &str = "tiflash";
 const ENGINE: &str = "engine";
@@ -722,7 +711,8 @@ where
         engine: EK,
         mgr: SnapManager,
         batch_size: usize,
-        region_worker_tick_interval: tikv_util::config::ReadableDuration,
+        region_worker_tick_interval: u64,
+        clean_stale_tick_max: usize,
         use_delete_range: bool,
         snap_generator_pool_size: usize,
         coprocessor_host: CoprocessorHost<EK>,
@@ -738,10 +728,8 @@ where
         } else {
             (snap_handle_pool_size, true)
         };
-        let tick_interval_ms = region_worker_tick_interval.as_millis();
-        let clean_stale_tick_max = (10_000 / tick_interval_ms) as usize;
 
-        info!("create region runner"; "pool_size" => pool_size, "pre_handle_snap" => pre_handle_snap, "tick_interval_ms" => tick_interval_ms,
+        info!("create region runner"; "pool_size" => pool_size, "pre_handle_snap" => pre_handle_snap, "region_worker_tick_interval" => region_worker_tick_interval,
          "clean_stale_tick_max" => clean_stale_tick_max);
 
         Runner {
@@ -765,7 +753,7 @@ where
             pending_applies: VecDeque::new(),
             clean_stale_tick: 0,
             clean_stale_tick_max,
-            clean_stale_check_interval: Duration::from_millis(tick_interval_ms),
+            clean_stale_check_interval: Duration::from_millis(region_worker_tick_interval),
             tiflash_stores: HashMap::default(),
             pd_client,
         }

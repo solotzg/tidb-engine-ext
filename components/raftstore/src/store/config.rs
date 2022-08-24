@@ -31,6 +31,18 @@ lazy_static! {
     .unwrap();
 }
 
+#[cfg(test)]
+pub const STALE_PEER_CHECK_TICK: usize = 1; // 1000 milliseconds
+
+#[cfg(not(test))]
+pub const STALE_PEER_CHECK_TICK: usize = 10; // 10000 milliseconds
+
+// used to periodically check whether schedule pending applies in region runner
+#[cfg(not(test))]
+pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 1_000; // 1000 milliseconds
+#[cfg(test)]
+pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 200; // 200 milliseconds
+
 with_prefix!(prefix_apply "apply-");
 with_prefix!(prefix_store "store-");
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
@@ -141,8 +153,13 @@ pub struct Config {
     #[online_config(skip)]
     pub snap_handle_pool_size: usize,
 
+    #[doc(hidden)]
     #[online_config(skip)]
-    pub region_worker_tick_interval: ReadableDuration,
+    pub region_worker_tick_interval: u64,
+
+    #[doc(hidden)]
+    #[online_config(skip)]
+    pub clean_stale_tick_max: usize,
 
     // Interval (ms) to check region whether the data is consistent.
     pub consistency_check_interval: ReadableDuration,
@@ -337,7 +354,8 @@ impl Default for Config {
             leader_transfer_max_log_lag: 128,
             snap_apply_batch_size: ReadableSize::mb(10),
             snap_handle_pool_size: 2,
-            region_worker_tick_interval: ReadableDuration::millis(500),
+            region_worker_tick_interval: PENDING_APPLY_CHECK_INTERVAL,
+            clean_stale_tick_max: STALE_PEER_CHECK_TICK,
             lock_cf_compact_interval: ReadableDuration::minutes(10),
             lock_cf_compact_bytes_threshold: ReadableSize::mb(256),
             // Disable consistency check by default as it will hurt performance.

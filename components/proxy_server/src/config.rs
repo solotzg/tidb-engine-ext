@@ -11,7 +11,7 @@ use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::with_prefix;
 use tikv::config::TiKvConfig;
-use tikv_util::crit;
+use tikv_util::{config::ReadableDuration, crit};
 
 use crate::fatal;
 
