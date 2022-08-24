@@ -70,7 +70,7 @@ fn test_config() {
 
     let mut unrecognized_keys = Vec::new();
     let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
-    // Othersize we have no default addr for TiKv.
+    // Otherwise we have no default addr for TiKv.
     setup_default_tikv_config(&mut config);
     assert_eq!(config.memory_usage_high_water, 0.65);
     assert_eq!(config.rocksdb.max_open_files, 111);
@@ -277,12 +277,7 @@ fn test_leadership_change_impl(filter: bool) {
     // Test if a empty command can be observed when leadership changes.
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
-    // Disable AUTO generated compact log.
-    // This will not totally disable, so we use some failpoints later.
-    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
-    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
-    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+    disable_auto_gen_compact_log(&mut cluster);
 
     if filter {
         // We don't handle CompactLog at all.
@@ -608,11 +603,7 @@ fn test_old_compact_log() {
 fn test_compact_log() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
-    // Disable auto compact log
-    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
-    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
-    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+    disable_auto_gen_compact_log(&mut cluster);
 
     cluster.run();
 
@@ -841,11 +832,7 @@ mod ingest {
     fn test_ingest_return_none() {
         let (mut cluster, pd_client) = new_mock_cluster(0, 1);
 
-        // Disable auto compact log
-        cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-        cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
-        cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
-        cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+        disable_auto_gen_compact_log(&mut cluster);
 
         let _ = cluster.run();
 
@@ -1196,11 +1183,11 @@ fn test_concurrent_snapshot() {
     cluster.must_split(&region, b"k2");
     must_get_equal(&cluster.get_engine(3), b"k3", b"v3");
 
-    // // Ensure the regions work after split.
-    // cluster.must_put(b"k11", b"v11");
-    // must_get_equal(&cluster.get_engine(3), b"k11", b"v11");
-    // cluster.must_put(b"k4", b"v4");
-    // must_get_equal(&cluster.get_engine(3), b"k4", b"v4");
+    // Ensure the regions work after split.
+    cluster.must_put(b"k11", b"v11");
+    check_key(&cluster, b"k11", b"v11", Some(true), None, Some(vec![3]));
+    cluster.must_put(b"k4", b"v4");
+    check_key(&cluster, b"k4", b"v4", Some(true), None, Some(vec![3]));
 
     cluster.shutdown();
 }
@@ -1286,9 +1273,6 @@ fn test_prehandle_fail() {
     cluster.shutdown();
 }
 
-// test_concurrent_snapshot
-// test_basic_concurrent_snapshot
-
 #[test]
 fn test_split_merge() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
@@ -1369,5 +1353,49 @@ fn test_split_merge() {
     });
 
     fail::remove("on_can_apply_snapshot");
+    cluster.shutdown();
+}
+
+#[test]
+fn test_basic_concurrent_snapshot() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+    disable_auto_gen_compact_log(&mut cluster);
+    assert_eq!(cluster.cfg.tikv.raft_store.snap_handle_pool_size, 2);
+    assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
+
+    // Disable default max peer count check.
+    pd_client.disable_default_operator();
+
+    let r1 = cluster.run_conf_change();
+    cluster.must_put(b"k1", b"v1");
+    cluster.must_put(b"k3", b"v3");
+
+    let region1 = cluster.get_region(b"k1");
+    cluster.must_split(&region1, b"k2");
+    let r1 = cluster.get_region(b"k1").get_id();
+    let r3 = cluster.get_region(b"k3").get_id();
+
+    fail::cfg("before_actually_pre_handle", "sleep(1000)").unwrap();
+    tikv_util::info!("region k1 {} k3 {}", r1, r3);
+    pd_client.add_peer(r1, new_peer(2, 2));
+    pd_client.add_peer(r3, new_peer(2, 2));
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Now, k1 and k3 are not handled, since pre-handle process is not finished.
+
+    let pending_count = cluster
+        .engines
+        .get(&2)
+        .unwrap()
+        .kv
+        .pending_applies_count
+        .clone();
+    assert_eq!(pending_count.load(Ordering::Relaxed), 2);
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // Now, k1 and k3 are handled.
+    assert_eq!(pending_count.load(Ordering::Relaxed), 0);
+
+    fail::remove("before_actually_pre_handle");
+
     cluster.shutdown();
 }

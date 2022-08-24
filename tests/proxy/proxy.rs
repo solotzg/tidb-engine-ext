@@ -294,6 +294,15 @@ pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
         .unwrap()
 }
 
+pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
+    // Disable AUTO generated compact log.
+    // This will not totally disable, so we use some failpoints later.
+    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
+    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
+    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
+    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+}
+
 #[test]
 fn test_kv_write() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
