@@ -5,7 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     pin::Pin,
-    sync::Mutex,
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -26,7 +26,7 @@ use protobuf::Message;
 use raftstore::{engine_store_ffi, engine_store_ffi::RawCppPtr};
 use tikv_util::{debug, error, info, warn};
 
-use crate::mock_cluster::TiFlashEngine;
+use crate::{config::MockConfig, mock_cluster::TiFlashEngine};
 
 pub mod config;
 pub mod mock_cluster;
@@ -73,6 +73,7 @@ pub struct EngineStoreServer {
     pub engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
     pub proxy_compat: bool,
+    pub mock_cfg: MockConfig,
 }
 
 impl EngineStoreServer {
@@ -85,6 +86,7 @@ impl EngineStoreServer {
             engines,
             kvstore: Default::default(),
             proxy_compat: false,
+            mock_cfg: MockConfig::default(),
         }
     }
 
@@ -253,7 +255,7 @@ impl EngineStoreServerWrap {
                     "node_id"=>node_id,
                     );
                     panic!("observe obsolete admin index");
-                    return ffi_interfaces::EngineStoreApplyRes::None;
+                    // return ffi_interfaces::EngineStoreApplyRes::None;
                 }
                 match req.get_cmd_type() {
                     AdminCmdType::ChangePeer | AdminCmdType::ChangePeerV2 => {
@@ -328,7 +330,7 @@ impl EngineStoreServerWrap {
                     AdminCmdType::PrepareMerge => {
                         let tikv_region = resp.get_split().get_left();
 
-                        let target = req.prepare_merge.as_ref().unwrap().target.as_ref();
+                        let _target = req.prepare_merge.as_ref().unwrap().target.as_ref();
                         let region_meta = &mut (engine_store_server
                             .kvstore
                             .get_mut(&region_id)
@@ -495,7 +497,7 @@ impl EngineStoreServerWrap {
         let region_id = header.region_id;
         let server = &mut (*self.engine_store_server);
         let node_id = (*self.engine_store_server).id;
-        let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
+        let _kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
         let proxy_compat = server.proxy_compat;
         let mut do_handle_write_raft_cmd = move |region: &mut Box<Region>| {
             if region.apply_state.get_applied_index() >= header.index {
@@ -505,7 +507,7 @@ impl EngineStoreServerWrap {
                 "node_id"=>node_id,
                 );
                 panic!("observe obsolete write index");
-                return ffi_interfaces::EngineStoreApplyRes::None;
+                // return ffi_interfaces::EngineStoreApplyRes::None;
             }
             for i in 0..cmds.len {
                 let key = &*cmds.keys.add(i as _);
@@ -523,7 +525,7 @@ impl EngineStoreServerWrap {
                     "node_id" => server.id,
                     "header" => ?header,
                 );
-                let data = &mut region.data[cf_index as usize];
+                let _data = &mut region.data[cf_index as usize];
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
                         write_kv_in_mem(region, cf_index as usize, k, v);
@@ -674,12 +676,35 @@ unsafe extern "C" fn ffi_try_flush_data(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,
     _try_until_succeed: u8,
-    _index: u64,
-    _term: u64,
+    index: u64,
+    term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let kvstore = &mut (*store.engine_store_server).kvstore;
-    let region = kvstore.get_mut(&region_id).unwrap();
+    // If we can't find region here, we return true so proxy can trigger a CompactLog.
+    // The triggered CompactLog will be handled by `handleUselessAdminRaftCmd`,
+    // and result in a `EngineStoreApplyRes::NotFound`.
+    // Proxy will print this message and continue: `region not found in engine-store, maybe have exec `RemoveNode` first`.
+    let region = match kvstore.get_mut(&region_id) {
+        Some(r) => r,
+        None => {
+            if (*store.engine_store_server)
+                .mock_cfg
+                .panic_when_flush_no_found
+                .load(Ordering::SeqCst)
+            {
+                panic!(
+                    "ffi_try_flush_data no found region {} [index {} term {}], store {}",
+                    region_id,
+                    index,
+                    term,
+                    (*store.engine_store_server).id
+                );
+            } else {
+                return 1;
+            }
+        }
+    };
     fail::fail_point!("try_flush_data", |e| {
         let b = e.unwrap().parse::<u8>().unwrap();
         if b == 1 {
@@ -819,6 +844,7 @@ unsafe extern "C" fn ffi_handle_destroy(
     arg2: u64,
 ) {
     let store = into_engine_store_server_wrap(arg1);
+    debug!("ffi_handle_destroy {}", arg2);
     (*store.engine_store_server).kvstore.remove(&arg2);
 }
 
@@ -902,7 +928,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 ) -> ffi_interfaces::RawCppPtr {
     let store = into_engine_store_server_wrap(arg1);
     let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
-    let kvstore = &mut (*store.engine_store_server).kvstore;
+    let _kvstore = &mut (*store.engine_store_server).kvstore;
     let node_id = (*store.engine_store_server).id;
 
     let mut region_meta = kvproto::metapb::Region::default();
@@ -965,7 +991,7 @@ pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
 unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     arg2: ffi_interfaces::RawVoidPtr,
-    arg3: ffi_interfaces::RawCppPtrType,
+    _arg3: ffi_interfaces::RawCppPtrType,
 ) {
     let store = into_engine_store_server_wrap(arg1);
     let region_meta = &mut *(arg2 as *mut PrehandledSnapshot);
@@ -1052,7 +1078,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_term(term);
     }
 
-    fail::fail_point!("on_handle_ingest_sst_return", |e| {
+    fail::fail_point!("on_handle_ingest_sst_return", |_e| {
         ffi_interfaces::EngineStoreApplyRes::None
     });
     write_to_db_data(

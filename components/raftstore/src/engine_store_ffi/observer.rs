@@ -558,6 +558,11 @@ impl RegionChangeObserver for TiFlashObserver {
         _: StateRole,
     ) {
         if e == RegionChangeEvent::Destroy {
+            info!(
+                "observe destroy";
+                "region_id" => ob_ctx.region().get_id(),
+                "peer_id" => self.peer_id,
+            );
             self.engine_store_server_helper
                 .handle_destroy(ob_ctx.region().get_id());
         }
@@ -632,7 +637,12 @@ impl ApplySnapshotObserver for TiFlashObserver {
         snap_key: &crate::store::SnapKey,
         snap: Option<&crate::store::Snapshot>,
     ) {
-        info!("pre apply snapshot"; "peer_id" => peer_id, "region_id" => ob_ctx.region().get_id());
+        info!("pre apply snapshot";
+            "peer_id" => peer_id,
+            "region_id" => ob_ctx.region().get_id(),
+            "snap_key" => ?snap_key,
+            "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
+        );
         fail::fail_point!("on_ob_pre_handle_snapshot", |_| {});
 
         let snap = match snap {
@@ -691,7 +701,8 @@ impl ApplySnapshotObserver for TiFlashObserver {
     ) {
         fail::fail_point!("on_ob_post_apply_snapshot", |_| {});
         info!("post apply snapshot";
-            "peer_id" => ?snap_key,
+            "peer_id" => ?peer_id,
+            "snap_key" => ?snap_key,
             "region" => ?ob_ctx.region(),
         );
         let snap = match snap {
@@ -708,11 +719,10 @@ impl ApplySnapshotObserver for TiFlashObserver {
                 let neer_retry = match t.recv.recv() {
                     Ok(snap_ptr) => {
                         info!("get prehandled snapshot success";
-                            "peer_id" => ?snap_key,
-                            "region" => ?ob_ctx.region(),
-                                "pending" => self.engine
-                        .pending_applies_count.load(Ordering::SeqCst),
-                            );
+                        "peer_id" => ?peer_id,
+                        "region" => ?ob_ctx.region(),
+                        "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
+                        );
                         self.engine_store_server_helper
                             .apply_pre_handled_snapshot(snap_ptr.0);
                         false
@@ -729,10 +739,9 @@ impl ApplySnapshotObserver for TiFlashObserver {
                     .pending_applies_count
                     .fetch_sub(1, Ordering::SeqCst);
                 info!("apply snapshot finished";
-                        "peer_id" => ?snap_key,
+                        "peer_id" => ?peer_id,
                         "region" => ?ob_ctx.region(),
-                            "pending" => self.engine
-                    .pending_applies_count.load(Ordering::SeqCst),
+                        "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
                 );
                 neer_retry
             }
