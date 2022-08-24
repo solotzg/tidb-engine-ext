@@ -143,7 +143,6 @@ impl TiFlashObserver {
         }
     }
 
-    // TODO(tiflash) open observers when TiKV merged.
     pub fn register_to<E: engine_traits::KvEngine>(
         &self,
         coprocessor_host: &mut CoprocessorHost<E>,
@@ -236,7 +235,7 @@ impl TiFlashObserver {
 
 impl Coprocessor for TiFlashObserver {
     fn stop(&self) {
-        // TODO(tiflash)
+        // TODO(tiflash) remove this when pre apply merged
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
