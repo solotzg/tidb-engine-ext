@@ -236,6 +236,7 @@ impl TiFlashObserver {
 impl Coprocessor for TiFlashObserver {
     fn stop(&self) {
         // TODO(tiflash) remove this when pre apply merged
+        info!("shutdown tiflash observer"; "peer_id" => self.peer_id);
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
@@ -653,7 +654,7 @@ impl ApplySnapshotObserver for TiFlashObserver {
         let ssts = retrieve_sst_files(snap);
         self.engine
             .pending_applies_count
-            .fetch_add(1, Ordering::Relaxed);
+            .fetch_add(1, Ordering::SeqCst);
         match self.apply_snap_pool.as_ref() {
             Some(p) => {
                 p.spawn(async move {
@@ -675,7 +676,7 @@ impl ApplySnapshotObserver for TiFlashObserver {
             None => {
                 self.engine
                     .pending_applies_count
-                    .fetch_sub(1, Ordering::Relaxed);
+                    .fetch_sub(1, Ordering::SeqCst);
                 error!("apply_snap_pool is not initialized, quit background pre apply"; "peer_id" => peer_id, "region_id" => ob_ctx.region().get_id());
             }
         }
@@ -706,7 +707,12 @@ impl ApplySnapshotObserver for TiFlashObserver {
             Some(t) => {
                 let neer_retry = match t.recv.recv() {
                     Ok(snap_ptr) => {
-                        info!("get prehandled snapshot success");
+                        info!("get prehandled snapshot success";
+                            "peer_id" => ?snap_key,
+                            "region" => ?ob_ctx.region(),
+                                "pending" => self.engine
+                        .pending_applies_count.load(Ordering::SeqCst),
+                            );
                         self.engine_store_server_helper
                             .apply_pre_handled_snapshot(snap_ptr.0);
                         false
@@ -721,7 +727,13 @@ impl ApplySnapshotObserver for TiFlashObserver {
                 };
                 self.engine
                     .pending_applies_count
-                    .fetch_sub(1, Ordering::Relaxed);
+                    .fetch_sub(1, Ordering::SeqCst);
+                info!("apply snapshot finished";
+                        "peer_id" => ?snap_key,
+                        "region" => ?ob_ctx.region(),
+                            "pending" => self.engine
+                    .pending_applies_count.load(Ordering::SeqCst),
+                );
                 neer_retry
             }
             None => {
