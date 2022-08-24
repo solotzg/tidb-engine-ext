@@ -1399,3 +1399,28 @@ fn test_basic_concurrent_snapshot() {
 
     cluster.shutdown();
 }
+
+#[test]
+fn test_many_concurrent_snapshot() {
+    let c = 4;
+    let (cluster, pd_client) = new_split_region_cluster(c);
+
+    for i in 0..c {
+        let k = format!("k{:0>4}", 2 * i + 1);
+        let region_id = cluster.get_region(k.as_bytes()).get_id();
+        pd_client.must_add_peer(region_id, new_peer(2, 2));
+    }
+
+    for i in 0..c {
+        let k = format!("k{:0>4}", 2 * i + 1);
+        let v = format!("v{}", 2 * i + 1);
+        check_key(
+            &cluster,
+            k.as_bytes(),
+            v.as_bytes(),
+            Some(true),
+            Some(true),
+            Some(vec![2]),
+        );
+    }
+}
