@@ -169,11 +169,6 @@ all: format build test error-code
 dev: format clippy
 	@env FAIL_POINT=1 make test
 
-ifeq ($(PROXY_FRAME_POINTER),1)
-build: ENABLE_FEATURES += pprof-fp
-else
-build: ENABLE_FEATURES += pprof-dwarf
-endif
 build:
 	PROXY_ENABLE_FEATURES="${ENABLE_FEATURES}" ./build.sh
 
@@ -385,11 +380,6 @@ endif
 
 export X_CARGO_ARGS:=${CARGO_ARGS}
 
-ifeq ($(PROXY_FRAME_POINTER),1)
-x-build-dist: ENABLE_FEATURES += pprof-fp
-else
-x-build-dist: ENABLE_FEATURES += pprof-dwarf
-endif
 x-build-dist: export X_CARGO_CMD=build
 x-build-dist: export X_CARGO_FEATURES=${ENABLE_FEATURES}
 x-build-dist: export X_CARGO_RELEASE=1
