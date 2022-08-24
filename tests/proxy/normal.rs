@@ -753,10 +753,10 @@ mod ingest {
 
         // copy file to save dir.
         let src = sst_path.clone();
-        let dst = file.path.save.to_str().unwrap();
+        let dst = file.get_import_path().save.to_str().unwrap();
         std::fs::copy(src.clone(), dst);
 
-        (file.path.save.clone(), meta, sst_path)
+        (file.get_import_path().save.clone(), meta, sst_path)
     }
 
     #[test]

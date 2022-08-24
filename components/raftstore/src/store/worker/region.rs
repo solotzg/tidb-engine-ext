@@ -243,7 +243,6 @@ struct SnapContext<EK, R>
 where
     EK: KvEngine,
 {
-    engine_store_server_helper: &'static crate::engine_store_ffi::EngineStoreServerHelper,
     engine: EK,
     batch_size: usize,
     mgr: SnapManager,
@@ -720,9 +719,6 @@ where
         pd_client: Option<Arc<T>>,
     ) -> Runner<EK, R, T> {
         let snap_handle_pool_size = config.snap_handle_pool_size;
-        let engine_store_server_helper = crate::engine_store_ffi::gen_engine_store_server_helper(
-            config.engine_store_server_helper,
-        );
         let (pool_size, pre_handle_snap) = if snap_handle_pool_size == 0 {
             (GENERATE_POOL_SIZE, false)
         } else {
@@ -741,7 +737,6 @@ where
                 .max_thread_count(pool_size)
                 .build_future_pool(),
             ctx: SnapContext {
-                engine_store_server_helper,
                 engine,
                 mgr,
                 batch_size,
