@@ -1486,11 +1486,22 @@ where
         let flash_res = if let ApplyResult::WaitMergeSource(_) = &exec_result {
             EngineStoreApplyRes::None
         } else {
-            ctx.engine_store_server_helper.handle_admin_raft_cmd(
-                &request,
-                &response,
-                RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
-            )
+            if cmd_type == AdminCmdType::CompactLog && exec_result == ApplyResult::None {
+                debug!("skip compact log";
+                    "region_id" => self.region_id(),
+                    "peer_id" => self.id(),
+                    "term" => ctx.exec_log_term,
+                    "index" => ctx.exec_log_index
+                );
+                resp.set_admin_response(response);
+                return Ok((resp, exec_result, flash_res));
+            } else {
+                ctx.engine_store_server_helper.handle_admin_raft_cmd(
+                    &request,
+                    &response,
+                    RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
+                )
+            }
         };
 
         match flash_res {
