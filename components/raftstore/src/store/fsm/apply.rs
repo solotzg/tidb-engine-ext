@@ -1494,7 +1494,7 @@ where
                     "index" => ctx.exec_log_index
                 );
                 resp.set_admin_response(response);
-                return Ok((resp, exec_result, flash_res));
+                return Ok((resp, exec_result, EngineStoreApplyRes::None));
             } else {
                 ctx.engine_store_server_helper.handle_admin_raft_cmd(
                     &request,
