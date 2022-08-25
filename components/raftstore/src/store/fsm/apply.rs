@@ -1497,7 +1497,7 @@ where
                         );
                         resp.set_admin_response(response);
                         return Ok((resp, exec_result, EngineStoreApplyRes::None));
-                    },
+                    }
                     _ => (),
                 };
             }
