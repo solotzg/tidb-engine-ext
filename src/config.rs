@@ -4806,7 +4806,10 @@ mod tests {
     fn test_background_job_limits() {
         // cpu num = 1
         assert_eq!(
-            get_background_job_limits_impl(1 /* cpu_num */, &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS),
+            get_background_job_limits_impl(
+                1, // cpu_num
+                &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS
+            ),
             BackgroundJobLimits {
                 max_background_jobs: 2,
                 max_background_flushes: 1,
@@ -4828,7 +4831,10 @@ mod tests {
         );
         // cpu num = 2
         assert_eq!(
-            get_background_job_limits_impl(2 /* cpu_num */, &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS),
+            get_background_job_limits_impl(
+                2, // cpu_num
+                &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS
+            ),
             BackgroundJobLimits {
                 max_background_jobs: 2,
                 max_background_flushes: 1,
@@ -4850,7 +4856,10 @@ mod tests {
         );
         // cpu num = 4
         assert_eq!(
-            get_background_job_limits_impl(4 /* cpu_num */, &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS),
+            get_background_job_limits_impl(
+                4, // cpu_num
+                &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS
+            ),
             BackgroundJobLimits {
                 max_background_jobs: 3,
                 max_background_flushes: 1,
@@ -4872,7 +4881,10 @@ mod tests {
         );
         // cpu num = 8
         assert_eq!(
-            get_background_job_limits_impl(8 /* cpu_num */, &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS),
+            get_background_job_limits_impl(
+                8, // cpu_num
+                &KVDB_DEFAULT_BACKGROUND_JOB_LIMITS
+            ),
             BackgroundJobLimits {
                 max_background_jobs: 7,
                 max_background_flushes: 2,

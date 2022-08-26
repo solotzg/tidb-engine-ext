@@ -852,11 +852,11 @@ mod tests {
             (vec![0], Some(vec![b'v', 0, 0])), // access put if not delete_bound
             (vec![1], Some(vec![b'v', 1, 1])), // access put
             // vec![2] access delete
-            (vec![3], Some(vec![b'v', 3])), // ignore LockType::Lock
-            (vec![4], None),                // locked
-            (vec![5], Some(vec![b'v', 5])), // bypass
-            (vec![6], Some(vec![b'v', 6])), // ignore lock with larger ts
-            (vec![7], Some(vec![b'v', 7])), // no lock
+            (vec![3], Some(vec![b'v', 3])),    // ignore LockType::Lock
+            (vec![4], None),                   // locked
+            (vec![5], Some(vec![b'v', 5])),    // bypass
+            (vec![6], Some(vec![b'v', 6])),    // ignore lock with larger ts
+            (vec![7], Some(vec![b'v', 7])),    // no lock
             (vec![8], Some(vec![b'v', 8, 8])), // access put if not delete_bound
         ];
         if desc {

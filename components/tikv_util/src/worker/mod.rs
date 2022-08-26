@@ -10,7 +10,6 @@
 //! - A scheduler: to send tasks to the runner, returns immediately.
 //!
 //! Briefly speaking, this is a mpsc (multiple-producer-single-consumer) model.
-//!
 
 mod future;
 mod metrics;

@@ -23,10 +23,10 @@ pub enum Task {
     },
 
     CheckAndCompact {
-        cf_names: Vec<String>,         // Column families need to compact
-        ranges: Vec<Key>,              // Ranges need to check
+        cf_names: Vec<String>, // Column families need to compact
+        ranges: Vec<Key>,      // Ranges need to check
         tombstones_num_threshold: u64, /* The minimum RocksDB tombstones a range that need
-                                        * compacting has */
+                                * compacting has */
         tombstones_percent_threshold: u64,
     },
 }

@@ -1446,7 +1446,7 @@ mod tests {
             (Timespec::new(0, 0), 0x0000_0000_0000_0000u64),
             (Timespec::new(0, 1), 0x0000_0000_0000_0000u64), // 1ns is round down to 0ms.
             (Timespec::new(0, 999_999), 0x0000_0000_0000_0000u64), /* 999_999ns is round down to
-                                                                    * 0ms. */
+                                                              * 0ms. */
             (
                 // 1_048_575ns is round down to 0ms.
                 Timespec::new(0, 1_048_575 /* 0x0FFFFF */),
