@@ -1157,16 +1157,100 @@ mod ingest {
 mod restart {
     use super::*;
     #[test]
-    fn test_restart() {
+    fn test_snap_restart() {
+        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+        fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
+        disable_auto_gen_compact_log(&mut cluster);
+        cluster.cfg.raft_store.max_snapshot_file_raw_size = ReadableSize(u64::MAX);
+
+        // Disable default max peer count check.
+        pd_client.disable_default_operator();
+        let r1 = cluster.run_conf_change();
+
+        let first_value = vec![0; 10240];
+        for i in 0..10 {
+            let key = format!("{:03}", i);
+            cluster.must_put(key.as_bytes(), &first_value);
+        }
+        let first_key: &[u8] = b"000";
+
+        let eng_ids = cluster
+            .engines
+            .iter()
+            .map(|e| e.0.to_owned())
+            .collect::<Vec<_>>();
+
+        tikv_util::info!("engine_2 is {}", eng_ids[1]);
+        // engine 2 will not exec post apply snapshot.
+        fail::cfg("on_ob_pre_handle_snapshot", "return").unwrap();
+        fail::cfg("on_ob_post_apply_snapshot", "return").unwrap();
+
+        let engine_2 = cluster.get_engine(eng_ids[1]);
+        must_get_none(&engine_2, first_key);
+        // add peer (engine_2,engine_2) to region 1.
+        pd_client.must_add_peer(r1, new_peer(eng_ids[1], eng_ids[1]));
+
+        check_key(&cluster, first_key, &first_value, Some(false), None, None);
+
+        info!("stop node {}", eng_ids[1]);
+        cluster.stop_node(eng_ids[1]);
+        {
+            let lock = cluster.ffi_helper_set.lock();
+            lock.unwrap()
+                .deref_mut()
+                .get_mut(&eng_ids[1])
+                .unwrap()
+                .engine_store_server
+                .stop();
+        }
+
+        fail::remove("on_ob_pre_handle_snapshot");
+        fail::remove("on_ob_post_apply_snapshot");
+        info!("resume node {}", eng_ids[1]);
+        {
+            let lock = cluster.ffi_helper_set.lock();
+            lock.unwrap()
+                .deref_mut()
+                .get_mut(&eng_ids[1])
+                .unwrap()
+                .engine_store_server
+                .restore();
+        }
+        info!("restored node {}", eng_ids[1]);
+        cluster.run_node(eng_ids[1]).unwrap();
+
+        let (key, value) = (b"k2", b"v2");
+        cluster.must_put(key, value);
+        // we can get in memory, since snapshot is pre handled, though it is not persisted
+        check_key(
+            &cluster,
+            key,
+            value,
+            Some(true),
+            None,
+            Some(vec![eng_ids[1]]),
+        );
+        // now snapshot must be applied on peer engine_2
+        check_key(
+            &cluster,
+            first_key,
+            first_value.as_slice(),
+            Some(true),
+            None,
+            Some(vec![eng_ids[1]]),
+        );
+
+        cluster.shutdown();
+    }
+
+    #[test]
+    fn test_kv_restart() {
         // Test if a empty command can be observed when leadership changes.
         let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
         // Disable AUTO generated compact log.
-        // This will not totally disable, so we use some failpoints later.
-        cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-        cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
-        cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
-        cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+        disable_auto_gen_compact_log(&mut cluster);
 
         // We don't handle CompactLog at all.
         fail::cfg("try_flush_data", "return(0)").unwrap();
@@ -1205,7 +1289,7 @@ mod restart {
                 k.as_bytes(),
                 v.as_bytes(),
                 Some(true),
-                None,
+                Some(true),
                 Some(vec![eng_ids[0]]),
             );
         }
@@ -1225,7 +1309,7 @@ mod restart {
                 k.as_bytes(),
                 v.as_bytes(),
                 Some(true),
-                None,
+                Some(false),
                 Some(vec![eng_ids[0]]),
             );
         }
@@ -1284,9 +1368,7 @@ mod snapshot {
         let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
         fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
-        cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-        cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10);
-        cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(500);
+        disable_auto_gen_compact_log(&mut cluster);
         cluster.cfg.raft_store.max_snapshot_file_raw_size = ReadableSize(u64::MAX);
 
         // Disable default max peer count check.

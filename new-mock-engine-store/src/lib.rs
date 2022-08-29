@@ -235,17 +235,11 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
                     "region_id" => region_id,
                     "cf" => cf,
                     "k" => ?k,
-                    "v" => ?v,
                 );
                 Ok(true)
             })
             .unwrap();
     }
-    debug!("after restore";
-        "store" => store_id,
-        "region_id" => region_id,
-        "default size" => region.data[2].len(),
-    );
 }
 
 unsafe fn write_to_db_data(

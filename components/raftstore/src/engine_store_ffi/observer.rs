@@ -28,6 +28,7 @@ use yatp::{
 };
 
 use crate::{
+    coprocessor,
     coprocessor::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
         BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
@@ -698,15 +699,17 @@ impl ApplySnapshotObserver for TiFlashObserver {
         peer_id: u64,
         snap_key: &crate::store::SnapKey,
         snap: Option<&crate::store::Snapshot>,
-    ) {
-        fail::fail_point!("on_ob_post_apply_snapshot", |_| {});
+    ) -> std::result::Result<(), coprocessor::error::Error> {
+        fail::fail_point!("on_ob_post_apply_snapshot", |_| {
+            return Err(box_err!("on_ob_post_apply_snapshot"));
+        });
         info!("post apply snapshot";
             "peer_id" => ?peer_id,
             "snap_key" => ?snap_key,
             "region" => ?ob_ctx.region(),
         );
         let snap = match snap {
-            None => return,
+            None => return Ok(()),
             Some(s) => s,
         };
         let maybe_snapshot = {
@@ -767,6 +770,7 @@ impl ApplySnapshotObserver for TiFlashObserver {
             self.engine_store_server_helper
                 .apply_pre_handled_snapshot(ptr.0);
         }
+        Ok(())
     }
 
     fn should_pre_apply_snapshot(&self) -> bool {
