@@ -1172,9 +1172,23 @@ mod restart {
         fail::cfg("try_flush_data", "return(0)").unwrap();
         let _ = cluster.run();
 
-        cluster.must_put(b"k0", b"v0");
-        let region = cluster.get_region(b"k0");
+        cluster.must_put(b"k", b"v");
+        let region = cluster.get_region(b"k");
         let region_id = region.get_id();
+        for i in 0..10 {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            cluster.must_put(k.as_bytes(), v.as_bytes());
+        }
+        let prev_state = collect_all_states(&cluster, region_id);
+        let (compact_index, compact_term) = get_valid_compact_index(&prev_state);
+        let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
+        let req =
+            test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+        fail::cfg("try_flush_data", "return(1)").unwrap();
+        let res = cluster
+            .call_command_on_leader(req, Duration::from_secs(3))
+            .unwrap();
 
         let eng_ids = cluster
             .engines
@@ -1182,7 +1196,80 @@ mod restart {
             .map(|e| e.0.to_owned())
             .collect::<Vec<_>>();
 
+        for i in 0..10 {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            // Whatever already persisted or not, we won't loss data.
+            check_key(
+                &cluster,
+                k.as_bytes(),
+                v.as_bytes(),
+                Some(true),
+                None,
+                Some(vec![eng_ids[0]]),
+            );
+        }
+
+        for i in 10..20 {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            cluster.must_put(k.as_bytes(), v.as_bytes());
+        }
+
+        for i in 10..20 {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            // Whatever already persisted or not, we won't loss data.
+            check_key(
+                &cluster,
+                k.as_bytes(),
+                v.as_bytes(),
+                Some(true),
+                None,
+                Some(vec![eng_ids[0]]),
+            );
+        }
+
+        info!("stop node {}", eng_ids[0]);
         cluster.stop_node(eng_ids[0]);
+        {
+            let lock = cluster.ffi_helper_set.lock();
+            lock.unwrap()
+                .deref_mut()
+                .get_mut(&eng_ids[0])
+                .unwrap()
+                .engine_store_server
+                .stop();
+        }
+
+        info!("resume node {}", eng_ids[0]);
+        {
+            let lock = cluster.ffi_helper_set.lock();
+            lock.unwrap()
+                .deref_mut()
+                .get_mut(&eng_ids[0])
+                .unwrap()
+                .engine_store_server
+                .restore();
+        }
+        info!("restored node {}", eng_ids[0]);
+        cluster.run_node(eng_ids[0]).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+        for i in 0..20 {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            // Whatever already persisted or not, we won't loss data.
+            check_key(
+                &cluster,
+                k.as_bytes(),
+                v.as_bytes(),
+                Some(true),
+                None,
+                Some(vec![eng_ids[0]]),
+            );
+        }
 
         fail::remove("try_flush_data");
         cluster.shutdown();

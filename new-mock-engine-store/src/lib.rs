@@ -14,7 +14,9 @@ pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     UnwrapExternCFunc,
 };
-use engine_traits::{Engines, Iterable, SyncMutable, CF_DEFAULT, CF_LOCK, CF_WRITE};
+use engine_traits::{
+    Engines, Iterable, Peekable, SyncMutable, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+};
 use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
     raft_serverpb::{
@@ -38,7 +40,7 @@ type RegionId = u64;
 pub struct Region {
     pub region: kvproto::metapb::Region,
     // Which peer is me?
-    peer: kvproto::metapb::Peer,
+    pub peer: kvproto::metapb::Peer,
     // in-memory data
     pub data: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
     // If we a key is deleted, it will immediately be removed from data,
@@ -102,6 +104,34 @@ impl EngineStoreServer {
                 bmap.get(key)
             }
             None => None,
+        }
+    }
+
+    pub fn stop(&mut self) {
+        for (_, region) in self.kvstore.iter_mut() {
+            for cf in region.pending_write.iter_mut() {
+                cf.clear();
+            }
+            for cf in region.pending_delete.iter_mut() {
+                cf.clear();
+            }
+            for cf in region.data.iter_mut() {
+                cf.clear();
+            }
+            region.apply_state = Default::default();
+            // We don't clear applied_term.
+        }
+    }
+
+    pub fn restore(&mut self) {
+        // TODO We should actually read from engine store's persistence.
+        // However, since mock engine store don't persist itself,
+        // we read from proxy instead.
+        unsafe {
+            let region_ids = self.kvstore.keys().cloned().collect::<Vec<_>>();
+            for region_id in region_ids.into_iter() {
+                load_from_db(self, region_id);
+            }
         }
     }
 }
@@ -168,8 +198,23 @@ fn delete_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8]) {
     data.remove(k);
 }
 
-unsafe fn load_from_db(store: &mut EngineStoreServer, region: &mut Box<Region>) {
-    let kv = &mut store.engines.as_mut().unwrap().kv;
+unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
+    let store_id = store.id;
+    let engine = &mut store.engines.as_mut().unwrap().kv;
+    let apply_state: RaftApplyState = engine
+        .get_msg_cf(CF_RAFT, &keys::apply_state_key(region_id))
+        .unwrap()
+        .unwrap();
+    let region_state: RegionLocalState = engine
+        .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))
+        .unwrap()
+        .unwrap();
+
+    let region = store.kvstore.get_mut(&region_id).unwrap();
+    region.apply_state = apply_state;
+    region.region = region_state.get_region().clone();
+    set_new_region_peer(region, store.id);
+
     for cf in 0..3 {
         let cf_name = cf_to_name(cf.into());
         region.data[cf].clear();
@@ -177,12 +222,30 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region: &mut Box<Region>) 
         region.pending_write[cf].clear();
         let start = region.region.get_start_key().to_owned();
         let end = region.region.get_end_key().to_owned();
-        kv.scan_cf(cf_name, &start, &end, false, |k, v| {
-            region.data[cf].insert(k.to_vec(), v.to_vec());
-            Ok(true)
-        })
-        .unwrap();
+        engine
+            .scan_cf(cf_name, &start, &end, false, |k, v| {
+                let origin_key = if keys::validate_data_key(k) {
+                    keys::origin_key(k).to_vec()
+                } else {
+                    k.to_vec()
+                };
+                region.data[cf].insert(origin_key, v.to_vec());
+                debug!("restored data";
+                    "store" => store_id,
+                    "region_id" => region_id,
+                    "cf" => cf,
+                    "k" => ?k,
+                    "v" => ?v,
+                );
+                Ok(true)
+            })
+            .unwrap();
     }
+    debug!("after restore";
+        "store" => store_id,
+        "region_id" => region_id,
+        "default size" => region.data[2].len(),
+    );
 }
 
 unsafe fn write_to_db_data(

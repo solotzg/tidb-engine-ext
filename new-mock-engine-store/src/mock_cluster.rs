@@ -95,7 +95,8 @@ pub struct EngineHelperSet {
 }
 
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
-    pub ffi_helper_lst: Vec<FFIHelperSet>,
+    // Helper to set ffi_helper_set.
+    ffi_helper_lst: Vec<FFIHelperSet>,
     pub ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
 
     pub cfg: Config,
