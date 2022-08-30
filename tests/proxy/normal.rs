@@ -34,7 +34,9 @@ use new_mock_engine_store::{
 };
 use pd_client::PdClient;
 use proxy_server::{
-    config::{address_proxy_config, ensure_no_common_unrecognized_keys},
+    config::{
+        address_proxy_config, ensure_no_common_unrecognized_keys, validate_and_persist_config,
+    },
     proxy::{
         gen_tikv_config, setup_default_tikv_config, TIFLASH_DEFAULT_LISTENING_ADDR,
         TIFLASH_DEFAULT_STATUS_ADDR,
@@ -48,7 +50,6 @@ use raftstore::{
     engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI},
     store::util::find_peer,
 };
-use server::setup::validate_and_persist_config;
 use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use test_raftstore::{new_node_cluster, new_tikv_config};
@@ -100,7 +101,7 @@ fn test_config() {
     assert_eq!(unknown.unwrap_err(), "nosense, rocksdb.z");
 
     // Need run this test with ENGINE_LABEL_VALUE=tiflash, otherwise will fatal exit.
-    server::setup::validate_and_persist_config(&mut config, true);
+    validate_and_persist_config(&mut config, true);
 
     // Will not override ProxyConfig
     let proxy_config_new = ProxyConfig::from_file(path, None).unwrap();
