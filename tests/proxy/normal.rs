@@ -5,6 +5,7 @@ use std::{
     io::{self, Read, Write},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc, Arc, Once, RwLock,
@@ -35,7 +36,8 @@ use new_mock_engine_store::{
 use pd_client::PdClient;
 use proxy_server::{
     config::{
-        address_proxy_config, ensure_no_common_unrecognized_keys, validate_and_persist_config,
+        address_proxy_config, ensure_no_common_unrecognized_keys, get_last_config,
+        validate_and_persist_config,
     },
     proxy::{
         gen_tikv_config, setup_default_tikv_config, TIFLASH_DEFAULT_LISTENING_ADDR,
@@ -53,7 +55,7 @@ use raftstore::{
 use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use test_raftstore::{new_node_cluster, new_tikv_config};
-use tikv::config::TiKvConfig;
+use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
     config::{LogFormat, ReadableDuration, ReadableSize},
     time::Duration,
@@ -101,7 +103,18 @@ fn test_config() {
     assert_eq!(unknown.unwrap_err(), "nosense, rocksdb.z");
 
     // Need run this test with ENGINE_LABEL_VALUE=tiflash, otherwise will fatal exit.
+    std::fs::remove_file(
+        PathBuf::from_str(&config.storage.data_dir)
+            .unwrap()
+            .join(LAST_CONFIG_FILE),
+    );
     validate_and_persist_config(&mut config, true);
+
+    let tmp_store_folder = tempfile::TempDir::new().unwrap();
+    let tmp_last_config_path = tmp_store_folder.path().join(LAST_CONFIG_FILE);
+
+    std::fs::copy(path, tmp_last_config_path.as_path()).unwrap();
+    get_last_config(tmp_store_folder.path().to_str().unwrap());
 
     // Will not override ProxyConfig
     let proxy_config_new = ProxyConfig::from_file(path, None).unwrap();

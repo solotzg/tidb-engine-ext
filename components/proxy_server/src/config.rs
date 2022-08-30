@@ -10,7 +10,7 @@ use itertools::Itertools;
 use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::with_prefix;
-use tikv::config::TiKvConfig;
+use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
 use tikv_util::crit;
 
 use crate::fatal;
@@ -175,17 +175,18 @@ pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
+pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
     let store_path = Path::new(data_dir);
     let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
     let mut v: Vec<String> = vec![];
     if last_cfg_path.exists() {
         let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
-            fatal!(
+            error!(
                 "invalid auto generated configuration file {}, err {}",
                 last_cfg_path.display(),
                 e
             );
+            std::process::exit(1)
         });
         info!("unrecognized in last config";
             "config" => ?v,
