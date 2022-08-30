@@ -11,7 +11,7 @@ use chrono::Local;
 use clap::ArgMatches;
 use collections::HashMap;
 pub use server::setup::{ensure_no_unrecognized_config, initial_logger, initial_metric};
-use tikv::config::{check_critical_config, persist_config, MetricConfig, TiKvConfig};
+use tikv::config::{MetricConfig, TiKvConfig};
 use tikv_util::{self, config, logger};
 
 use crate::config::{validate_and_persist_config, ProxyConfig};
