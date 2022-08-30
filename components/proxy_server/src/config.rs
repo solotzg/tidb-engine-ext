@@ -178,16 +178,20 @@ pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
 fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
     let store_path = Path::new(data_dir);
     let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
+    let mut v: Vec<String> = vec![];
     if last_cfg_path.exists() {
-        return Some(
-            TiKvConfig::from_file(&last_cfg_path, None).unwrap_or_else(|e| {
-                fatal!(
-                    "invalid auto generated configuration file {}, err {}",
-                    last_cfg_path.display(),
-                    e
-                );
-            }),
+        let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
+            fatal!(
+                "invalid auto generated configuration file {}, err {}",
+                last_cfg_path.display(),
+                e
+            );
+        });
+        info!("unrecognized in last config";
+            "config" => ?v,
+            "file" => last_cfg_path.display(),
         );
+        return Some(s);
     }
     None
 }
