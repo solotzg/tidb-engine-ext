@@ -332,7 +332,10 @@ mod config {
             config.server.advertise_status_addr,
             TIFLASH_DEFAULT_STATUS_ADDR
         );
-        assert_eq!(config.raft_store.region_worker_tick_interval, 500);
+        assert_eq!(
+            config.raft_store.region_worker_tick_interval.as_millis(),
+            500
+        );
     }
 
     #[test]
