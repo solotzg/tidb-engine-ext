@@ -110,15 +110,26 @@ fn test_config() {
     );
     validate_and_persist_config(&mut config, true);
 
-    let tmp_store_folder = tempfile::TempDir::new().unwrap();
-    let tmp_last_config_path = tmp_store_folder.path().join(LAST_CONFIG_FILE);
-
-    std::fs::copy(path, tmp_last_config_path.as_path()).unwrap();
-    get_last_config(tmp_store_folder.path().to_str().unwrap());
-
     // Will not override ProxyConfig
     let proxy_config_new = ProxyConfig::from_file(path, None).unwrap();
     assert_eq!(proxy_config_new.raft_store.snap_handle_pool_size, 4);
+}
+
+#[test]
+fn test_validate_config() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    let text = "memory-usage-high-water=0.65\n[raftstore.aaa]\nbbb=2\n[server]\nengine-addr=\"1.2.3.4:5\"\n[raftstore]\nsnap-handle-pool-size=4\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
+    write!(file, "{}", text).unwrap();
+    let path = file.path();
+    let tmp_store_folder = tempfile::TempDir::new().unwrap();
+    let tmp_last_config_path = tmp_store_folder.path().join(LAST_CONFIG_FILE);
+    debug!(
+        "tmp_last_config_path {:?} tmp_store_folder {:?}",
+        tmp_last_config_path, tmp_store_folder
+    );
+    std::fs::copy(path, tmp_last_config_path.as_path()).unwrap();
+    std::fs::copy(path, "./last_ttikv.toml").unwrap();
+    get_last_config(tmp_store_folder.path().to_str().unwrap());
 }
 
 #[test]

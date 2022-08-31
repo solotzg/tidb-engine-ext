@@ -187,10 +187,12 @@ pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
             );
             std::process::exit(1)
         });
-        info!("unrecognized in last config";
-            "config" => ?v,
-            "file" => last_cfg_path.display(),
-        );
+        if !v.is_empty() {
+            info!("unrecognized in last config";
+                "config" => ?v,
+                "file" => last_cfg_path.display(),
+            );
+        }
         return Some(s);
     }
     None
