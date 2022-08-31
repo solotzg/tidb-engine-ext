@@ -32,7 +32,8 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.raft_store.region_worker_tick_interval = ReadableDuration::millis(500);
-    let clean_stale_tick_max = (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
+    let clean_stale_tick_max =
+        (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
     default.raft_store.clean_stale_tick_max = clean_stale_tick_max;
 }
 
@@ -55,11 +56,12 @@ pub fn gen_tikv_config(
                 },
             )
             .unwrap_or_else(|e| {
-                panic!(
-                    "invalid auto generated configuration file {}, err {}",
+                error!(
+                    "invalid default auto generated configuration file {}, err {}",
                     path.display(),
                     e
                 );
+                std::process::exit(1);
             })
         })
 }

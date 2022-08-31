@@ -165,11 +165,14 @@ pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
     // Check current critical configurations with last time, if there are some
     // changes, user must guarantee relevant works have been done.
     if let Some(mut cfg) = get_last_config(&config.storage.data_dir) {
+        info!("check_critical_config finished compatible_adjust");
         cfg.compatible_adjust();
         if let Err(e) = cfg.validate() {
             warn!("last_tikv.toml is invalid but ignored: {:?}", e);
         }
+        info!("check_critical_config finished validate");
         config.check_critical_cfg_with(&cfg)?;
+        info!("check_critical_config finished check_critical_cfg_with");
     }
     Ok(())
 }
@@ -179,7 +182,7 @@ pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
     let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
     let mut v: Vec<String> = vec![];
     if last_cfg_path.exists() {
-        let s = TiKvConfig::from_file(&last_cfg_path, None).unwrap_or_else(|e| {
+        let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
             error!(
                 "invalid auto generated configuration file {}, err {}",
                 last_cfg_path.display(),
