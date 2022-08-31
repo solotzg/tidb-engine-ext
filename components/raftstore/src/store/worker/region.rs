@@ -1419,7 +1419,7 @@ mod tests {
             peer_id: u64,
             key: &crate::store::SnapKey,
             snapshot: Option<&crate::store::Snapshot>,
-        ) -> std::result::Result<(), crate::coprocessor::error::Error> {
+        ) -> std::result::Result<(), crate::coprocessor::Error> {
             let code = snapshot.unwrap().total_size().unwrap()
                 + key.term
                 + key.region_id

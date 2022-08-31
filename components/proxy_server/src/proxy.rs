@@ -14,9 +14,7 @@ use tikv_util::config::ReadableDuration;
 
 use crate::{
     fatal,
-    setup::{
-        ensure_no_unrecognized_config, overwrite_config_with_cmd_args, validate_and_persist_config,
-    },
+    setup::{ensure_no_unrecognized_config, overwrite_config_with_cmd_args},
 };
 
 // Not the same as TiKV
@@ -33,8 +31,8 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-    default.raft_store.region_worker_tick_interval = 500;
-    let clean_stale_tick_max = (10_000 / default.raft_store.region_worker_tick_interval) as usize;
+    default.raft_store.region_worker_tick_interval = ReadableDuration::millis(500);
+    let clean_stale_tick_max = (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
     default.raft_store.clean_stale_tick_max = clean_stale_tick_max;
 }
 
@@ -302,7 +300,7 @@ pub unsafe fn run_proxy(
     config.logger_compatible_adjust();
 
     if is_config_check {
-        validate_and_persist_config(&mut config, false);
+        crate::config::validate_and_persist_config(&mut config, false);
         match crate::config::ensure_no_common_unrecognized_keys(
             &proxy_unrecognized_keys,
             &unrecognized_keys,

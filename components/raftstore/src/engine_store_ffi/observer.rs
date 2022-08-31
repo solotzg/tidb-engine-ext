@@ -702,7 +702,7 @@ impl ApplySnapshotObserver for TiFlashObserver {
         peer_id: u64,
         snap_key: &crate::store::SnapKey,
         snap: Option<&crate::store::Snapshot>,
-    ) -> std::result::Result<(), coprocessor::error::Error> {
+    ) -> std::result::Result<(), coprocessor::Error> {
         fail::fail_point!("on_ob_post_apply_snapshot", |_| {
             return Err(box_err!("on_ob_post_apply_snapshot"));
         });
