@@ -139,7 +139,6 @@ pub fn address_proxy_config(config: &mut TiKvConfig) {
         .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
 }
 
-#[allow(dead_code)]
 pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
     config.compatible_adjust();
     if let Err(e) = config.validate() {
