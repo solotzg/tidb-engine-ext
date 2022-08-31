@@ -123,10 +123,6 @@ fn test_validate_config() {
     let path = file.path();
     let tmp_store_folder = tempfile::TempDir::new().unwrap();
     let tmp_last_config_path = tmp_store_folder.path().join(LAST_CONFIG_FILE);
-    debug!(
-        "tmp_last_config_path {:?} tmp_store_folder {:?}",
-        tmp_last_config_path, tmp_store_folder
-    );
     std::fs::copy(path, tmp_last_config_path.as_path()).unwrap();
     std::fs::copy(path, "./last_ttikv.toml").unwrap();
     get_last_config(tmp_store_folder.path().to_str().unwrap());
