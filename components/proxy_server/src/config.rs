@@ -9,19 +9,58 @@ use std::{
 use itertools::Itertools;
 use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
-use tikv::config::TiKvConfig;
-use tikv_util::crit;
+use serde_with::with_prefix;
+use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
+use tikv_util::{config::ReadableDuration, crit};
 
 use crate::fatal;
+
+with_prefix!(prefix_apply "apply-");
+with_prefix!(prefix_store "store-");
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct RaftstoreConfig {
+    pub snap_handle_pool_size: usize,
+}
+
+impl Default for RaftstoreConfig {
+    fn default() -> Self {
+        RaftstoreConfig {
+            snap_handle_pool_size: 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ServerConfig {
+    pub engine_addr: String,
+    pub engine_store_version: String,
+    pub engine_store_git_hash: String,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        ServerConfig {
+            engine_addr: DEFAULT_ENGINE_ADDR.to_string(),
+            engine_store_version: String::default(),
+            engine_store_git_hash: String::default(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ProxyConfig {
-    pub snap_handle_pool_size: usize,
-    pub engine_addr: String,
-    pub engine_store_version: String,
-    pub engine_store_git_hash: String,
+    #[online_config(submodule)]
+    pub server: ServerConfig,
+
+    #[online_config(submodule)]
+    #[serde(rename = "raftstore")]
+    pub raft_store: RaftstoreConfig,
 }
 
 pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
@@ -33,10 +72,8 @@ pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
-            snap_handle_pool_size: 2,
-            engine_addr: DEFAULT_ENGINE_ADDR.to_string(),
-            engine_store_version: String::default(),
-            engine_store_git_hash: String::default(),
+            raft_store: RaftstoreConfig::default(),
+            server: ServerConfig::default(),
         }
     }
 }
@@ -100,4 +137,66 @@ pub fn address_proxy_config(config: &mut TiKvConfig) {
         .server
         .labels
         .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
+}
+
+pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
+    config.compatible_adjust();
+    if let Err(e) = config.validate() {
+        fatal!("invalid configuration: {}", e);
+    }
+
+    if let Err(e) = check_critical_config(config) {
+        fatal!("critical config check failed: {}", e);
+    }
+
+    if persist {
+        if let Err(e) = tikv::config::persist_config(config) {
+            fatal!("persist critical config failed: {}", e);
+        }
+    }
+}
+
+/// Prevents launching with an incompatible configuration
+///
+/// Loads the previously-loaded configuration from `last_tikv.toml`,
+/// compares key configuration items and fails if they are not
+/// identical.
+pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
+    // Check current critical configurations with last time, if there are some
+    // changes, user must guarantee relevant works have been done.
+    if let Some(mut cfg) = get_last_config(&config.storage.data_dir) {
+        info!("check_critical_config finished compatible_adjust");
+        cfg.compatible_adjust();
+        if let Err(e) = cfg.validate() {
+            warn!("last_tikv.toml is invalid but ignored: {:?}", e);
+        }
+        info!("check_critical_config finished validate");
+        config.check_critical_cfg_with(&cfg)?;
+        info!("check_critical_config finished check_critical_cfg_with");
+    }
+    Ok(())
+}
+
+pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
+    let store_path = Path::new(data_dir);
+    let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
+    let mut v: Vec<String> = vec![];
+    if last_cfg_path.exists() {
+        let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
+            error!(
+                "invalid auto generated configuration file {}, err {}",
+                last_cfg_path.display(),
+                e
+            );
+            std::process::exit(1)
+        });
+        if !v.is_empty() {
+            info!("unrecognized in last config";
+                "config" => ?v,
+                "file" => last_cfg_path.display(),
+            );
+        }
+        return Some(s);
+    }
+    None
 }

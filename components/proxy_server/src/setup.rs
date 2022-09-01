@@ -10,13 +10,11 @@ use std::{
 use chrono::Local;
 use clap::ArgMatches;
 use collections::HashMap;
-pub use server::setup::{
-    ensure_no_unrecognized_config, initial_logger, initial_metric, validate_and_persist_config,
-};
-use tikv::config::{check_critical_config, persist_config, MetricConfig, TiKvConfig};
+pub use server::setup::{ensure_no_unrecognized_config, initial_logger, initial_metric};
+use tikv::config::{MetricConfig, TiKvConfig};
 use tikv_util::{self, config, logger};
 
-use crate::config::ProxyConfig;
+use crate::config::{validate_and_persist_config, ProxyConfig};
 pub use crate::fatal;
 
 #[allow(dead_code)]
@@ -52,21 +50,21 @@ pub fn overwrite_config_with_cmd_args(
     }
 
     if let Some(engine_store_version) = matches.value_of("engine-version") {
-        proxy_config.engine_store_version = engine_store_version.to_owned();
+        proxy_config.server.engine_store_version = engine_store_version.to_owned();
     }
 
     if let Some(engine_store_git_hash) = matches.value_of("engine-git-hash") {
-        proxy_config.engine_store_git_hash = engine_store_git_hash.to_owned();
+        proxy_config.server.engine_store_git_hash = engine_store_git_hash.to_owned();
     }
 
-    if proxy_config.engine_addr.is_empty() {
+    if proxy_config.server.engine_addr.is_empty() {
         if let Some(engine_addr) = matches.value_of("engine-addr") {
-            proxy_config.engine_addr = engine_addr.to_owned();
+            proxy_config.server.engine_addr = engine_addr.to_owned();
         }
     }
 
     if let Some(engine_addr) = matches.value_of("advertise-engine-addr") {
-        proxy_config.engine_addr = engine_addr.to_owned();
+        proxy_config.server.engine_addr = engine_addr.to_owned();
     }
 
     if let Some(data_dir) = matches.value_of("data-dir") {

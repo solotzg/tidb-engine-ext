@@ -2,14 +2,14 @@
 
 use std::{
     path::Path,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use collections::{HashMap, HashSet};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::DataKeyManager;
 use engine_rocks::RocksSnapshot;
-use engine_traits::{Engines, KvEngine, MiscExt, Peekable};
+use engine_traits::{Engines, MiscExt, Peekable};
 use kvproto::{
     metapb,
     raft_cmdpb::*,
@@ -45,7 +45,7 @@ use tikv_util::{
 
 use crate::{
     config::Config,
-    mock_cluster::{create_tiflash_test_engine, Cluster, Simulator, TestPdClient, TiFlashEngine},
+    mock_cluster::{Simulator, TestPdClient, TiFlashEngine},
     transport_simulate::{Filter, SimulateTransport},
 };
 
@@ -300,7 +300,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             node_id,
             engines.kv.clone(),
             importer.clone(),
-            cfg.proxy_cfg.snap_handle_pool_size,
+            cfg.proxy_cfg.raft_store.snap_handle_pool_size,
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 
