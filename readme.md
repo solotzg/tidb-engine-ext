@@ -44,7 +44,16 @@ As described in [tikv#12849](https://github.com/tikv/tikv/issues/12849).
 
 ### TiFlash(Proxy) side
 As described in [tiflash#5170](https://github.com/pingcap/tiflash/issues/5170).
-
+After refactoring, the Proxy can be divided into several crate/modules:
+1. proxy_server
+    This is a replacement of component/server.
+2. new-mock-engine-store
+    This is a replacement of component/test_raftstore and the old mock_engine_store.
+3. engine_store_ffi
+    This is decoupled from component/raftstore. The observers are also implemented in this crate.
+4. engine_tiflash
+5. raftstore-proxy
+6. gen-proxy-ffi
 
 # TiDB Engine Extensions Library
 
