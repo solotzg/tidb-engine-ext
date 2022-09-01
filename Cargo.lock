@@ -4119,7 +4119,6 @@ dependencies = [
  "backup",
  "backup-stream",
  "causal_ts",
- "cdc",
  "chrono",
  "clap",
  "collections",

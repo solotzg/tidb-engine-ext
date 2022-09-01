@@ -5,7 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     pin::Pin,
-    sync::Mutex,
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -14,7 +14,9 @@ pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     UnwrapExternCFunc,
 };
-use engine_traits::{Engines, Iterable, SyncMutable, CF_DEFAULT, CF_LOCK, CF_WRITE};
+use engine_traits::{
+    Engines, Iterable, Peekable, SyncMutable, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+};
 use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
     raft_serverpb::{
@@ -26,7 +28,7 @@ use protobuf::Message;
 use raftstore::{engine_store_ffi, engine_store_ffi::RawCppPtr};
 use tikv_util::{debug, error, info, warn};
 
-use crate::mock_cluster::TiFlashEngine;
+use crate::{config::MockConfig, mock_cluster::TiFlashEngine};
 
 pub mod config;
 pub mod mock_cluster;
@@ -38,7 +40,7 @@ type RegionId = u64;
 pub struct Region {
     pub region: kvproto::metapb::Region,
     // Which peer is me?
-    peer: kvproto::metapb::Peer,
+    pub peer: kvproto::metapb::Peer,
     // in-memory data
     pub data: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
     // If we a key is deleted, it will immediately be removed from data,
@@ -73,6 +75,7 @@ pub struct EngineStoreServer {
     pub engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
     pub proxy_compat: bool,
+    pub mock_cfg: MockConfig,
 }
 
 impl EngineStoreServer {
@@ -85,6 +88,7 @@ impl EngineStoreServer {
             engines,
             kvstore: Default::default(),
             proxy_compat: false,
+            mock_cfg: MockConfig::default(),
         }
     }
 
@@ -100,6 +104,34 @@ impl EngineStoreServer {
                 bmap.get(key)
             }
             None => None,
+        }
+    }
+
+    pub fn stop(&mut self) {
+        for (_, region) in self.kvstore.iter_mut() {
+            for cf in region.pending_write.iter_mut() {
+                cf.clear();
+            }
+            for cf in region.pending_delete.iter_mut() {
+                cf.clear();
+            }
+            for cf in region.data.iter_mut() {
+                cf.clear();
+            }
+            region.apply_state = Default::default();
+            // We don't clear applied_term.
+        }
+    }
+
+    pub fn restore(&mut self) {
+        // TODO We should actually read from engine store's persistence.
+        // However, since mock engine store don't persist itself,
+        // we read from proxy instead.
+        unsafe {
+            let region_ids = self.kvstore.keys().cloned().collect::<Vec<_>>();
+            for region_id in region_ids.into_iter() {
+                load_from_db(self, region_id);
+            }
         }
     }
 }
@@ -166,8 +198,23 @@ fn delete_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8]) {
     data.remove(k);
 }
 
-unsafe fn load_from_db(store: &mut EngineStoreServer, region: &mut Box<Region>) {
-    let kv = &mut store.engines.as_mut().unwrap().kv;
+unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
+    let store_id = store.id;
+    let engine = &mut store.engines.as_mut().unwrap().kv;
+    let apply_state: RaftApplyState = engine
+        .get_msg_cf(CF_RAFT, &keys::apply_state_key(region_id))
+        .unwrap()
+        .unwrap();
+    let region_state: RegionLocalState = engine
+        .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))
+        .unwrap()
+        .unwrap();
+
+    let region = store.kvstore.get_mut(&region_id).unwrap();
+    region.apply_state = apply_state;
+    region.region = region_state.get_region().clone();
+    set_new_region_peer(region, store.id);
+
     for cf in 0..3 {
         let cf_name = cf_to_name(cf.into());
         region.data[cf].clear();
@@ -175,18 +222,35 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region: &mut Box<Region>) 
         region.pending_write[cf].clear();
         let start = region.region.get_start_key().to_owned();
         let end = region.region.get_end_key().to_owned();
-        kv.scan_cf(cf_name, &start, &end, false, |k, v| {
-            region.data[cf].insert(k.to_vec(), v.to_vec());
-            Ok(true)
-        })
-        .unwrap();
+        engine
+            .scan_cf(cf_name, &start, &end, false, |k, v| {
+                let origin_key = if keys::validate_data_key(k) {
+                    keys::origin_key(k).to_vec()
+                } else {
+                    k.to_vec()
+                };
+                region.data[cf].insert(origin_key, v.to_vec());
+                debug!("restored data";
+                    "store" => store_id,
+                    "region_id" => region_id,
+                    "cf" => cf,
+                    "k" => ?k,
+                );
+                Ok(true)
+            })
+            .unwrap();
     }
 }
 
-unsafe fn write_to_db_data(store: &mut EngineStoreServer, region: &mut Box<Region>) {
+unsafe fn write_to_db_data(
+    store: &mut EngineStoreServer,
+    region: &mut Box<Region>,
+    reason: String,
+) {
     info!("mock flush to engine";
         "region" => ?region.region,
         "store_id" => store.id,
+        "reason" => reason
     );
     let kv = &mut store.engines.as_mut().unwrap().kv;
     for cf in 0..3 {
@@ -232,11 +296,23 @@ impl EngineStoreServerWrap {
         let region_id = header.region_id;
         let node_id = (*self.engine_store_server).id;
         info!("handle_admin_raft_cmd";
-            "request"=>?req, "response"=>?resp, "index"=>header.index, "region-id"=>header.region_id);
+            "node_id"=>node_id,
+            "request"=>?req,
+            "response"=>?resp,
+            "header"=>?header,
+            "region_id"=>header.region_id,
+        );
         let do_handle_admin_raft_cmd =
             move |region: &mut Box<Region>, engine_store_server: &mut EngineStoreServer| {
                 if region.apply_state.get_applied_index() >= header.index {
-                    return ffi_interfaces::EngineStoreApplyRes::Persist;
+                    // If it is a old entry.
+                    error!("obsolete admin index";
+                    "apply_state"=>?region.apply_state,
+                    "header"=>?header,
+                    "node_id"=>node_id,
+                    );
+                    panic!("observe obsolete admin index");
+                    // return ffi_interfaces::EngineStoreApplyRes::None;
                 }
                 match req.get_cmd_type() {
                     AdminCmdType::ChangePeer | AdminCmdType::ChangePeerV2 => {
@@ -311,7 +387,7 @@ impl EngineStoreServerWrap {
                     AdminCmdType::PrepareMerge => {
                         let tikv_region = resp.get_split().get_left();
 
-                        let target = req.prepare_merge.as_ref().unwrap().target.as_ref();
+                        let _target = req.prepare_merge.as_ref().unwrap().target.as_ref();
                         let region_meta = &mut (engine_store_server
                             .kvstore
                             .get_mut(&region_id)
@@ -414,6 +490,7 @@ impl EngineStoreServerWrap {
                 let res = match req.get_cmd_type() {
                     AdminCmdType::CompactLog => {
                         fail::fail_point!("no_persist_compact_log", |_| {
+                            // Persist data, but don't persist meta.
                             ffi_interfaces::EngineStoreApplyRes::None
                         });
                         ffi_interfaces::EngineStoreApplyRes::Persist
@@ -450,11 +527,17 @@ impl EngineStoreServerWrap {
         };
         match res {
             ffi_interfaces::EngineStoreApplyRes::Persist => {
+                // Persist tells ApplyDelegate to do a commit.
+                // So we also need a persist of actual data on engine-store' side.
                 if let Some(region) = region {
                     if req.get_cmd_type() == AdminCmdType::CompactLog {
                         // We already persist when fn_try_flush_data.
                     } else {
-                        write_to_db_data(&mut (*self.engine_store_server), region);
+                        write_to_db_data(
+                            &mut (*self.engine_store_server),
+                            region,
+                            format!("admin {:?}", req),
+                        );
                     }
                 }
             }
@@ -470,12 +553,18 @@ impl EngineStoreServerWrap {
     ) -> ffi_interfaces::EngineStoreApplyRes {
         let region_id = header.region_id;
         let server = &mut (*self.engine_store_server);
-        let kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
+        let node_id = (*self.engine_store_server).id;
+        let _kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
         let proxy_compat = server.proxy_compat;
-
         let mut do_handle_write_raft_cmd = move |region: &mut Box<Region>| {
             if region.apply_state.get_applied_index() >= header.index {
-                return ffi_interfaces::EngineStoreApplyRes::None;
+                debug!("obsolete write index";
+                "apply_state"=>?region.apply_state,
+                "header"=>?header,
+                "node_id"=>node_id,
+                );
+                panic!("observe obsolete write index");
+                // return ffi_interfaces::EngineStoreApplyRes::None;
             }
             for i in 0..cmds.len {
                 let key = &*cmds.keys.add(i as _);
@@ -486,15 +575,14 @@ impl EngineStoreServerWrap {
                 let cf = &*cmds.cmd_cf.add(i as _);
                 let cf_index = (*cf) as u8;
                 debug!(
-                    "handle_write_raft_cmd";
+                    "handle_write_raft_cmd with kv";
                     "k" => ?&k[..std::cmp::min(4usize, k.len())],
                     "v" => ?&v[..std::cmp::min(4usize, v.len())],
                     "region_id" => region_id,
                     "node_id" => server.id,
                     "header" => ?header,
-                    "proxy_compat" => proxy_compat,
                 );
-                let data = &mut region.data[cf_index as usize];
+                let _data = &mut region.data[cf_index as usize];
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
                         write_kv_in_mem(region, cf_index as usize, k, v);
@@ -507,7 +595,8 @@ impl EngineStoreServerWrap {
             // Advance apply index, but do not persist
             region.set_applied(header.index, header.term);
             if !proxy_compat {
-                write_to_db_data(server, region);
+                // If we don't support new proxy
+                write_to_db_data(server, region, format!("write"));
             }
             ffi_interfaces::EngineStoreApplyRes::None
         };
@@ -644,20 +733,51 @@ unsafe extern "C" fn ffi_try_flush_data(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,
     _try_until_succeed: u8,
-    _index: u64,
-    _term: u64,
+    index: u64,
+    term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let kvstore = &mut (*store.engine_store_server).kvstore;
-    let region = kvstore.get_mut(&region_id).unwrap();
+    // If we can't find region here, we return true so proxy can trigger a CompactLog.
+    // The triggered CompactLog will be handled by `handleUselessAdminRaftCmd`,
+    // and result in a `EngineStoreApplyRes::NotFound`.
+    // Proxy will print this message and continue: `region not found in engine-store, maybe have exec `RemoveNode` first`.
+    let region = match kvstore.get_mut(&region_id) {
+        Some(r) => r,
+        None => {
+            if (*store.engine_store_server)
+                .mock_cfg
+                .panic_when_flush_no_found
+                .load(Ordering::SeqCst)
+            {
+                panic!(
+                    "ffi_try_flush_data no found region {} [index {} term {}], store {}",
+                    region_id,
+                    index,
+                    term,
+                    (*store.engine_store_server).id
+                );
+            } else {
+                return 1;
+            }
+        }
+    };
     fail::fail_point!("try_flush_data", |e| {
         let b = e.unwrap().parse::<u8>().unwrap();
         if b == 1 {
-            write_to_db_data(&mut (*store.engine_store_server), region);
+            write_to_db_data(
+                &mut (*store.engine_store_server),
+                region,
+                format!("fn_try_flush_data"),
+            );
         }
         b
     });
-    write_to_db_data(&mut (*store.engine_store_server), region);
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        format!("fn_try_flush_data"),
+    );
     true as u8
 }
 
@@ -781,6 +901,7 @@ unsafe extern "C" fn ffi_handle_destroy(
     arg2: u64,
 ) {
     let store = into_engine_store_server_wrap(arg1);
+    debug!("ffi_handle_destroy {}", arg2);
     (*store.engine_store_server).kvstore.remove(&arg2);
 }
 
@@ -864,7 +985,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 ) -> ffi_interfaces::RawCppPtr {
     let store = into_engine_store_server_wrap(arg1);
     let proxy_helper = &mut *(store.maybe_proxy_helper.unwrap());
-    let kvstore = &mut (*store.engine_store_server).kvstore;
+    let _kvstore = &mut (*store.engine_store_server).kvstore;
     let node_id = (*store.engine_store_server).id;
 
     let mut region_meta = kvproto::metapb::Region::default();
@@ -883,7 +1004,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         "snap len" => snaps.len,
     );
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views.add(i as usize);
+        let snapshot = snaps.views.add(i as usize);
         let view = &*(snapshot as *mut ffi_interfaces::SSTView);
         let mut sst_reader = SSTReader::new(proxy_helper, view);
 
@@ -927,7 +1048,7 @@ pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
 unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     arg2: ffi_interfaces::RawVoidPtr,
-    arg3: ffi_interfaces::RawCppPtrType,
+    _arg3: ffi_interfaces::RawCppPtrType,
 ) {
     let store = into_engine_store_server_wrap(arg1);
     let region_meta = &mut *(arg2 as *mut PrehandledSnapshot);
@@ -949,7 +1070,11 @@ unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         "store_id" => node_id,
         "region" => ?region.region,
     );
-    write_to_db_data(&mut (*store.engine_store_server), region);
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        String::from("prehandle-snap"),
+    );
 }
 
 unsafe extern "C" fn ffi_handle_ingest_sst(
@@ -966,7 +1091,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     let _kv = &mut (*store.engine_store_server).engines.as_mut().unwrap().kv;
 
     match kvstore.entry(region_id) {
-        std::collections::hash_map::Entry::Occupied(o) => {}
+        std::collections::hash_map::Entry::Occupied(_o) => {}
         std::collections::hash_map::Entry::Vacant(v) => {
             // When we remove hacked code in handle_raft_entry_normal during migration,
             // some tests in handle_raft_entry_normal may fail, since it can observe a empty cmd,
@@ -989,7 +1114,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     );
 
     for i in 0..snaps.len {
-        let mut snapshot = snaps.views.add(i as usize);
+        let snapshot = snaps.views.add(i as usize);
         // let _path = std::str::from_utf8_unchecked((*snapshot).path.to_slice());
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
@@ -1010,7 +1135,14 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         region.apply_state.mut_truncated_state().set_term(term);
     }
 
-    write_to_db_data(&mut (*store.engine_store_server), region);
+    fail::fail_point!("on_handle_ingest_sst_return", |_e| {
+        ffi_interfaces::EngineStoreApplyRes::None
+    });
+    write_to_db_data(
+        &mut (*store.engine_store_server),
+        region,
+        String::from("ingest-sst"),
+    );
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

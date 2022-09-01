@@ -10,12 +10,11 @@ use std::{
 
 use clap::{App, Arg, ArgMatches};
 use tikv::config::TiKvConfig;
+use tikv_util::config::ReadableDuration;
 
 use crate::{
     fatal,
-    setup::{
-        ensure_no_unrecognized_config, overwrite_config_with_cmd_args, validate_and_persist_config,
-    },
+    setup::{ensure_no_unrecognized_config, overwrite_config_with_cmd_args},
 };
 
 // Not the same as TiKV
@@ -32,8 +31,13 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
+    default.raft_store.region_worker_tick_interval = ReadableDuration::millis(500);
+    let stale_peer_check_tick =
+        (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
+    default.raft_store.stale_peer_check_tick = stale_peer_check_tick;
 }
 
+/// Generate default TiKvConfig, but with some Proxy's default values.
 pub fn gen_tikv_config(
     matches: &ArgMatches,
     is_config_check: bool,
@@ -52,11 +56,12 @@ pub fn gen_tikv_config(
                 },
             )
             .unwrap_or_else(|e| {
-                panic!(
-                    "invalid auto generated configuration file {}, err {}",
+                error!(
+                    "invalid default auto generated configuration file {}, err {}",
                     path.display(),
                     e
                 );
+                std::process::exit(1);
             })
         })
 }
@@ -83,7 +88,7 @@ pub unsafe fn run_proxy(
 
     let matches = App::new("RaftStore Proxy")
         .about("RaftStore proxy to connect TiKV cluster")
-        .author("tongzhigao@pingcap.com")
+        .author("tongzhigao@pingcap.com;luorongzhen@pingcap.com")
         .version(crate::proxy_version_info().as_ref())
         .long_version(crate::proxy_version_info().as_ref())
         .arg(
@@ -296,9 +301,8 @@ pub unsafe fn run_proxy(
     overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
     config.logger_compatible_adjust();
 
-    // TODO(tiflash) We should later use ProxyConfig for proxy's own settings like `snap_handle_pool_size`
     if is_config_check {
-        validate_and_persist_config(&mut config, false);
+        crate::config::validate_and_persist_config(&mut config, false);
         match crate::config::ensure_no_common_unrecognized_keys(
             &proxy_unrecognized_keys,
             &unrecognized_keys,
@@ -308,6 +312,7 @@ pub unsafe fn run_proxy(
                 fatal!("unknown configuration options: {}", e);
             }
         }
+        crate::config::address_proxy_config(&mut config);
         println!("config check successful");
         process::exit(0)
     }
