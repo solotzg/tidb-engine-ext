@@ -15,12 +15,23 @@ Generally speaking, there are two storage components in TiKV for maintaining mul
    Multiple modifications about region data/meta/apply-state will be encapsulated into one `Write Batch` and written into KvEngine atomically.
 1. RaftEngine will parse its own committed raft log into corresponding normal/admin raft commands, which will be handled by the apply process.
 
-It is an option to wrap a self-defined KvEngine by TiKV's `Engine Traits`. But it may cost a lot to achieve such a replacement:
-1. It's not easy to guarantee atomicity while writing/reading dynamic key-value pair(such as meta/apply-state) and patterned data(strong schema) together for other storage systems.
-1. A few modules and components(like importer or lighting) reply on the SST format of KvEngine in TiKV. Foe example, thoses SST files shall be transformed to adapt a column storage engine.
-1. A flush to storage layer may be more expensive in other storage engine than TiKV.
+It is an option to wrap a self-defined KvEngine by TiKV's `Engine Traits`. This new KvEngine holds a original TiKV's `RocksEngine` and will do the following filtering:
+1. For meta data like `RaftApplyState`, we store them in `RocksEngine`.
+2. For KV data in `write`/`lock`/`default` cf, we forward them to TiFlash and will no longer write to `RocksEngine`.
 
-Apart from engine traits, we also need `coprocessor`s to observe and control TiKV's applying precedures.
+However it may cost a lot to achieve such a replacement:
+1. It's not easy to guarantee atomicity while writing/reading dynamic key-value pair(such as meta/apply-state) and patterned data(strong schema) together for other storage systems.
+2. A few modules and components(like importer or lighting) reply on the SST format of KvEngine in TiKV. For example, thoses SST files shall be transformed to adapt a column storage engine.
+3. A flush to storage layer may be more expensive in other storage engine than TiKV.
+
+Apart from `Engine Traits`, we also need `coprocessor`s to observe and control TiKV's applying procedures:
+1. An observer before execution of raft commands, which can filter incompatible commands for TiFlash.
+2. An observer after execution of raft commands, which can suggest a persistence.
+3. An observer when receiving tasks for applying snapshots, which allows TiFlash pre-handling multiple snapsnots in parallel.
+4. An observer after snapshots are applied, which informs TiFlash to do a immediate persistence.
+5. An observer when a peer is destroyed.
+6. An observer for empty raft entry.
+7. An observer to fetch used/total size of storage.
 
 The whole work can be divided into two parts:
 1. TiKV side
