@@ -152,11 +152,11 @@ pub struct Config {
 
     #[doc(hidden)]
     #[online_config(skip)]
-    pub region_worker_tick_interval: u64,
+    pub region_worker_tick_interval: ReadableDuration,
 
     #[doc(hidden)]
     #[online_config(skip)]
-    pub clean_stale_tick_max: usize,
+    pub stale_peer_check_tick: usize,
 
     // Interval (ms) to check region whether the data is consistent.
     pub consistency_check_interval: ReadableDuration,
@@ -350,8 +350,12 @@ impl Default for Config {
             leader_transfer_max_log_lag: 128,
             snap_apply_batch_size: ReadableSize::mb(10),
             snap_handle_pool_size: 2,
-            region_worker_tick_interval: PENDING_APPLY_CHECK_INTERVAL,
-            clean_stale_tick_max: STALE_PEER_CHECK_TICK,
+            region_worker_tick_interval: if cfg!(feature = "test") {
+                ReadableDuration::millis(200)
+            } else {
+                ReadableDuration::millis(1000)
+            },
+            stale_peer_check_tick: if cfg!(feature = "test") { 1 } else { 10 },
             lock_cf_compact_interval: ReadableDuration::minutes(10),
             lock_cf_compact_bytes_threshold: ReadableSize::mb(256),
             // Disable consistency check by default as it will hurt performance.

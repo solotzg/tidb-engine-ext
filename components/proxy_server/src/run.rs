@@ -17,8 +17,6 @@ use std::{
 };
 
 use api_version::{dispatch_api_version, KvFormat};
-use backup_stream::{config::BackupStreamConfigManager, observer::BackupStreamObserver};
-use cdc::{CdcConfigManager, MemoryQuota};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::{data_key_manager_from_config, DataKeyManager};
 use engine_rocks::{
@@ -40,9 +38,8 @@ use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
 use grpcio_health::HealthService;
 use kvproto::{
-    brpb::create_backup, cdcpb::create_change_data, deadlock::create_deadlock,
     debugpb::create_debug, diagnosticspb::create_diagnostics, import_sstpb::create_import_sst,
-    kvrpcpb::ApiVersion, resource_usage_agent::create_resource_metering_pub_sub,
+    kvrpcpb::ApiVersion,
 };
 use pd_client::{PdClient, RpcClient};
 use raft_log_engine::RaftLogEngine;
@@ -606,7 +603,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     fn init_config(mut config: TiKvConfig) -> ConfigController {
         // Add {label: {"engine": "tiflash"}} to Config
         crate::config::address_proxy_config(&mut config);
-        validate_and_persist_config(&mut config, true);
+        crate::config::validate_and_persist_config(&mut config, true);
 
         ensure_dir_exist(&config.storage.data_dir).unwrap();
         if !config.rocksdb.wal_dir.is_empty() {

@@ -420,8 +420,12 @@ where
             coprocessor_host: self.coprocessor_host.clone(),
         };
         s.apply(options)?;
-        self.coprocessor_host
-            .post_apply_snapshot(&region, peer_id, &snap_key, Some(&s));
+        if let Err(e) =
+            self.coprocessor_host
+                .post_apply_snapshot(&region, peer_id, &snap_key, Some(&s))
+        {
+            return Err(box_err!("post apply snapshot error {:?}", e));
+        };
 
         let mut wb = self.engine.write_batch();
         region_state.set_state(PeerState::Normal);
@@ -693,7 +697,7 @@ where
     // pending_applies records all delayed apply task, and will check again later
     pending_applies: VecDeque<Task<EK::Snapshot>>,
     clean_stale_tick: usize,
-    clean_stale_tick_max: usize,
+    stale_peer_check_tick: usize,
     clean_stale_check_interval: Duration,
     tiflash_stores: HashMap<u64, bool>,
     pd_client: Option<Arc<T>>,
@@ -711,7 +715,7 @@ where
         mgr: SnapManager,
         batch_size: usize,
         region_worker_tick_interval: u64,
-        clean_stale_tick_max: usize,
+        stale_peer_check_tick: usize,
         use_delete_range: bool,
         snap_generator_pool_size: usize,
         coprocessor_host: CoprocessorHost<EK>,
@@ -726,7 +730,7 @@ where
         };
 
         info!("create region runner"; "pool_size" => pool_size, "pre_handle_snap" => pre_handle_snap, "region_worker_tick_interval" => region_worker_tick_interval,
-         "clean_stale_tick_max" => clean_stale_tick_max);
+         "stale_peer_check_tick" => stale_peer_check_tick);
 
         Runner {
             pre_handle_snap_cfg: PreHandleSnapCfg {
@@ -747,7 +751,7 @@ where
             },
             pending_applies: VecDeque::new(),
             clean_stale_tick: 0,
-            clean_stale_tick_max,
+            stale_peer_check_tick,
             clean_stale_check_interval: Duration::from_millis(region_worker_tick_interval),
             tiflash_stores: HashMap::default(),
             pd_client,
@@ -887,7 +891,7 @@ where
     fn on_timeout(&mut self) {
         self.handle_pending_applies();
         self.clean_stale_tick += 1;
-        if self.clean_stale_tick >= self.clean_stale_tick_max {
+        if self.clean_stale_tick >= self.stale_peer_check_tick {
             self.ctx.clean_stale_ranges();
             self.clean_stale_tick = 0;
         }
@@ -1412,7 +1416,7 @@ mod tests {
             peer_id: u64,
             key: &crate::store::SnapKey,
             snapshot: Option<&crate::store::Snapshot>,
-        ) {
+        ) -> std::result::Result<(), crate::coprocessor::Error> {
             let code = snapshot.unwrap().total_size().unwrap()
                 + key.term
                 + key.region_id
@@ -1421,6 +1425,7 @@ mod tests {
             self.post_apply_count.fetch_add(1, Ordering::SeqCst);
             self.post_apply_hash
                 .fetch_add(code as usize, Ordering::SeqCst);
+            Ok(())
         }
 
         fn should_pre_apply_snapshot(&self) -> bool {

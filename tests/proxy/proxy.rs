@@ -30,7 +30,7 @@ use new_mock_engine_store::{
     Cluster, ProxyConfig, Simulator, TestPdClient,
 };
 use pd_client::PdClient;
-use proxy_server::config::ensure_no_common_unrecognized_keys;
+use proxy_server::config::{ensure_no_common_unrecognized_keys, validate_and_persist_config};
 use raft::eraftpb::MessageType;
 use raftstore::{
     coprocessor::{ConsistencyCheckMethod, Coprocessor},
@@ -38,7 +38,6 @@ use raftstore::{
     engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI},
     store::util::find_peer,
 };
-use server::setup::validate_and_persist_config;
 use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use tikv::config::TiKvConfig;
@@ -157,12 +156,9 @@ pub fn must_get_mem(
     value: Option<&[u8]>,
 ) {
     let mut last_res: Option<&Vec<u8>> = None;
+    let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
-        let res = engine_store_server.get_mem(
-            region_id,
-            new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default,
-            &key.to_vec(),
-        );
+        let res = engine_store_server.get_mem(region_id, cf, &key.to_vec());
 
         if let (Some(value), Some(last_res)) = (value, res) {
             assert_eq!(value, &last_res[..]);
@@ -175,11 +171,12 @@ pub fn must_get_mem(
     }
     let s = std::str::from_utf8(key).unwrap_or("");
     panic!(
-        "can't get mem value {:?} for key {}({}) in {}, actual {:?}",
+        "can't get mem value {:?} for key {}({}) in store {} cf {:?}, actual {:?}",
         value.map(tikv_util::escape),
         log_wrappers::hex_encode_upper(key),
         s,
         engine_store_server.id,
+        cf,
         last_res,
     )
 }
