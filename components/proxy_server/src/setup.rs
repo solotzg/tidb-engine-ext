@@ -10,11 +10,11 @@ use std::{
 use chrono::Local;
 use clap::ArgMatches;
 use collections::HashMap;
-pub use server::setup::{ensure_no_unrecognized_config, initial_logger};
+pub use server::setup::initial_logger;
 use tikv::config::{MetricConfig, TiKvConfig};
 use tikv_util::{self, config, logger};
 
-use crate::config::ProxyConfig;
+use crate::config::{validate_and_persist_config, ProxyConfig};
 pub use crate::fatal;
 
 #[allow(dead_code)]
