@@ -90,14 +90,14 @@ impl<T> Ord for TimeoutTask<T> {
 }
 
 lazy_static! {
-    pub static ref GLOBAL_TIMER_HANDLE: Handle = start_global_timer("timer");
+    pub static ref GLOBAL_TIMER_HANDLE: Handle = start_global_timer();
 }
 
-fn start_global_timer(name: &str) -> Handle {
+fn start_global_timer() -> Handle {
     let (tx, rx) = mpsc::channel();
     let props = crate::thread_group::current_properties();
     Builder::new()
-        .name(thd_name!(name))
+        .name(thd_name!("timer"))
         .spawn(move || {
             crate::thread_group::set_properties(props);
             tikv_alloc::add_thread_memory_accessor();
@@ -272,8 +272,4 @@ mod tests {
             elapsed
         );
     }
-}
-
-lazy_static! {
-    pub static ref PROXY_TIMER_HANDLE: Handle = start_global_timer("proxy-timer");
 }
