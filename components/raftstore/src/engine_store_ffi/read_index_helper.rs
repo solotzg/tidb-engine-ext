@@ -20,10 +20,6 @@ use crate::{
     store::{Callback, RaftCmdExtraOpts, RaftRouter, ReadResponse},
 };
 
-lazy_static! {
-    pub static ref PROXY_TIMER_HANDLE: Handle = start_global_timer_with_name("proxy-timer");
-}
-
 pub trait ReadIndex: Sync + Send {
     // To remove
     fn batch_read_index(
@@ -157,9 +153,7 @@ impl<ER: RaftEngine, EK: KvEngine> ReadIndex for ReadIndexClient<ER, EK> {
 
             futures::pin_mut!(read_index_fut);
             let deadline = Instant::now() + timeout;
-            let delay = PROXY_TIMER_HANDLE
-                .delay(deadline)
-                .compat();
+            let delay = super::utils::PROXY_TIMER_HANDLE.delay(deadline).compat();
             let ret = futures::future::select(read_index_fut, delay);
             match block_on(ret) {
                 futures::future::Either::Left(_) => true,
