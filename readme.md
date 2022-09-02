@@ -5,7 +5,7 @@ Author(s): [CalvinNeo](github.com/CalvinNeo)
 ## Motivation
 
 TiFlash Proxy is used to be a fork of TiKV which can replicate data from TiKV to TiFlash. However, since TiKV is upgrading rapidly, it brings lots of troubles for the old version:
-1. Proxy can't cherry pick TiKV 's bugfix in time.
+1. Proxy can't cherry-pick TiKV 's bugfix in time.
 2. It is hard to take proxy into account when developing TiKV.
 
 ## Design
@@ -19,7 +19,7 @@ It is an option to wrap a self-defined KvEngine by TiKV's `Engine Traits`. This 
 1. For meta data like `RaftApplyState`, we store them in `RocksEngine`.
 2. For KV data in `write`/`lock`/`default` cf, we forward them to TiFlash and will no longer write to `RocksEngine`.
 
-However it may cost a lot to achieve such a replacement:
+However, it may cost a lot to achieve such a replacement:
 1. It's not easy to guarantee atomicity while writing/reading dynamic key-value pair(such as meta/apply-state) and patterned data(strong schema) together for other storage systems.
 2. A few modules and components(like importer or lighting) reply on the SST format of KvEngine in TiKV. For example, thoses SST files shall be transformed to adapt a column storage engine.
 3. A flush to storage layer may be more expensive in other storage engine than TiKV.
@@ -40,22 +40,30 @@ The whole work can be divided into two parts:
    By implementing these new interfaces and observers, TiFlash can receive data from TiKV,
 
 ### TiKV side
-As described in [tikv#12849](https://github.com/tikv/tikv/issues/12849).
+As described in [tikv#12849](https://github.com/tikv/tikv/issues/12849), we provide a mechanism that enables external modules including but not limited to proxy to obtain data through raft apply state machine.
+
+Different from the way of capturing kv change log which is used by TiCDC, Proxy uses regions instead of tables as granularity which is smaller. Proxy also retains the raft state machine, which allows us to manipulate the apply process more finely.
 
 ### TiFlash(Proxy) side
 As described in [tiflash#5170](https://github.com/pingcap/tiflash/issues/5170).
 After refactoring, the Proxy can be divided into several crate/modules:
 1. proxy_server
-    This is a replacement of component/server.
+    This is a replacement of components/server.
 2. new-mock-engine-store
-    This is a replacement of component/test_raftstore and the old mock_engine_store.
+    This is a replacement of components/test_raftstore and the old mock-engine-store.
 3. engine_store_ffi
-    This is decoupled from component/raftstore. The observers are also implemented in this crate.
+    This is decoupled from components/raftstore. The observers are also implemented in this crate.
 4. engine_tiflash
+    This is the self-defined KvEngine.
 5. raftstore-proxy
+    As before, this crate serves as the entry point for the proxy. The [definition of ffi interfaces](raftstore-proxy/ffi/src/RaftStoreProxyFFI) is also located here.
 6. gen-proxy-ffi
+    As before, this crate generates interface code into engine_store_ffi.
 
 # TiDB Engine Extensions Library
+
+Author(s):
+[solotzg](github.com/solotzg) and [CalvinNeo](github.com/CalvinNeo)
 
 ## Abstract
 
@@ -172,7 +180,7 @@ Since the program language `Rust`, which TiKV uses, has zero-cost abstractions, 
 
 ## Usage
 
-There are two exposed extern "C" functions in [raftstore-proxy](TODO):
+There are two exposed extern "C" functions in [raftstore-proxy](raftstore-proxy):
 
 - `print_raftstore_proxy_version`: print necessary version information(just like TiKV does) into standard output.
 - `run_raftstore_proxy_ffi`:
@@ -182,7 +190,7 @@ There are two exposed extern "C" functions in [raftstore-proxy](TODO):
 To use this library, please follow the steps below:
 - Install `grpc`, `protobuf`, `c++`, `rust`.
 - Include this project as submodule.
-- Modify [FFI Source Code](TODO) under namspace `DB` if necessary and run `make gen_proxy_ffi`.
+- Modify [FFI Source Code](raftstore-proxy/ffi/src/RaftStoreProxyFFI) under namspace `DB` if necessary and run `make gen_proxy_ffi`.
 - Run `ENGINE_LABEL_VALUE=xxx make release`
   - label `engine:${ENGINE_LABEL_VALUE}` will be added to store info automatically
   - prefix `${ENGINE_LABEL_VALUE}_proxy_` will be added to each metrics name;
