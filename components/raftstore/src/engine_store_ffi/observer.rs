@@ -27,6 +27,12 @@ use yatp::{
     task::future::TaskCell,
 };
 
+use self::{
+    gen_engine_store_server_helper,
+    interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
+    name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
+    WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
+};
 use crate::{
     coprocessor,
     coprocessor::{
@@ -34,12 +40,6 @@ use crate::{
         BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
         Cmd, Coprocessor, CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver,
         RegionChangeEvent, RegionChangeObserver, RegionState, StoreSizeInfo,
-    },
-    engine_store_ffi::{
-        gen_engine_store_server_helper,
-        interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
-        name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr,
-        TiFlashEngine, WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
     },
     store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey},
     Error, Result,
