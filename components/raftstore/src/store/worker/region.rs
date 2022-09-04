@@ -43,7 +43,7 @@ use crate::{
             JOB_STATUS_CANCELLED, JOB_STATUS_CANCELLING, JOB_STATUS_FAILED, JOB_STATUS_FINISHED,
             JOB_STATUS_PENDING, JOB_STATUS_RUNNING,
         },
-        snap::{plain_file_used, Error, PreHandledSnapshot, Result, SNAPSHOT_CFS},
+        snap::{plain_file_used, Error, Result, SNAPSHOT_CFS},
         transport::CasualRouter,
         ApplyOptions, CasualMessage, SnapEntry, SnapKey, SnapManager,
     },
@@ -119,8 +119,6 @@ struct EngineStoreApplySnapTask {
     region_id: u64,
     peer_id: u64,
     status: Arc<AtomicUsize>,
-    recv: mpsc::Receiver<Option<PreHandledSnapshot>>,
-    pre_handled_snap: Option<PreHandledSnapshot>,
 }
 
 #[derive(Clone)]

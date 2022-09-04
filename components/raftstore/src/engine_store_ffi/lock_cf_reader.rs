@@ -9,8 +9,10 @@ use encryption::DataKeyManager;
 use file_system::File;
 use tikv_util::codec::bytes::CompactBytesFromFileDecoder;
 
-use self::interfaces::root::DB::{BaseBuffView, RawVoidPtr};
-use crate::store::snap::snap_io::get_decrypter_reader;
+use crate::{
+    engine_store_ffi::interfaces::root::DB::{BaseBuffView, RawVoidPtr},
+    store::snap::snap_io::get_decrypter_reader,
+};
 
 type LockCFDecoder = BufReader<Box<dyn Read + Send>>;
 
