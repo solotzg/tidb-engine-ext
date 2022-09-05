@@ -735,8 +735,8 @@ where
                 pool_size,
                 pre_handle_snap,
             },
-            pool: Builder::new(thd_name!("region-task"))
-                .max_thread_count(pool_size)
+            pool: Builder::new(thd_name!("snap-generator"))
+                .max_thread_count(config.value().snap_generator_pool_size)
                 .build_future_pool(),
             ctx: SnapContext {
                 engine,
