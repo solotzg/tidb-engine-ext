@@ -103,8 +103,8 @@ impl engine_traits::WriteBatch for RocksWriteBatch {
         let opt: RocksWriteOptions = opts.into();
         self.check_double_write();
         if self.is_empty() {
-            let bt = backtrace::Backtrace::new();
-            info!("abnormal empty write batch";
+            let bt = std::backtrace::Backtrace::capture();
+            tikv_util::info!("abnormal empty write batch";
                 "backtrace" => ?bt
             );
             Ok(())
