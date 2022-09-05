@@ -372,10 +372,7 @@ impl Default for Config {
             snap_generator_pool_size: 2,
             cleanup_import_sst_interval: ReadableDuration::minutes(10),
             local_read_batch_size: 1024,
-            apply_batch_system: BatchSystemConfig {
-                low_priority_pool_size: 4,
-                ..Default::default()
-            },
+            apply_batch_system: BatchSystemConfig::default(),
             store_batch_system: BatchSystemConfig::default(),
             store_io_pool_size: 0,
             store_io_notify_capacity: 40960,
