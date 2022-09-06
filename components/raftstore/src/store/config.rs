@@ -31,15 +31,24 @@ lazy_static! {
     .unwrap();
 }
 
+#[cfg(test)]
+pub const STALE_PEER_CHECK_TICK: usize = 1; // 1000 milliseconds
+
+#[cfg(not(test))]
+pub const STALE_PEER_CHECK_TICK: usize = 10; // 10000 milliseconds
+
+// used to periodically check whether schedule pending applies in region runner
+#[cfg(not(test))]
+pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 1_000; // 1000 milliseconds
+#[cfg(test)]
+pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 200; // 200 milliseconds
+
 with_prefix!(prefix_apply "apply-");
 with_prefix!(prefix_store "store-");
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
-    #[online_config(skip)]
-    pub engine_store_server_helper: isize,
-
     // minimizes disruption when a partitioned node rejoins the cluster by using a two phase election.
     #[online_config(skip)]
     pub prevote: bool,
@@ -141,8 +150,13 @@ pub struct Config {
     #[online_config(skip)]
     pub snap_handle_pool_size: usize,
 
+    #[doc(hidden)]
     #[online_config(skip)]
     pub region_worker_tick_interval: ReadableDuration,
+
+    #[doc(hidden)]
+    #[online_config(skip)]
+    pub stale_peer_check_tick: usize,
 
     // Interval (ms) to check region whether the data is consistent.
     pub consistency_check_interval: ReadableDuration,
@@ -297,7 +311,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            engine_store_server_helper: 0,
             prevote: true,
             raftdb_path: String::new(),
             capacity: ReadableSize(0),
@@ -337,7 +350,12 @@ impl Default for Config {
             leader_transfer_max_log_lag: 128,
             snap_apply_batch_size: ReadableSize::mb(10),
             snap_handle_pool_size: 2,
-            region_worker_tick_interval: ReadableDuration::millis(500),
+            region_worker_tick_interval: if cfg!(feature = "test") {
+                ReadableDuration::millis(200)
+            } else {
+                ReadableDuration::millis(1000)
+            },
+            stale_peer_check_tick: if cfg!(feature = "test") { 1 } else { 10 },
             lock_cf_compact_interval: ReadableDuration::minutes(10),
             lock_cf_compact_bytes_threshold: ReadableSize::mb(256),
             // Disable consistency check by default as it will hurt performance.

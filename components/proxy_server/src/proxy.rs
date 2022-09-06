@@ -10,30 +10,11 @@ use std::{
 
 use clap::{App, Arg, ArgMatches};
 use tikv::config::TiKvConfig;
+use tikv_util::config::ReadableDuration;
 
-use crate::{
-    fatal,
-    setup::{
-        ensure_no_unrecognized_config, overwrite_config_with_cmd_args, validate_and_persist_config,
-    },
-};
+use crate::{config::make_tikv_config, fatal, setup::overwrite_config_with_cmd_args};
 
-// Not the same as TiKV
-pub const TIFLASH_DEFAULT_LISTENING_ADDR: &str = "127.0.0.1:20170";
-pub const TIFLASH_DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20292";
-
-fn make_tikv_config() -> TiKvConfig {
-    let mut default = TiKvConfig::default();
-    setup_default_tikv_config(&mut default);
-    default
-}
-
-pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
-    default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
-    default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-    default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-}
-
+/// Generate default TiKvConfig, but with some Proxy's default values.
 pub fn gen_tikv_config(
     matches: &ArgMatches,
     is_config_check: bool,
@@ -52,11 +33,12 @@ pub fn gen_tikv_config(
                 },
             )
             .unwrap_or_else(|e| {
-                panic!(
-                    "invalid auto generated configuration file {}, err {}",
+                error!(
+                    "invalid default auto generated configuration file {}, err {}",
                     path.display(),
                     e
                 );
+                std::process::exit(1);
             })
         })
 }
@@ -296,9 +278,8 @@ pub unsafe fn run_proxy(
     overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
     config.logger_compatible_adjust();
 
-    // TODO(tiflash) We should later use ProxyConfig for proxy's own settings like `snap_handle_pool_size`
     if is_config_check {
-        validate_and_persist_config(&mut config, false);
+        crate::config::validate_and_persist_config(&mut config, false);
         match crate::config::ensure_no_common_unrecognized_keys(
             &proxy_unrecognized_keys,
             &unrecognized_keys,
@@ -314,7 +295,6 @@ pub unsafe fn run_proxy(
     }
 
     // Used in pre-handle snapshot.
-    config.raft_store.engine_store_server_helper = engine_store_server_helper as *const _ as isize;
     if matches.is_present("only-decryption") {
         crate::run::run_tikv_only_decryption(config, proxy_config, engine_store_server_helper);
     } else {

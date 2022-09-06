@@ -45,7 +45,6 @@ use tikv_util::{
 
 use crate::{
     coprocessor::CoprocessorHost,
-    engine_store_ffi,
     store::{
         metrics::{
             CfNames, INGEST_SST_DURATION_SECONDS, SNAPSHOT_BUILD_TIME_HISTOGRAM,
@@ -448,64 +447,6 @@ pub struct Snapshot {
     hold_tmp_files: bool,
 
     mgr: SnapManagerCore,
-}
-
-pub struct PreHandledSnapshot {
-    pub index: u64,
-    pub term: u64,
-    pub inner: engine_store_ffi::RawCppPtr,
-}
-
-unsafe impl Send for PreHandledSnapshot {}
-
-impl Snapshot {
-    pub fn pre_handle_snapshot(
-        &self,
-        engine_store_server_helper: &'static crate::engine_store_ffi::EngineStoreServerHelper,
-        region: &kvproto::metapb::Region,
-        peer_id: u64,
-        index: u64,
-        term: u64,
-    ) -> PreHandledSnapshot {
-        let mut sst_views = vec![];
-        let mut full_paths = vec![];
-        for cf_file in &self.cf_files {
-            // Skip empty cf file.
-            if cf_file.size.len() == 0 {
-                continue;
-            }
-
-            if cf_file.size[0] == 0 {
-                continue;
-            }
-
-            if plain_file_used(cf_file.cf) {
-                assert!(cf_file.cf == CF_LOCK);
-            }
-
-            // We have only one cf file.
-            let full_path = format!(
-                "{}/{}",
-                cf_file.path.to_str().unwrap(),
-                cf_file.file_names[0]
-            );
-            {
-                full_paths.push((full_path, engine_store_ffi::name_to_cf(cf_file.cf)));
-            }
-        }
-        for (s, cf) in full_paths.iter() {
-            sst_views.push((s.as_bytes(), *cf));
-        }
-
-        let res = engine_store_server_helper
-            .pre_handle_snapshot(&region, peer_id, sst_views, index, term);
-
-        PreHandledSnapshot {
-            index,
-            term,
-            inner: res,
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -1254,6 +1195,10 @@ impl Snapshot {
         sync_dir(&self.dir_path)?;
         self.hold_tmp_files = false;
         Ok(())
+    }
+
+    pub fn cf_files(&self) -> &[CfFile] {
+        self.cf_files.as_slice()
     }
 }
 

@@ -75,9 +75,6 @@ use crate::{
         ApplyCtxInfo, Cmd, CmdBatch, CmdObserveInfo, CoprocessorHost, ObserveHandle, ObserveLevel,
         RegionState,
     },
-    engine_store_ffi::{
-        ColumnFamilyType, EngineStoreApplyRes, RaftCmdHeader, WriteCmdType, WriteCmds,
-    },
     store::{
         cmd_resp,
         fsm::RaftPollerBuilder,
@@ -366,8 +363,6 @@ struct ApplyContext<EK>
 where
     EK: KvEngine,
 {
-    pub engine_store_server_helper: &'static crate::engine_store_ffi::EngineStoreServerHelper,
-
     tag: String,
     timer: Option<Instant>,
     host: CoprocessorHost<EK>,
@@ -449,10 +444,6 @@ where
     ) -> ApplyContext<EK> {
         let kv_wb = engine.write_batch_with_cap(DEFAULT_APPLY_WB_SIZE);
         ApplyContext {
-            engine_store_server_helper: crate::engine_store_ffi::gen_engine_store_server_helper(
-                cfg.engine_store_server_helper,
-            ),
-
             tag,
             timer: None,
             host,
@@ -502,7 +493,7 @@ where
     ///
     /// This call is valid only when it's between a `prepare_for` and `finish_for`.
     pub fn commit(&mut self, delegate: &mut ApplyDelegate<EK>) {
-        // TODO(tiflash): pengding PR https://github.com/tikv/tikv/pull/12957.
+        // TODO(tiflash): pending PR https://github.com/tikv/tikv/pull/12957.
         // We always persist advanced apply state here.
         // However, it should not be called from `handle_raft_entry_normal`.
         if delegate.last_flush_applied_index < delegate.apply_state.get_applied_index() {
@@ -1633,7 +1624,6 @@ where
                 self.metrics.lock_cf_written_bytes += value.len() as u64;
             }
             // TODO: check whether cf exists or not.
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             ctx.kv_wb.put_cf(cf, key, value).unwrap_or_else(|e| {
                 panic!(
                     "{} failed to write ({}, {}) to cf {}: {:?}",
@@ -1645,7 +1635,6 @@ where
                 )
             });
         } else {
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             ctx.kv_wb.put(key, value).unwrap_or_else(|e| {
                 panic!(
                     "{} failed to write ({}, {}): {:?}",
@@ -1676,7 +1665,6 @@ where
         if !req.get_delete().get_cf().is_empty() {
             let cf = req.get_delete().get_cf();
             // TODO: check whether cf exists or not.
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             ctx.kv_wb.delete_cf(cf, key).unwrap_or_else(|e| {
                 panic!(
                     "{} failed to delete {}: {}",
@@ -1693,7 +1681,6 @@ where
                 self.metrics.delete_keys_hint += 1;
             }
         } else {
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             ctx.kv_wb.delete(key).unwrap_or_else(|e| {
                 panic!(
                     "{} failed to delete {}: {}",
@@ -1758,7 +1745,6 @@ where
                 )
             };
 
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             engine
                 .delete_ranges_cf(cf, DeleteStrategy::DeleteFiles, &range)
                 .unwrap_or_else(|e| fail_f(e, DeleteStrategy::DeleteFiles));
@@ -1769,7 +1755,6 @@ where
                 DeleteStrategy::DeleteByKey
             };
 
-            // TODO(tiflash): open this comment if we finish engine_tiflash.
             // Delete all remaining keys.
             engine
                 .delete_ranges_cf(cf, strategy.clone(), &range)
@@ -1783,50 +1768,6 @@ where
         ranges.push(Range::new(cf.to_owned(), start_key, end_key));
 
         Ok(())
-    }
-
-    fn handle_ingest_sst_for_engine_store(
-        &mut self,
-        ctx: &ApplyContext<EK>,
-        ssts: &Vec<SstMetaInfo>,
-    ) -> EngineStoreApplyRes {
-        let mut ssts_wrap = vec![];
-        let mut sst_views = vec![];
-
-        for sst in ssts {
-            let sst = &sst.meta;
-            if sst.get_cf_name() == CF_LOCK {
-                panic!("should not ingest sst of lock cf");
-            }
-
-            if let Err(e) = check_sst_for_ingestion(sst, &self.region) {
-                error!(
-                     "ingest fail";
-                     "region_id" => self.region_id(),
-                     "peer_id" => self.id(),
-                     "sst" => ?sst,
-                     "region" => ?&self.region,
-                     "err" => ?e
-                );
-                // This file is not valid, we can delete it here.
-                let _ = ctx.importer.delete(sst);
-                continue;
-            }
-
-            ssts_wrap.push((
-                ctx.importer.get_path(sst),
-                crate::engine_store_ffi::name_to_cf(sst.get_cf_name()),
-            ));
-        }
-
-        for (path, cf) in &ssts_wrap {
-            sst_views.push((path.to_str().unwrap().as_bytes(), *cf));
-        }
-
-        ctx.engine_store_server_helper.handle_ingest_sst(
-            sst_views,
-            RaftCmdHeader::new(self.region.get_id(), ctx.exec_log_index, ctx.exec_log_term),
-        )
     }
 
     fn handle_ingest_sst(

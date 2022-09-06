@@ -2,14 +2,14 @@
 
 use std::{
     path::Path,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use collections::{HashMap, HashSet};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::DataKeyManager;
 use engine_rocks::RocksSnapshot;
-use engine_traits::{Engines, KvEngine, MiscExt, Peekable};
+use engine_traits::{Engines, MiscExt, Peekable};
 use kvproto::{
     metapb,
     raft_cmdpb::*,
@@ -45,7 +45,7 @@ use tikv_util::{
 
 use crate::{
     config::Config,
-    mock_cluster::{create_tiflash_test_engine, Cluster, Simulator, TestPdClient, TiFlashEngine},
+    mock_cluster::{Simulator, TestPdClient, TiFlashEngine},
     transport_simulate::{Filter, SimulateTransport},
 };
 
@@ -236,8 +236,6 @@ impl Simulator<TiFlashEngine> for NodeCluster {
     ) -> ServerResult<u64> {
         assert!(node_id == 0 || !self.nodes.contains_key(&node_id));
         assert_ne!(engines.kv.engine_store_server_helper, 0);
-        // TODO(tiflash) can be remove when we pre handle snap outside.
-        assert_ne!(cfg.raft_store.engine_store_server_helper, 0);
 
         let pd_worker = LazyWorker::new("test-pd-worker");
 

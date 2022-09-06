@@ -10,8 +10,8 @@ use itertools::Itertools;
 use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::with_prefix;
-use tikv::config::TiKvConfig;
-use tikv_util::crit;
+use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
+use tikv_util::{config::ReadableDuration, crit, sys::SysQuota};
 
 use crate::fatal;
 
@@ -26,8 +26,12 @@ pub struct RaftstoreConfig {
 
 impl Default for RaftstoreConfig {
     fn default() -> Self {
+        let cpu_num = SysQuota::cpu_cores_quota();
+
         RaftstoreConfig {
-            snap_handle_pool_size: 2,
+            // When scaling TiFlash instances there will be raft snapshots.
+            // We want to make sure this process does not consume too many resources.
+            snap_handle_pool_size: (cpu_num * 0.4).clamp(2.0, 8.0) as usize,
         }
     }
 }
@@ -124,6 +128,35 @@ pub fn ensure_no_common_unrecognized_keys(
     Ok(())
 }
 
+// Not the same as TiKV
+pub const TIFLASH_DEFAULT_LISTENING_ADDR: &str = "127.0.0.1:20170";
+pub const TIFLASH_DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20292";
+
+pub fn make_tikv_config() -> TiKvConfig {
+    let mut default = TiKvConfig::default();
+    setup_default_tikv_config(&mut default);
+    default
+}
+
+pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
+    let cpu_num = SysQuota::cpu_cores_quota();
+
+    default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
+    default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
+    default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
+    default.raft_store.region_worker_tick_interval = ReadableDuration::millis(500);
+    let stale_peer_check_tick =
+        (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
+    default.raft_store.stale_peer_check_tick = stale_peer_check_tick;
+
+    // Unlike TiKV, in TiFlash, we use the low-priority pool to both decode snapshots
+    // (transform from row to column) and ingest SST. These operations are pretty heavy.
+    // So we increase the default limit here to handle ingest SST faster.
+    default.raft_store.apply_batch_system.low_priority_pool_size =
+        (cpu_num * 0.8).clamp(1.0, 8.0) as usize;
+}
+
+/// This function changes TiKV's config according to ProxyConfig.
 pub fn address_proxy_config(config: &mut TiKvConfig) {
     // We must add engine label to our TiFlash config
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
@@ -137,4 +170,69 @@ pub fn address_proxy_config(config: &mut TiKvConfig) {
         .server
         .labels
         .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
+    let stale_peer_check_tick =
+        (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
+    config.raft_store.stale_peer_check_tick = stale_peer_check_tick;
+}
+
+pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
+    config.compatible_adjust();
+    if let Err(e) = config.validate() {
+        fatal!("invalid configuration: {}", e);
+    }
+
+    if let Err(e) = check_critical_config(config) {
+        fatal!("critical config check failed: {}", e);
+    }
+
+    if persist {
+        if let Err(e) = tikv::config::persist_config(config) {
+            fatal!("persist critical config failed: {}", e);
+        }
+    }
+}
+
+/// Prevents launching with an incompatible configuration
+///
+/// Loads the previously-loaded configuration from `last_tikv.toml`,
+/// compares key configuration items and fails if they are not
+/// identical.
+pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
+    // Check current critical configurations with last time, if there are some
+    // changes, user must guarantee relevant works have been done.
+    if let Some(mut cfg) = get_last_config(&config.storage.data_dir) {
+        info!("check_critical_config finished compatible_adjust");
+        cfg.compatible_adjust();
+        if let Err(e) = cfg.validate() {
+            warn!("last_tikv.toml is invalid but ignored: {:?}", e);
+        }
+        info!("check_critical_config finished validate");
+        config.check_critical_cfg_with(&cfg)?;
+        info!("check_critical_config finished check_critical_cfg_with");
+    }
+    Ok(())
+}
+
+pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
+    let store_path = Path::new(data_dir);
+    let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
+    let mut v: Vec<String> = vec![];
+    if last_cfg_path.exists() {
+        let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
+            error!(
+                "invalid auto generated configuration file {}, err {}",
+                last_cfg_path.display(),
+                e
+            );
+            std::process::exit(1)
+        });
+        if !v.is_empty() {
+            info!("unrecognized in last config";
+                "config" => ?v,
+                "file" => last_cfg_path.display(),
+            );
+        }
+        return Some(s);
+    }
+    None
 }
