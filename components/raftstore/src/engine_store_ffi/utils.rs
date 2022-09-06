@@ -3,13 +3,13 @@
 use std::time;
 
 use futures_util::{compat::Future01CompatExt, future::BoxFuture, FutureExt};
-use tikv_util::timer::start_global_timer_with_name;
+use tikv_util::timer::start_global_timer;
 use tokio_timer::timer::Handle;
 
 use crate::engine_store_ffi::lazy_static;
 
 lazy_static! {
-    pub static ref PROXY_TIMER_HANDLE: Handle = start_global_timer_with_name("proxy-timer");
+    pub static ref PROXY_TIMER_HANDLE: Handle = start_global_timer("proxy-timer");
 }
 
 pub type ArcNotifyWaker = std::sync::Arc<NotifyWaker>;
