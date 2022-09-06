@@ -43,7 +43,7 @@ use crate::{
             JOB_STATUS_CANCELLED, JOB_STATUS_CANCELLING, JOB_STATUS_FAILED, JOB_STATUS_FINISHED,
             JOB_STATUS_PENDING, JOB_STATUS_RUNNING,
         },
-        snap::{plain_file_used, Error, PreHandledSnapshot, Result, SNAPSHOT_CFS},
+        snap::{plain_file_used, Error, Result, SNAPSHOT_CFS},
         transport::CasualRouter,
         ApplyOptions, CasualMessage, SnapEntry, SnapKey, SnapManager,
     },
@@ -119,8 +119,6 @@ struct EngineStoreApplySnapTask {
     region_id: u64,
     peer_id: u64,
     status: Arc<AtomicUsize>,
-    recv: mpsc::Receiver<Option<PreHandledSnapshot>>,
-    pre_handled_snap: Option<PreHandledSnapshot>,
 }
 
 #[derive(Clone)]
@@ -420,14 +418,11 @@ where
             coprocessor_host: self.coprocessor_host.clone(),
         };
         s.apply(options)?;
-        match self
-            .coprocessor_host
-            .post_apply_snapshot(&region, peer_id, &snap_key, Some(&s))
+        if let Err(e) =
+            self.coprocessor_host
+                .post_apply_snapshot(&region, peer_id, &snap_key, Some(&s))
         {
-            Ok(_) => (),
-            Err(e) => {
-                return Err(box_err!("post apply snapshot error {:?}", e));
-            }
+            return Err(box_err!("post apply snapshot error {:?}", e));
         };
 
         let mut wb = self.engine.write_batch();
@@ -740,8 +735,8 @@ where
                 pool_size,
                 pre_handle_snap,
             },
-            pool: Builder::new(thd_name!("region-task"))
-                .max_thread_count(pool_size)
+            pool: Builder::new(thd_name!("snap-generator"))
+                .max_thread_count(snap_generator_pool_size)
                 .build_future_pool(),
             ctx: SnapContext {
                 engine,
