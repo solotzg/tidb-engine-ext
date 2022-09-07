@@ -73,7 +73,7 @@ jobs:
           cargo test --features compat_old_proxy --package tests --test failpoints cases::test_import_service
           cargo test --features compat_old_proxy --package tests --test failpoints cases::test_proxy_replica_read
 
-  build-check-old:
+  build-check-new:
 #    needs: build-check
     runs-on: ubuntu-latest
     steps:
@@ -99,6 +99,9 @@ jobs:
           rustup self update && rustup set profile minimal && rustup default $(cat "rust-toolchain")
       - name: test2
         run: |
+          export ENGINE_LABEL_VALUE=tiflash
+          export RUST_BACKTRACE=full
+          cargo check
           # tests based on new-mock-engine-store, with compat for new proxy
           cargo test --package tests --test proxy normal::store
           cargo test --package tests --test proxy normal::region
