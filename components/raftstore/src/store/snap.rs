@@ -1198,7 +1198,7 @@ impl Snapshot {
     }
 
     pub fn cf_files(&self) -> &[CfFile] {
-        self.cf_files.as_slice()
+        &self.cf_files
     }
 }
 
