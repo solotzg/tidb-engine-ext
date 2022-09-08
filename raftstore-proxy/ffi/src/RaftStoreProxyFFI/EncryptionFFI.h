@@ -15,7 +15,6 @@ enum class EncryptionMethod : uint8_t {
   Aes128Ctr,
   Aes192Ctr,
   Aes256Ctr,
-  SM4Ctr,
 };
 struct FileEncryptionInfoRaw {
   FileEncryptionRes res;
