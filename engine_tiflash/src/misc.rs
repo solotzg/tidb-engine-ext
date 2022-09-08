@@ -1,5 +1,6 @@
 // Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
 
+use engine_rocks::RocksSstWriterBuilder;
 use engine_traits::{
     CFNamesExt, DeleteStrategy, ImportExt, IterOptions, Iterable, Iterator, MiscExt, Mutable,
     Range, Result, SstWriter, SstWriterBuilder, WriteBatch, WriteBatchExt, ALL_CFS,
@@ -7,9 +8,7 @@ use engine_traits::{
 use rocksdb::Range as RocksRange;
 use tikv_util::{box_try, keybuilder::KeyBuilder};
 
-use crate::{
-    engine::RocksEngine, rocks_metrics_defs::*, sst::RocksSstWriterBuilder, util, RocksSstWriter,
-};
+use crate::{engine::RocksEngine, rocks_metrics_defs::*, util, RocksSstWriter};
 
 pub const MAX_DELETE_COUNT_BY_KEY: usize = 2048;
 

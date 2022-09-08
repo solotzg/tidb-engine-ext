@@ -69,6 +69,7 @@ impl IngestExternalFileOptions for RocksIngestExternalFileOptions {
 mod tests {
     use std::sync::Arc;
 
+    use engine_rocks::RocksSstWriterBuilder;
     use engine_traits::{
         FlowControlFactorsExt, MiscExt, Mutable, SstWriter, SstWriterBuilder, WriteBatch,
         WriteBatchExt, ALL_CFS, CF_DEFAULT,
@@ -80,7 +81,6 @@ mod tests {
         engine::RocksEngine,
         raw::{ColumnFamilyOptions, DBOptions},
         raw_util::{new_engine_opt, CFOptions},
-        RocksSstWriterBuilder,
     };
 
     #[test]
