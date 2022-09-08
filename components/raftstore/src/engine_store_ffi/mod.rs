@@ -18,22 +18,23 @@ use std::{
 };
 
 use encryption::DataKeyManager;
-use engine_rocks::{encryption::get_env, RocksSstIterator, RocksSstReader};
+use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
 use engine_traits::{
     EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, Peekable, SeekKey,
     SstReader, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
+use lazy_static::lazy_static;
 use protobuf::Message;
 pub use read_index_helper::ReadIndexClient;
 
-pub use crate::engine_store_ffi::interfaces::root::DB::{
+pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
     EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
     KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
-use crate::engine_store_ffi::{
+use self::{
     interfaces::root::DB::{
         ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
         SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
@@ -276,7 +277,7 @@ impl Into<u32> for RawRustPtrType {
 
 pub extern "C" fn ffi_gc_rust_ptr(
     data: RawVoidPtr,
-    type_: crate::engine_store_ffi::interfaces::root::DB::RawRustPtrType,
+    type_: self::interfaces::root::DB::RawRustPtrType,
 ) {
     if data.is_null() {
         return;
@@ -385,9 +386,7 @@ pub extern "C" fn ffi_poll_read_index_task(
             _ => {}
         }
     }
-    let task = unsafe {
-        &mut *(task_ptr as *mut crate::engine_store_ffi::read_index_helper::ReadIndexTask)
-    };
+    let task = unsafe { &mut *(task_ptr as *mut self::read_index_helper::ReadIndexTask) };
     let waker = if std::ptr::null_mut() == waker {
         None
     } else {
@@ -664,7 +663,7 @@ pub struct SSTFileReader {
 
 impl SSTFileReader {
     fn ffi_get_cf_file_reader(path: &str, key_manager: Option<Arc<DataKeyManager>>) -> RawVoidPtr {
-        let env = get_env(None, key_manager).unwrap();
+        let env = get_env(key_manager, None).unwrap();
         let sst_reader_res = RocksSstReader::open_with_env(path, Some(env));
         match sst_reader_res {
             Err(ref e) => tikv_util::error!("Can not open sst file {:?}", e),
