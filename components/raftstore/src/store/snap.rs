@@ -678,6 +678,17 @@ impl Snapshot {
             "set_snapshot_meta total cf files count: {}",
             snapshot_meta.get_cf_files().len()
         );
+
+        // TODO(tiflash) remove when we support big snapshot and multi-file
+        if snapshot_meta.get_cf_files().len() > 3 {
+            return Err(box_err!(
+                "we don't support multi-file snapshot, snap_key {:?}, expect {} got {}",
+                self.key,
+                SNAPSHOT_CFS.len(),
+                cf_file_count_from_meta.len()
+            ));
+        }
+
         for cf_file in snapshot_meta.get_cf_files() {
             if current_cf.is_empty() {
                 current_cf = cf_file.get_cf();
@@ -697,11 +708,12 @@ impl Snapshot {
 
         if cf_file_count_from_meta.len() != self.cf_files.len() {
             return Err(box_err!(
-                "invalid cf number of snapshot meta, expect {}, got {}",
+                "invalid cf number of snapshot meta, expect {}, got {snapshot m}",
                 SNAPSHOT_CFS.len(),
                 cf_file_count_from_meta.len()
             ));
         }
+
         let mut file_idx = 0;
         let mut cf_idx = 0;
         for meta in snapshot_meta.get_cf_files() {
