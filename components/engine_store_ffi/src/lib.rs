@@ -1,4 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
+#![feature(drain_filter)]
 
 #[allow(dead_code)]
 pub mod interfaces;
@@ -34,14 +35,12 @@ pub use self::interfaces::root::DB::{
     KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
-use self::{
-    interfaces::root::DB::{
-        ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
-        SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
-        RAFT_STORE_PROXY_VERSION,
-    },
-    lock_cf_reader::LockCFFileReader,
+use self::interfaces::root::DB::{
+    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
+    SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
+    RAFT_STORE_PROXY_VERSION,
 };
+use crate::lock_cf_reader::LockCFFileReader;
 
 pub type TiFlashEngine = engine_tiflash::RocksEngine;
 
@@ -1104,6 +1103,18 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_set_store.is_some());
         let store = ProtoMsgBaseBuff::new(&store);
         unsafe { (self.fn_set_store.into_inner())(self.inner, Pin::new(&store).into()) }
+    }
+
+    pub fn handle_safe_ts_update(&self, region_id: u64, self_safe_ts: u64, leader_safe_ts: u64) {
+        debug_assert!(self.fn_handle_safe_ts_update.is_some());
+        unsafe {
+            (self.fn_handle_safe_ts_update.into_inner())(
+                self.inner,
+                region_id,
+                self_safe_ts,
+                leader_safe_ts,
+            )
+        }
     }
 }
 

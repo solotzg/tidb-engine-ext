@@ -10,6 +10,7 @@ use std::{
 };
 
 use engine_rocks::RocksEngine;
+use engine_store_ffi::RawCppPtr;
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     UnwrapExternCFunc,
@@ -23,7 +24,6 @@ use kvproto::{
     },
 };
 use protobuf::Message;
-use raftstore::{engine_store_ffi, engine_store_ffi::RawCppPtr};
 use tikv_util::{debug, info, warn};
 
 type RegionId = u64;
@@ -560,6 +560,7 @@ pub fn gen_engine_store_server_helper(
         fn_get_config: None,
         fn_set_store: None,
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
+        fn_handle_safe_ts_update: None,
     }
 }
 

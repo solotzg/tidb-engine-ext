@@ -20,6 +20,19 @@ use kvproto::{
     raft_serverpb::RaftApplyState,
 };
 use raft::{eraftpb, StateRole};
+use raftstore::{
+    coprocessor,
+    coprocessor::{
+        AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
+        BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
+        BoxUpdateSafeTsObserver, Cmd, Coprocessor, CoprocessorHost, ObserverContext,
+        PdTaskObserver, QueryObserver, RegionChangeEvent, RegionChangeObserver, RegionState,
+        StoreSizeInfo, UpdateSafeTsObserver,
+    },
+    store,
+    store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey},
+    Error, Result,
+};
 use sst_importer::SstImporter;
 use tikv_util::{box_err, debug, error, info, warn};
 use yatp::{
@@ -28,21 +41,10 @@ use yatp::{
 };
 
 use crate::{
-    coprocessor,
-    coprocessor::{
-        AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
-        BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
-        Cmd, Coprocessor, CoprocessorHost, ObserverContext, PdTaskObserver, QueryObserver,
-        RegionChangeEvent, RegionChangeObserver, RegionState, StoreSizeInfo,
-    },
-    engine_store_ffi::{
-        gen_engine_store_server_helper,
-        interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
-        name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr,
-        TiFlashEngine, WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
-    },
-    store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey},
-    Error, Result,
+    gen_engine_store_server_helper,
+    interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
+    name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
+    WriteCmdType, WriteCmds, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 
 impl Into<engine_tiflash::FsStatsExt> for ffi_interfaces::StoreStats {
@@ -168,6 +170,10 @@ impl TiFlashObserver {
         coprocessor_host.registry.register_pd_task_observer(
             TIFLASH_OBSERVER_PRIORITY,
             BoxPdTaskObserver::new(self.clone()),
+        );
+        coprocessor_host.registry.register_update_safe_ts_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxUpdateSafeTsObserver::new(self.clone()),
         );
     }
 
@@ -551,6 +557,16 @@ impl QueryObserver for TiFlashObserver {
     }
 }
 
+impl UpdateSafeTsObserver for TiFlashObserver {
+    fn on_update_safe_ts(&self, region_id: u64, self_safe_ts: u64, leader_safe_ts: u64) {
+        self.engine_store_server_helper.handle_safe_ts_update(
+            region_id,
+            self_safe_ts,
+            leader_safe_ts,
+        )
+    }
+}
+
 impl RegionChangeObserver for TiFlashObserver {
     fn on_region_changed(
         &self,
@@ -581,7 +597,7 @@ impl PdTaskObserver for TiFlashObserver {
     }
 }
 
-fn retrieve_sst_files(snap: &crate::store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)> {
+fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)> {
     let mut sst_views: Vec<(PathBuf, ColumnFamilyType)> = vec![];
     let mut ssts = vec![];
     for cf_file in snap.cf_files() {
@@ -640,8 +656,8 @@ impl ApplySnapshotObserver for TiFlashObserver {
         &self,
         ob_ctx: &mut ObserverContext<'_>,
         peer_id: u64,
-        snap_key: &crate::store::SnapKey,
-        snap: Option<&crate::store::Snapshot>,
+        snap_key: &store::SnapKey,
+        snap: Option<&store::Snapshot>,
     ) {
         info!("pre apply snapshot";
             "peer_id" => peer_id,
@@ -703,11 +719,11 @@ impl ApplySnapshotObserver for TiFlashObserver {
         &self,
         ob_ctx: &mut ObserverContext<'_>,
         peer_id: u64,
-        snap_key: &crate::store::SnapKey,
-        snap: Option<&crate::store::Snapshot>,
-    ) -> std::result::Result<(), coprocessor::Error> {
+        snap_key: &store::SnapKey,
+        snap: Option<&store::Snapshot>,
+    ) {
         fail::fail_point!("on_ob_post_apply_snapshot", |_| {
-            return Err(box_err!("on_ob_post_apply_snapshot"));
+            return;
         });
         info!("post apply snapshot";
             "peer_id" => ?peer_id,
@@ -715,7 +731,7 @@ impl ApplySnapshotObserver for TiFlashObserver {
             "region" => ?ob_ctx.region(),
         );
         let snap = match snap {
-            None => return Ok(()),
+            None => return,
             Some(s) => s,
         };
         let maybe_snapshot = {
@@ -788,7 +804,6 @@ impl ApplySnapshotObserver for TiFlashObserver {
                 "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
             );
         }
-        Ok(())
     }
 
     fn should_pre_apply_snapshot(&self) -> bool {
