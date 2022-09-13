@@ -1,108 +1,103 @@
 [package]
-name = "proxy_server"
+name = "engine_store_ffi"
 version = "0.0.1"
+authors = ["The TiKV Authors"]
 license = "Apache-2.0"
 edition = "2018"
 publish = false
 
 [features]
-tcmalloc = ["tikv/tcmalloc"]
-jemalloc = ["tikv/jemalloc"]
-mimalloc = ["tikv/mimalloc"]
-snmalloc = ["tikv/snmalloc"]
-portable = ["tikv/portable"]
-sse = ["tikv/sse"]
-mem-profiling = ["tikv/mem-profiling"]
-failpoints = ["tikv/failpoints"]
-bcc-iosnoop = ["tikv/bcc-iosnoop"]
-
-cloud-aws = ["encryption_export/cloud-aws"]
-cloud-gcp = ["encryption_export/cloud-gcp"]
-cloud-azure = ["encryption_export/cloud-azure"]
+default = ["test-engine-kv-rocksdb", "test-engine-raft-raft-engine"]
+failpoints = ["fail/failpoints"]
+testexport = []
+test-raftstore-proxy = []
 test-engine-kv-rocksdb = [
-  "tikv/test-engine-kv-rocksdb"
+  "engine_test/test-engine-kv-rocksdb"
 ]
 test-engine-raft-raft-engine = [
-  "tikv/test-engine-raft-raft-engine"
+  "engine_test/test-engine-raft-raft-engine"
 ]
 test-engines-rocksdb = [
-  "tikv/test-engines-rocksdb",
+  "engine_test/test-engines-rocksdb",
 ]
 test-engines-panic = [
-  "tikv/test-engines-panic",
+  "engine_test/test-engines-panic",
 ]
-nortcheck = ["engine_rocks/nortcheck"]
-backup-stream-debug = ["backup-stream/backup-stream-debug"]
+
+cloud-aws = ["sst_importer/cloud-aws"]
+cloud-gcp = ["sst_importer/cloud-gcp"]
+cloud-azure = ["sst_importer/cloud-azure"]
+compat_new_proxy = ["engine_tiflash/compat_new_proxy"]
+compat_old_proxy = ["engine_tiflash/compat_old_proxy"]
 
 [dependencies]
-api_version = { path = "../api_version" }
-async-stream = "0.2"
-backup = { path = "../backup", default-features = false }
-backup-stream = { path = "../backup-stream", default-features = false }
-causal_ts = { path = "../causal_ts" }
-chrono = "0.4"
-clap = "2.32"
+batch-system = { path = "../batch-system", default-features = false }
+bitflags = "1.0.1"
+byteorder = "1.2"
+bytes = "1.0"
 collections = { path = "../collections" }
 concurrency_manager = { path = "../concurrency_manager", default-features = false }
+crc32fast = "1.2"
 crossbeam = "0.8"
+derivative = "2"
 encryption = { path = "../encryption", default-features = false }
-encryption_export = { path = "../encryption/export", default-features = false }
+
 engine_rocks = { path = "../engine_rocks", default-features = false }
-engine_rocks_helper = { path = "../engine_rocks_helper" }
-engine_store_ffi = { path = "../engine_store_ffi", default-features = false }
+# Should be [dev-dependencies] but we need to control the features
+# https://github.com/rust-lang/cargo/issues/6915
+engine_test = { path = "../engine_test", default-features = false }
+engine_tiflash = { path = "../../engine_tiflash", default-features = false }
 engine_traits = { path = "../engine_traits", default-features = false }
 error_code = { path = "../error_code", default-features = false }
 fail = "0.5"
 file_system = { path = "../file_system", default-features = false }
 fs2 = "0.4"
 futures = "0.3"
-grpcio = { version = "0.10", default-features = false, features = ["openssl-vendored"] }
+futures-util = { version = "0.3.1", default-features = false, features = ["io"] }
+getset = "0.1"
 grpcio-health = { version = "0.10", default-features = false, features = ["protobuf-codec"] }
-hex = "0.4"
-hyper = { version = "0.14", features = ["full"] }
+into_other = { path = "../into_other", default-features = false }
 itertools = "0.10"
 keys = { path = "../keys", default-features = false }
 kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 lazy_static = "1.3"
-libc = "0.2"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
 log_wrappers = { path = "../log_wrappers" }
-mime = "0.3.13"
-nix = "0.23"
+memory_trace_macros = { path = "../memory_trace_macros" }
 online_config = { path = "../online_config" }
-
 openssl = "0.10"
+ordered-float = "2.6"
+parking_lot = "0.12"
 pd_client = { path = "../pd_client", default-features = false }
-pin-project = "1.0"
-pprof = { git = "https://github.com/tikv/pprof-rs.git", rev = "a5a993a33a23557b27e633f18723366281d3b1c0", default-features = false, features = ["flamegraph", "protobuf-codec"] }
 prometheus = { version = "0.13", features = ["nightly"] }
+prometheus-static-metric = "0.5"
 protobuf = { version = "2.8", features = ["bytes"] }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
-raft_log_engine = { path = "../raft_log_engine", default-features = false }
+raft-proto = { version = "0.7.0", default-features = false }
 raftstore = { path = "../raftstore", default-features = false }
-rand = "0.8"
-regex = "1.3"
-resolved_ts = { path = "../../components/resolved_ts", default-features = false }
+rand = "0.8.3"
 resource_metering = { path = "../resource_metering" }
-security = { path = "../security", default-features = false }
 serde = "1.0"
 serde_derive = "1.0"
-serde_ignored = "0.1"
-serde_json = "1.0"
 serde_with = "1.4"
-server = { path = "../server", default-features = false }
 slog = { version = "2.3", features = ["max_level_trace", "release_max_level_debug"] }
 slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global.git", rev = "d592f88e4dbba5eb439998463054f1a44fbf17b9" }
+smallvec = "1.4"
+sst_importer = { path = "../sst_importer", default-features = false }
 tempfile = "3.0"
-tikv = { path = "../..", default-features = false }
+thiserror = "1.0"
+tidb_query_datatype = { path = "../tidb_query_datatype", default-features = false }
 tikv_alloc = { path = "../tikv_alloc" }
 tikv_util = { path = "../tikv_util", default-features = false }
-tokio = { version = "1.5", features = ["rt-multi-thread"] }
-tokio-openssl = "0.6"
-toml = "0.5"
+time = "0.1"
+tokio = { version = "1.5", features = ["sync", "rt-multi-thread"] }
+tokio-timer = { git = "https://github.com/tikv/tokio", branch = "tokio-timer-hotfix" }
 txn_types = { path = "../txn_types", default-features = false }
-url = "2"
+uuid = { version = "0.8.1", features = ["serde", "v4"] }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 
-[target.'cfg(unix)'.dependencies]
-signal = "0.6"
+[dev-dependencies]
+encryption_export = { path = "../encryption/export", default-features = false }
+engine_panic = { path = "../engine_panic", default-features = false }
+panic_hook = { path = "../panic_hook" }
+test_sst_importer = { path = "../test_sst_importer", default-features = false }
