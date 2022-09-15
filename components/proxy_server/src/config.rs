@@ -3,7 +3,7 @@
 use std::{
     collections::{hash_map::RandomState, HashSet},
     iter::FromIterator,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use itertools::Itertools;

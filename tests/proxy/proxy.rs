@@ -14,9 +14,8 @@ use std::{
 use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 use engine_traits::{
-    Error, ExternalSstFileInfo, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey,
-    SstExt, SstReader, SstWriter, SstWriterBuilder, WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK,
-    CF_RAFT, CF_WRITE,
+    Error, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey, SstExt, SstWriter,
+    WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
 };
 use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
@@ -30,7 +29,6 @@ use new_mock_engine_store::{
     },
     Cluster, ProxyConfig, Simulator, TestPdClient,
 };
-use pd_client::PdClient;
 use proxy_server::config::{ensure_no_common_unrecognized_keys, validate_and_persist_config};
 use raft::eraftpb::MessageType;
 use raftstore::{
@@ -41,9 +39,8 @@ use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
 use tikv::config::TiKvConfig;
 use tikv_util::{
-    config::{LogFormat, ReadableDuration, ReadableSize},
+    config::{ReadableDuration, ReadableSize},
     time::Duration,
-    HandyRwLock,
 };
 
 // TODO Need refactor if moved to raft-engine
@@ -301,7 +298,7 @@ pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
 
 #[test]
 fn test_kv_write() {
-    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
 
     cluster.cfg.proxy_compat = false;
     // No persist will be triggered by CompactLog

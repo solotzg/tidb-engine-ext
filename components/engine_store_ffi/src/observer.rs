@@ -131,7 +131,7 @@ impl TiFlashObserver {
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
-        // TODO(tiflash) start thread pool
+        // start thread pool for pre handle snapshot
         let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
             .max_thread_count(snap_handle_pool_size)
             .build_future_pool();
@@ -242,7 +242,6 @@ impl TiFlashObserver {
 
 impl Coprocessor for TiFlashObserver {
     fn stop(&self) {
-        // TODO(tiflash) remove this when pre apply merged
         info!("shutdown tiflash observer"; "peer_id" => self.peer_id);
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }

@@ -1497,7 +1497,7 @@ where
             );
         }
 
-        let (mut response, mut exec_result) = match cmd_type {
+        let (mut response, exec_result) = match cmd_type {
             AdminCmdType::ChangePeer => self.exec_change_peer(ctx, request),
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
             AdminCmdType::Split => self.exec_split(ctx, request),
