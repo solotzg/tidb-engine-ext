@@ -2,9 +2,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 use kvproto::kvrpcpb::ApiVersion;
-use mock_engine_store;
 use test_raftstore::*;
 
 #[test]
