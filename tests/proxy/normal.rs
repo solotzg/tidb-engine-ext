@@ -1,28 +1,20 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
 use std::{
-    collections::HashMap,
-    io::{self, Read, Write},
-    ops::{Deref, DerefMut},
+    io::Write,
+    ops::DerefMut,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Once, RwLock,
-    },
+    sync::{atomic::Ordering, mpsc, Arc},
 };
 
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg};
 use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
-use engine_traits::{
-    Error, ExternalSstFileInfo, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey,
-    SstExt, WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
-};
+use engine_traits::MiscExt;
 use kvproto::{
     import_sstpb::SstMeta,
     metapb::RegionEpoch,
-    raft_cmdpb::{AdminCmdType, AdminRequest, CmdType, Request},
-    raft_serverpb::{RaftApplyState, RegionLocalState, StoreIdent},
+    raft_cmdpb::{CmdType, Request},
 };
 use new_mock_engine_store::{
     config::Config,
@@ -37,20 +29,18 @@ use pd_client::PdClient;
 use proxy_server::{
     config::{
         address_proxy_config, ensure_no_common_unrecognized_keys, get_last_config,
-        make_tikv_config, setup_default_tikv_config, validate_and_persist_config,
-        TIFLASH_DEFAULT_LISTENING_ADDR, TIFLASH_DEFAULT_STATUS_ADDR,
+        setup_default_tikv_config, validate_and_persist_config, TIFLASH_DEFAULT_LISTENING_ADDR,
+        TIFLASH_DEFAULT_STATUS_ADDR,
     },
     proxy::gen_tikv_config,
-    run::run_tikv_proxy,
 };
 use raft::eraftpb::MessageType;
-use raftstore::{coprocessor::ConsistencyCheckMethod, store::util::find_peer};
+use raftstore::store::util::find_peer;
 use sst_importer::SstImporter;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
-use test_raftstore::{new_node_cluster, new_tikv_config};
 use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
-    config::{LogFormat, ReadableDuration, ReadableSize},
+    config::{ReadableDuration, ReadableSize},
     time::Duration,
     HandyRwLock,
 };
@@ -949,9 +939,7 @@ mod write {
 }
 
 mod ingest {
-    use tempfile::TempDir;
     use test_sst_importer::gen_sst_file_with_kvs;
-    use txn_types::TimeStamp;
 
     use super::*;
 
@@ -1780,5 +1768,106 @@ mod snapshot {
         }
 
         cluster.shutdown();
+    }
+}
+
+mod persist {
+    use super::*;
+
+    #[test]
+    fn test_persist_when_finish() {
+        let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
+        disable_auto_gen_compact_log(&mut cluster);
+
+        cluster.run();
+        cluster.must_put(b"k0", b"v0");
+        check_key(&cluster, b"k0", b"v0", Some(true), Some(false), None);
+        let region_id = cluster.get_region(b"k0").get_id();
+
+        let prev_states = collect_all_states(&cluster, region_id);
+        cluster.must_put(b"k1", b"v1");
+        check_key(&cluster, b"k1", b"v1", Some(true), Some(false), None);
+        let new_states = collect_all_states(&cluster, region_id);
+        for i in prev_states.keys() {
+            let old = prev_states.get(i).unwrap();
+            let new = new_states.get(i).unwrap();
+            assert_eq!(
+                old.in_memory_apply_state.get_applied_index() + 1,
+                new.in_memory_apply_state.get_applied_index()
+            );
+            assert_eq!(
+                old.in_disk_apply_state.get_applied_index(),
+                new.in_disk_apply_state.get_applied_index()
+            );
+        }
+
+        fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+        cluster.must_put(b"k2", b"v2");
+        // Because we flush when batch ends.
+        check_key(&cluster, b"k2", b"v2", Some(true), Some(false), None);
+
+        // TODO(tiflash) wait `write_apply_state` in raftstore.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let prev_states = collect_all_states(&cluster, region_id);
+        cluster.must_put(b"k3", b"v3");
+        // Because we flush when batch ends.
+        check_key(&cluster, b"k3", b"v3", Some(true), Some(false), None);
+
+        // TODO(tiflash) wait `write_apply_state` in raftstore.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let new_states = collect_all_states(&cluster, region_id);
+        for i in prev_states.keys() {
+            let old = prev_states.get(i).unwrap();
+            let new = new_states.get(i).unwrap();
+            let gap = new.in_memory_apply_state.get_applied_index()
+                - old.in_memory_apply_state.get_applied_index();
+            let gap2 = new.in_disk_apply_state.get_applied_index()
+                - old.in_disk_apply_state.get_applied_index();
+            assert_eq!(gap, gap2);
+        }
+        fail::remove("on_pre_persist_with_finish");
+    }
+
+    #[test]
+    fn test_persist_when_merge() {
+        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+
+        // disable_auto_gen_compact_log(&mut cluster);
+        cluster.cfg.raft_store.right_derive_when_split = false;
+
+        cluster.run();
+
+        cluster.must_put(b"k1", b"v1");
+        cluster.must_put(b"k3", b"v3");
+
+        check_key(&cluster, b"k1", b"v1", Some(true), None, None);
+        check_key(&cluster, b"k3", b"v3", Some(true), None, None);
+
+        let r1 = cluster.get_region(b"k1");
+        cluster.must_split(&r1, b"k2");
+        let r3 = cluster.get_region(b"k3");
+
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let prev_states = collect_all_states(&cluster, r3.get_id());
+
+        info!("start merge"; "from" => r1.get_id(), "to" => r3.get_id());
+        pd_client.must_merge(r1.get_id(), r3.get_id());
+
+        // TODO(tiflash) wait `write_apply_state` in raftstore.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let r3_new = cluster.get_region(b"k3");
+        assert_eq!(r3_new.get_id(), r3.get_id());
+        let new_states = collect_all_states(&cluster, r3_new.get_id());
+        // index 6 empty command
+        // index 7 CommitMerge
+        for i in prev_states.keys() {
+            let old = prev_states.get(i).unwrap();
+            let new = new_states.get(i).unwrap();
+            let _gap = new.in_memory_apply_state.get_applied_index()
+                - old.in_memory_apply_state.get_applied_index();
+            let gap2 = new.in_disk_apply_state.get_applied_index()
+                - old.in_disk_apply_state.get_applied_index();
+            assert_eq!(gap2, 2);
+        }
     }
 }

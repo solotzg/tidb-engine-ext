@@ -2,42 +2,20 @@
 
 use std::{
     collections::HashMap,
-    io::{self, Read, Write},
-    ops::{Deref, DerefMut},
-    path::Path,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Once, RwLock,
-    },
+    sync::{Arc, RwLock},
 };
 
-use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
-use engine_traits::{
-    Error, Iterable, Iterator, MiscExt, Mutable, Peekable, Result, SeekKey, SstExt, SstWriter,
-    WriteBatch, WriteBatchExt, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
-};
+use engine_traits::{Peekable, CF_RAFT};
 use kvproto::{
     raft_cmdpb::{AdminCmdType, AdminRequest},
     raft_serverpb::{RaftApplyState, RegionLocalState, StoreIdent},
 };
 use new_mock_engine_store::{
-    mock_cluster::FFIHelperSet,
-    node::NodeCluster,
-    transport_simulate::{
-        CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
-    },
-    Cluster, ProxyConfig, Simulator, TestPdClient,
+    mock_cluster::FFIHelperSet, node::NodeCluster, Cluster, ProxyConfig, TestPdClient,
 };
-use proxy_server::config::{ensure_no_common_unrecognized_keys, validate_and_persist_config};
-use raft::eraftpb::MessageType;
-use raftstore::{
-    coprocessor::{ConsistencyCheckMethod, Coprocessor},
-    store::util::find_peer,
-};
-use sst_importer::SstImporter;
+use raftstore::coprocessor::ConsistencyCheckMethod;
 pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
-use tikv::config::TiKvConfig;
 use tikv_util::{
     config::{ReadableDuration, ReadableSize},
     time::Duration,
@@ -82,6 +60,7 @@ pub fn new_verify_hash_request(hash: Vec<u8>, index: u64) -> AdminRequest {
     req
 }
 
+#[derive(Debug)]
 pub struct States {
     pub in_memory_apply_state: RaftApplyState,
     pub in_memory_applied_term: u64,
@@ -291,9 +270,9 @@ pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
     // Disable AUTO generated compact log.
     // This will not totally disable, so we use some failpoints later.
     cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(10000);
-    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(50000);
-    cluster.cfg.raft_store.raft_log_gc_threshold = 1000;
+    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(100000);
+    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(500000);
+    cluster.cfg.raft_store.raft_log_gc_threshold = 10000;
 }
 
 #[test]
