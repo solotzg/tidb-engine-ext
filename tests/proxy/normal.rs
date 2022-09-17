@@ -305,7 +305,7 @@ mod config {
         );
     }
 
-    /// We test here if we can use proxy's default value.
+    /// We test here if we can use proxy's default value without given file.
     #[test]
     fn test_config_proxy_default1() {
         let args: Vec<&str> = vec![];
@@ -337,6 +337,8 @@ mod config {
         );
     }
 
+    /// We test here if we can use proxy's default value with given file,
+    /// but without given field.
     #[test]
     fn test_config_proxy_default2() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -369,37 +371,11 @@ mod config {
             config.raft_store.region_worker_tick_interval.as_millis(),
             500
         );
-    }
-
-    #[test]
-    fn test_proxy_low_apply_pool_size_default() {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        write!(
-            file,
-            "
-# empty config file
-        "
-        )
-        .unwrap();
-        let path = file.path();
-
-        let mut unrecognized_keys = Vec::new();
-        let mut tikv_config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
-        assert!(unrecognized_keys.is_empty());
-
-        let mut proxy_unrecognized_keys = Vec::new();
-        let proxy_config =
-            ProxyConfig::from_file(path, Some(&mut proxy_unrecognized_keys)).unwrap();
-        assert!(proxy_unrecognized_keys.is_empty());
-
-        // When raftstore.apply-low-priority-pool-size is specified in the config file,
-        // the default value from proxy config will be used.
-        address_proxy_config(&mut tikv_config, &proxy_config);
         assert_eq!(
             ProxyConfig::default()
                 .raft_store
                 .apply_low_priority_pool_size,
-            tikv_config
+            config
                 .raft_store
                 .apply_batch_system
                 .low_priority_pool_size
@@ -407,7 +383,7 @@ mod config {
     }
 
     #[test]
-    fn test_proxy_low_apply_pool_size_user_specified() {
+    fn test_config_proxy_overwrite() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         write!(
             file,
@@ -419,21 +395,18 @@ apply-low-priority-pool-size = 41
         .unwrap();
         let path = file.path();
 
-        let mut unrecognized_keys = Vec::new();
-        let mut tikv_config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
-        assert!(unrecognized_keys.is_empty());
-
-        let mut proxy_unrecognized_keys = Vec::new();
-        let proxy_config =
-            ProxyConfig::from_file(path, Some(&mut proxy_unrecognized_keys)).unwrap();
-        assert!(proxy_unrecognized_keys.is_empty());
+        let mut v: Vec<String> = vec![];
+        let cpath = Some(path.as_os_str());
+        let mut config = gen_tikv_config(&cpath, false, &mut v);
+        let mut proxy_config = gen_proxy_config(&cpath, false, &mut v);
+        overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
+        address_proxy_config(&mut config, &proxy_config);
 
         // When raftstore.apply-low-priority-pool-size is specified, its value
         // should be used.
-        address_proxy_config(&mut tikv_config, &proxy_config);
         assert_eq!(
             41,
-            tikv_config
+            config
                 .raft_store
                 .apply_batch_system
                 .low_priority_pool_size

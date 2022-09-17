@@ -144,9 +144,11 @@ pub fn make_tikv_config() -> TiKvConfig {
 }
 
 pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
+    // Compact test
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
+    // Do not add here, try use `address_proxy_config`
 }
 
 /// This function changes TiKV's config according to ProxyConfig.
