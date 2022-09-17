@@ -151,8 +151,6 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
 
 /// This function changes TiKV's config according to ProxyConfig.
 pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig) {
-    let cpu_num = SysQuota::cpu_cores_quota();
-
     // We must add engine label to our TiFlash config
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
