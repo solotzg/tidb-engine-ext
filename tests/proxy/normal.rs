@@ -290,7 +290,7 @@ mod config {
         let mut unrecognized_keys: Vec<String> = vec![];
         let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
         assert_eq!(config.raft_store.clean_stale_ranges_tick, 9999);
-        address_proxy_config(&mut config);
+        address_proxy_config(&mut config, &ProxyConfig::default());
         let clean_stale_ranges_tick =
             (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
         assert_eq!(
@@ -332,11 +332,23 @@ mod config {
     }
 
     #[test]
+    fn test_address_proxy_config_override() {
+        let mut config = TiKvConfig::default();
+        let mut proxy_config = ProxyConfig::default();
+        proxy_config.raft_store.sst_handle_pool_size = 37;
+        address_proxy_config(&mut config, &proxy_config);
+        assert_eq!(
+            37,
+            config.raft_store.apply_batch_system.low_priority_pool_size
+        );
+    }
+
+    #[test]
     fn test_store_setup() {
         let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
         // Add label to cluster
-        address_proxy_config(&mut cluster.cfg.tikv);
+        address_proxy_config(&mut cluster.cfg.tikv, &ProxyConfig::default());
 
         // Try to start this node, return after persisted some keys.
         let _ = cluster.start();
