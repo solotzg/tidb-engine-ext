@@ -296,7 +296,7 @@ mod config {
         let mut unrecognized_keys: Vec<String> = vec![];
         let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
         assert_eq!(config.raft_store.clean_stale_ranges_tick, 9999);
-        address_proxy_config(&mut config);
+        address_proxy_config(&mut config, &ProxyConfig::default());
         let clean_stale_ranges_tick =
             (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
         assert_eq!(
@@ -323,7 +323,7 @@ mod config {
         let mut config = gen_tikv_config(&None, false, &mut v);
         let mut proxy_config = gen_proxy_config(&None, false, &mut v);
         overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
-        address_proxy_config(&mut config);
+        address_proxy_config(&mut config, &proxy_config);
 
         assert_eq!(config.server.addr, TIFLASH_DEFAULT_LISTENING_ADDR);
         assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
@@ -359,7 +359,7 @@ mod config {
         let mut config = gen_tikv_config(&cpath, false, &mut v);
         let mut proxy_config = gen_proxy_config(&cpath, false, &mut v);
         overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
-        address_proxy_config(&mut config);
+        address_proxy_config(&mut config, &proxy_config);
 
         assert_eq!(config.rocksdb.max_open_files, 56);
         assert_eq!(config.server.addr, DEFAULT_LISTENING_ADDR);
@@ -376,7 +376,7 @@ mod config {
         let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
         // Add label to cluster
-        address_proxy_config(&mut cluster.cfg.tikv);
+        address_proxy_config(&mut cluster.cfg.tikv, &ProxyConfig::default());
 
         // Try to start this node, return after persisted some keys.
         let _ = cluster.start();

@@ -18,6 +18,10 @@ with_prefix!(prefix_store "store-");
 #[serde(rename_all = "kebab-case")]
 pub struct RaftstoreConfig {
     pub snap_handle_pool_size: usize,
+
+    #[doc(hidden)]
+    #[online_config(skip)]
+    pub region_worker_tick_interval: ReadableDuration,
 }
 
 impl Default for RaftstoreConfig {
@@ -28,6 +32,7 @@ impl Default for RaftstoreConfig {
             // When scaling TiFlash instances there will be raft snapshots.
             // We want to make sure this process does not consume too many resources.
             snap_handle_pool_size: (cpu_num * 0.4).clamp(2.0, 8.0) as usize,
+            region_worker_tick_interval: ReadableDuration::millis(500),
         }
     }
 }
@@ -140,10 +145,6 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-    default.raft_store.region_worker_tick_interval = ReadableDuration::millis(500);
-    let clean_stale_ranges_tick =
-        (10_000 / default.raft_store.region_worker_tick_interval.as_millis()) as usize;
-    default.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
 
     // Unlike TiKV, in TiFlash, we use the low-priority pool to both decode snapshots
     // (transform from row to column) and ingest SST. These operations are pretty heavy.
@@ -153,7 +154,7 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
 }
 
 /// This function changes TiKV's config according to ProxyConfig.
-pub fn address_proxy_config(config: &mut TiKvConfig) {
+pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig) {
     // We must add engine label to our TiFlash config
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
@@ -166,6 +167,8 @@ pub fn address_proxy_config(config: &mut TiKvConfig) {
         .server
         .labels
         .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
+    config.raft_store.region_worker_tick_interval =
+        proxy_config.raft_store.region_worker_tick_interval;
     let clean_stale_ranges_tick =
         (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
     config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
