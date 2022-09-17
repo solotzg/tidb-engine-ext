@@ -18,7 +18,7 @@ with_prefix!(prefix_store "store-");
 #[serde(rename_all = "kebab-case")]
 pub struct RaftstoreConfig {
     pub snap_handle_pool_size: usize,
-    pub sst_handle_pool_size: usize,
+    pub apply_low_priority_pool_size: usize,
 }
 
 impl Default for RaftstoreConfig {
@@ -32,7 +32,7 @@ impl Default for RaftstoreConfig {
 
             // This pool is used when handling ingest SST raft messages, e.g.
             // when using BR / lightning.
-            sst_handle_pool_size: (cpu_num * 0.3).clamp(2.0, 8.0) as usize,
+            apply_low_priority_pool_size: (cpu_num * 0.3).clamp(2.0, 8.0) as usize,
         }
     }
 }
@@ -169,7 +169,7 @@ pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig)
         (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
     config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
     config.raft_store.apply_batch_system.low_priority_pool_size =
-        proxy_config.raft_store.sst_handle_pool_size;
+        proxy_config.raft_store.apply_low_priority_pool_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
