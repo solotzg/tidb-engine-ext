@@ -222,9 +222,14 @@ mod region {
 }
 
 mod config {
+    use proxy_server::{proxy::gen_proxy_config, setup::overwrite_config_with_cmd_args};
+    use tikv::server::DEFAULT_LISTENING_ADDR;
+
     use super::*;
+
     #[test]
     fn test_config() {
+        // Test double read.
         let mut file = tempfile::NamedTempFile::new().unwrap();
         let text = "memory-usage-high-water=0.65\n[server]\nengine-addr=\"1.2.3.4:5\"\n[raftstore]\nsnap-handle-pool-size=4\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
         write!(file, "{}", text).unwrap();
@@ -232,7 +237,7 @@ mod config {
 
         let mut unrecognized_keys = Vec::new();
         let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
-        // Othersize we have no default addr for TiKv.
+        // Otherwise we have no default addr for TiKv.
         setup_default_tikv_config(&mut config);
         assert_eq!(config.memory_usage_high_water, 0.65);
         assert_eq!(config.rocksdb.max_open_files, 111);
@@ -263,6 +268,7 @@ mod config {
         assert_eq!(unknown.is_err(), true);
         assert_eq!(unknown.unwrap_err(), "nosense, rocksdb.z");
 
+        // Common config can be persisted.
         // Need run this test with ENGINE_LABEL_VALUE=tiflash, otherwise will fatal exit.
         let _ = std::fs::remove_file(
             PathBuf::from_str(&config.storage.data_dir)
@@ -299,12 +305,9 @@ mod config {
         );
     }
 
+    /// We test here if we can use proxy's default value.
     #[test]
-    fn test_config_default_addr() {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        let text = "memory-usage-high-water=0.65\nsnap-handle-pool-size=4\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
-        write!(file, "{}", text).unwrap();
-        let path = file.path();
+    fn test_config_proxy_default1() {
         let args: Vec<&str> = vec![];
         let matches = App::new("RaftStore Proxy")
             .arg(
@@ -316,15 +319,52 @@ mod config {
                     .takes_value(true),
             )
             .get_matches_from(args);
-        let c = format!("--config {}", path.to_str().unwrap());
-        let mut v = vec![c];
-        let config = gen_tikv_config(&matches, false, &mut v);
+        let mut v: Vec<String> = vec![];
+        let mut config = gen_tikv_config(&None, false, &mut v);
+        let mut proxy_config = gen_proxy_config(&None, false, &mut v);
+        overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
+        address_proxy_config(&mut config);
+
         assert_eq!(config.server.addr, TIFLASH_DEFAULT_LISTENING_ADDR);
         assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
         assert_eq!(
             config.server.advertise_status_addr,
             TIFLASH_DEFAULT_STATUS_ADDR
         );
+        assert_eq!(
+            config.raft_store.region_worker_tick_interval.as_millis(),
+            500
+        );
+    }
+
+    #[test]
+    fn test_config_proxy_default2() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        let text = "z=4\n[rocksdb]\nmax-open-files=56\n";
+        write!(file, "{}", text).unwrap();
+        let path = file.path();
+        let cpath = Some(path.as_os_str());
+        let args = vec![format!("-C{}", path.to_str().unwrap())];
+        let matches = App::new("RaftStore Proxy")
+            .arg(
+                Arg::with_name("config")
+                    .short("C")
+                    .long("config")
+                    .value_name("FILE")
+                    .help("Set the configuration file")
+                    .takes_value(true),
+            )
+            .get_matches_from(args);
+        let mut v: Vec<String> = vec![];
+        let mut config = gen_tikv_config(&cpath, false, &mut v);
+        let mut proxy_config = gen_proxy_config(&cpath, false, &mut v);
+        overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
+        address_proxy_config(&mut config);
+
+        assert_eq!(config.rocksdb.max_open_files, 56);
+        assert_eq!(config.server.addr, DEFAULT_LISTENING_ADDR);
+        assert_eq!(config.server.status_addr, "");
+        assert_eq!(config.server.advertise_status_addr, "");
         assert_eq!(
             config.raft_store.region_worker_tick_interval.as_millis(),
             500
