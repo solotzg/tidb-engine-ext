@@ -399,7 +399,6 @@ apply-low-priority-pool-size = 41
         let cpath = Some(path.as_os_str());
         let mut config = gen_tikv_config(&cpath, false, &mut v);
         let mut proxy_config = gen_proxy_config(&cpath, false, &mut v);
-        overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
         address_proxy_config(&mut config, &proxy_config);
 
         // When raftstore.apply-low-priority-pool-size is specified, its value
