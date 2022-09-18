@@ -375,10 +375,7 @@ mod config {
             ProxyConfig::default()
                 .raft_store
                 .apply_low_priority_pool_size,
-            config
-                .raft_store
-                .apply_batch_system
-                .low_priority_pool_size
+            config.raft_store.apply_batch_system.low_priority_pool_size
         );
     }
 
@@ -405,10 +402,7 @@ apply-low-priority-pool-size = 41
         // should be used.
         assert_eq!(
             41,
-            config
-                .raft_store
-                .apply_batch_system
-                .low_priority_pool_size
+            config.raft_store.apply_batch_system.low_priority_pool_size
         );
     }
 
