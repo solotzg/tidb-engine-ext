@@ -6,7 +6,7 @@ use itertools::Itertools;
 use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::with_prefix;
-use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
+use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{config::ReadableDuration, crit, sys::SysQuota};
 
 use crate::fatal;
@@ -137,13 +137,13 @@ pub fn ensure_no_common_unrecognized_keys(
 pub const TIFLASH_DEFAULT_LISTENING_ADDR: &str = "127.0.0.1:20170";
 pub const TIFLASH_DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20292";
 
-pub fn make_tikv_config() -> TiKvConfig {
-    let mut default = TiKvConfig::default();
+pub fn make_tikv_config() -> TikvConfig {
+    let mut default = TikvConfig::default();
     setup_default_tikv_config(&mut default);
     default
 }
 
-pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
+pub fn setup_default_tikv_config(default: &mut TikvConfig) {
     // Compact test
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
@@ -152,7 +152,7 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
 }
 
 /// This function changes TiKV's config according to ProxyConfig.
-pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig) {
+pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig) {
     // We must add engine label to our TiFlash config
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
@@ -174,7 +174,7 @@ pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig)
         proxy_config.raft_store.apply_low_priority_pool_size;
 }
 
-pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
+pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
     config.compatible_adjust();
     if let Err(e) = config.validate() {
         fatal!("invalid configuration: {}", e);
@@ -196,7 +196,7 @@ pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
 /// Loads the previously-loaded configuration from `last_tikv.toml`,
 /// compares key configuration items and fails if they are not
 /// identical.
-pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
+pub fn check_critical_config(config: &TikvConfig) -> Result<(), String> {
     // Check current critical configurations with last time, if there are some
     // changes, user must guarantee relevant works have been done.
     if let Some(mut cfg) = get_last_config(&config.storage.data_dir) {
@@ -212,12 +212,12 @@ pub fn check_critical_config(config: &TiKvConfig) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_last_config(data_dir: &str) -> Option<TiKvConfig> {
+pub fn get_last_config(data_dir: &str) -> Option<TikvConfig> {
     let store_path = Path::new(data_dir);
     let last_cfg_path = store_path.join(LAST_CONFIG_FILE);
     let mut v: Vec<String> = vec![];
     if last_cfg_path.exists() {
-        let s = TiKvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
+        let s = TikvConfig::from_file(&last_cfg_path, Some(&mut v)).unwrap_or_else(|e| {
             error!(
                 "invalid auto generated configuration file {}, err {}",
                 last_cfg_path.display(),

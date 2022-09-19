@@ -36,17 +36,16 @@ use openssl::{
     x509::X509,
 };
 use pin_project::pin_project;
-use raftstore::store::{transport::CasualRouter, CasualMessage};
+use raftstore::store::{region_meta, transport::CasualRouter, CasualMessage};
 use regex::Regex;
 use security::{self, SecurityConfig};
 use serde_json::Value;
 use tikv::{
-    config::{log_level_serde, ConfigController},
+    config::{ConfigController, LogLevel},
     server::{
         status_server::{
             activate_heap_profile, deactivate_heap_profile, jeprof_heap_profile,
-            list_heap_profiles, read_file, region_meta, start_one_cpu_profile,
-            start_one_heap_profile,
+            list_heap_profiles, read_file, start_one_cpu_profile, start_one_heap_profile,
         },
         Result,
     },
@@ -71,8 +70,7 @@ static FAIL_POINTS_REQUEST_PATH: &str = "/fail";
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct LogLevelRequest {
-    #[serde(with = "log_level_serde")]
-    pub log_level: slog::Level,
+    pub log_level: LogLevel,
 }
 
 pub struct StatusServer<E, R> {
@@ -479,7 +477,7 @@ where
 
         match log_level_request {
             Ok(req) => {
-                set_log_level(req.log_level);
+                set_log_level(req.log_level.into());
                 Ok(Response::new(Body::empty()))
             }
             Err(err) => Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
@@ -531,7 +529,7 @@ where
         match router.send(
             id,
             CasualMessage::AccessPeer(Box::new(move |peer| {
-                if let Err(meta) = tx.send(region_meta::RegionMeta::new(peer)) {
+                if let Err(meta) = tx.send(peer) {
                     error!("receiver dropped, region meta: {:?}", meta)
                 }
             })),
@@ -675,7 +673,9 @@ where
                         }
 
                         match (method, path.as_ref()) {
-                            (Method::GET, "/metrics") => Ok(Response::new(dump().into())),
+                            (Method::GET, "/metrics") => Ok(Response::new(
+                                dump(cfg_controller.get_current().server.simplify_metrics).into(),
+                            )),
                             (Method::GET, "/status") => Ok(Response::default()),
                             (Method::GET, "/debug/pprof/heap_list") => Self::list_heap_prof(req),
                             (Method::GET, "/debug/pprof/heap_activate") => {
@@ -1031,7 +1031,7 @@ mod tests {
     use tikv_util::logger::get_log_level;
 
     use crate::{
-        config::{ConfigController, TiKvConfig},
+        config::{ConfigController, TikvConfig},
         server::status_server::{profile::TEST_PROFILE_MUTEX, LogLevelRequest, StatusServer},
     };
 
@@ -1122,12 +1122,12 @@ mod tests {
                 .await
                 .unwrap();
             let resp_json = String::from_utf8_lossy(&v).to_string();
-            let cfg = TiKvConfig::default();
+            let cfg = TikvConfig::default();
             serde_json::to_string(&cfg.get_encoder())
                 .map(|cfg_json| {
                     assert_eq!(resp_json, cfg_json);
                 })
-                .expect("Could not convert TiKvConfig to string");
+                .expect("Could not convert TikvConfig to string");
         });
         block_on(handle).unwrap();
         status_server.stop();

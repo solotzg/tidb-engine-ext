@@ -443,9 +443,8 @@ pub fn create_tiflash_test_engine(
         .rocksdb
         .build_cf_opts(&cache, None, cfg.storage.api_version());
 
-    let engine = Arc::new(
-        engine_rocks::raw_util::new_engine_opt(kv_path_str, kv_db_opt, kv_cfs_opt).unwrap(),
-    );
+    let engine =
+        Arc::new(engine_rocks::util::new_engine_opt(kv_path_str, kv_db_opt, kv_cfs_opt).unwrap());
 
     let raft_path = dir.path().join("raft");
     let raft_path_str = raft_path.to_str().unwrap();
@@ -455,7 +454,7 @@ pub fn create_tiflash_test_engine(
 
     let raft_cfs_opt = cfg.raftdb.build_cf_opts(&cache);
     let raft_engine = Arc::new(
-        engine_rocks::raw_util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap(),
+        engine_rocks::util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap(),
     );
 
     let mut engine = TiFlashEngine::from_db(engine);
