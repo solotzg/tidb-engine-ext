@@ -5,7 +5,7 @@ use std::{
     ops::Deref,
 };
 
-use engine_traits::DBVector;
+use engine_traits::DbVector;
 use rocksdb::DBVector as RawDBVector;
 
 pub struct RocksDBVector(RawDBVector);

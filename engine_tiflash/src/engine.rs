@@ -15,7 +15,7 @@ use std::{
     },
 };
 
-use engine_rocks::{RocksDBVector, RocksEngineIterator, RocksSnapshot};
+use engine_rocks::{RocksDbVector, RocksEngineIterator, RocksSnapshot};
 use engine_traits::{
     Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable,
 };

@@ -1,6 +1,6 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_traits::{CFOptionsExt, ColumnFamilyOptions, Result, SstPartitionerFactory};
+use engine_traits::{CfOptionsExt, ColumnFamilyOptions, Result, SstPartitionerFactory};
 use rocksdb::ColumnFamilyOptions as RawCFOptions;
 use tikv_util::box_err;
 
@@ -9,7 +9,7 @@ use crate::{
     sst_partitioner::RocksSstPartitionerFactory, util,
 };
 
-impl CFOptionsExt for RocksEngine {
+impl CfOptionsExt for RocksEngine {
     type ColumnFamilyOptions = RocksColumnFamilyOptions;
 
     fn get_options_cf(&self, cf: &str) -> Result<Self::ColumnFamilyOptions> {

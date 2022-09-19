@@ -1,6 +1,6 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_traits::{DBOptions, DBOptionsExt, Result, TitanDBOptions};
+use engine_traits::{DbOptions, DbOptionsExt, Result, TitanCfOptions};
 use rocksdb::{DBOptions as RawDBOptions, TitanDBOptions as RawTitanDBOptions};
 use tikv_util::box_err;
 

@@ -2,7 +2,7 @@
 
 use std::cmp;
 
-use engine_traits::{CFNamesExt, CompactExt, Result};
+use engine_traits::{CfNamesExt, CompactExt, Result};
 use rocksdb::{CompactOptions, CompactionOptions, DBCompressionType};
 
 use crate::{engine::RocksEngine, util};
