@@ -51,6 +51,7 @@ ifeq ($(PROXY_FRAME_POINTER),1)
 export RUSTFLAGS := $(RUSTFLAGS) -Cforce-frame-pointers=yes
 export CFLAGS := $(CFLAGS) -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer
 export CXXFLAGS := $(CXXFLAGS) -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer
+ENABLE_FEATURES += pprof-fp
 endif
 
 # Pick an allocator
@@ -63,6 +64,7 @@ ENABLE_FEATURES += snmalloc
 else ifeq ($(SYSTEM_ALLOC),1)
 # no feature needed for system allocator
 else
+ENABLE_FEATURES += jemalloc
 endif
 
 # Disable portable on macOS to sidestep the compiler bug in clang 4.9

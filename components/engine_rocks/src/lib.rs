@@ -69,7 +69,6 @@ mod engine_iterator;
 pub use crate::engine_iterator::*;
 
 pub mod options;
-pub mod raw_util;
 pub mod util;
 
 mod compact_listener;

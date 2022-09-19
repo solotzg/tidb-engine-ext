@@ -119,9 +119,9 @@ impl RocksEngine {
             return false;
         }
 
-        // If path is not an empty directory, we say db exists. If path is not an empty directory
-        // but db has not been created, `DB::list_column_families` fails and we can clean up
-        // the directory by this indication.
+        // If path is not an empty directory, we say db exists. If path is not an empty
+        // directory but db has not been created, `DB::list_column_families`
+        // fails and we can clean up the directory by this indication.
         fs::read_dir(&path).unwrap().next().is_some()
     }
 
@@ -154,10 +154,10 @@ impl KvEngine for RocksEngine {
     }
 
     // The whole point is:
-    // 1. When `handle_pending_applies` is called by `on_timeout`, we can handle at least one.
-    // 2. When `handle_pending_applies` is called when we receive a new task,
-    //    or when `handle_pending_applies` need to handle multiple snapshots.
-    //    We need to compare to what's in queue.
+    // 1. When `handle_pending_applies` is called by `on_timeout`, we can handle at
+    // least one. 2. When `handle_pending_applies` is called when we receive a
+    // new task,    or when `handle_pending_applies` need to handle multiple
+    // snapshots.    We need to compare to what's in queue.
 
     fn can_apply_snapshot(&self, is_timeout: bool, new_batch: bool, _region_id: u64) -> bool {
         // is called after calling observer's pre_handle_snapshot

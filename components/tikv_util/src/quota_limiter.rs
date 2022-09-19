@@ -244,7 +244,6 @@ impl QuotaLimiter {
             .set_speed_limit(Self::speed_limit(quota_limit as f64 * 1000_f64));
     }
 
-
     pub fn set_write_bandwidth_limit(&self, write_bandwidth: ReadableSize, is_foreground: bool) {
         self.get_limiters(is_foreground)
             .write_bandwidth_limiter

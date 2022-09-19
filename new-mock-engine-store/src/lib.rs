@@ -330,7 +330,8 @@ impl EngineStoreServerWrap {
                                 }
                             }
                         } else {
-                            // If old_peer_id is 0, seems old_region.peer is not set, just neglect for convenience.
+                            // If old_peer_id is 0, seems old_region.peer is not set, just neglect
+                            // for convenience.
                             do_remove = false;
                         }
                         if do_remove {
@@ -371,8 +372,9 @@ impl EngineStoreServerWrap {
                                 let new_region =
                                     make_new_region(Some(region_meta.clone()), Some(node_id));
 
-                                // No need to split data because all KV are stored in the same RocksDB.
-                                // TODO But we still need to clean all in-memory data.
+                                // No need to split data because all KV are stored in the same
+                                // RocksDB. TODO But we still need
+                                // to clean all in-memory data.
                                 // We can't assert `region_meta.id` is brand new here
                                 engine_store_server
                                     .kvstore
@@ -469,7 +471,8 @@ impl EngineStoreServerWrap {
                         region.set_applied(header.index, header.term);
                     }
                     AdminCmdType::CompactLog => {
-                        // We can always do compact, since a executed CompactLog must follow a successful persist.
+                        // We can always do compact, since a executed CompactLog must follow a
+                        // successful persist.
                         let region = engine_store_server.kvstore.get_mut(&region_id).unwrap();
                         let state = &mut region.apply_state;
                         let compact_index = req.get_compact_log().get_compact_index();
@@ -735,10 +738,12 @@ unsafe extern "C" fn ffi_try_flush_data(
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let kvstore = &mut (*store.engine_store_server).kvstore;
-    // If we can't find region here, we return true so proxy can trigger a CompactLog.
-    // The triggered CompactLog will be handled by `handleUselessAdminRaftCmd`,
-    // and result in a `EngineStoreApplyRes::NotFound`.
-    // Proxy will print this message and continue: `region not found in engine-store, maybe have exec `RemoveNode` first`.
+    // If we can't find region here, we return true so proxy can trigger a
+    // CompactLog. The triggered CompactLog will be handled by
+    // `handleUselessAdminRaftCmd`, and result in a
+    // `EngineStoreApplyRes::NotFound`. Proxy will print this message and
+    // continue: `region not found in engine-store, maybe have exec `RemoveNode`
+    // first`.
     let region = match kvstore.get_mut(&region_id) {
         Some(r) => r,
         None => {
@@ -1091,8 +1096,8 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         std::collections::hash_map::Entry::Occupied(_o) => {}
         std::collections::hash_map::Entry::Vacant(v) => {
             // When we remove hacked code in handle_raft_entry_normal during migration,
-            // some tests in handle_raft_entry_normal may fail, since it can observe a empty cmd,
-            // thus creating region.
+            // some tests in handle_raft_entry_normal may fail, since it can observe a empty
+            // cmd, thus creating region.
             warn!(
                 "region {} not found when ingest, create for {}",
                 region_id, node_id

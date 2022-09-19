@@ -732,11 +732,10 @@ impl DataKeyManager {
         };
         Ok(Some(encrypted_file))
     }
-}
 
-impl DataKeyManager {
+    /// Return which method this manager is using.
     pub fn encryption_method(&self) -> engine_traits::EncryptionMethod {
-        crypter::encryption_method_to_db_encryption_method(self.method)
+        crypter::to_engine_encryption_method(self.method)
     }
 }
 
@@ -1471,7 +1470,7 @@ mod tests {
         {
             let raw = File::create(&path).unwrap();
             let mut f = manager
-                .open_file_with_writer(&path, raw, false /*create*/)
+                .open_file_with_writer(&path, raw, false /* create */)
                 .unwrap();
             f.write_all(content.as_bytes()).unwrap();
             f.sync_all().unwrap();
