@@ -14,11 +14,11 @@ impl ImportExt for RocksEngine {
 
     fn ingest_external_file_cf(&self, cf: &str, files: &[&str]) -> Result<()> {
         #[cfg(not(feature = "compat_old_proxy"))]
-            {
-                // do nothing
-                return Ok(());
-            }
-        
+        {
+            // do nothing
+            return Ok(());
+        }
+
         let cf = util::get_cf_handle(self.as_inner(), cf)?;
         let mut opts = RocksIngestExternalFileOptions::new();
         opts.move_files(true);

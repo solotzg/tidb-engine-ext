@@ -21,8 +21,8 @@ use std::{
 use encryption::DataKeyManager;
 use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
 use engine_traits::{
-    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Iterator, Peekable, SeekKey,
-    SstReader, CF_DEFAULT, CF_LOCK, CF_WRITE,
+    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, IterOptions, Iterator, Peekable,
+    RefIterable, SstReader, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
@@ -655,12 +655,12 @@ impl RaftStoreProxyFFIHelper {
     }
 }
 
-pub struct SSTFileReader {
-    iter: RocksSstIterator,
+pub struct SSTFileReader<'a> {
+    iter: RocksSstIterator<'a>,
     remained: bool,
 }
 
-impl SSTFileReader {
+impl<'a> SSTFileReader<'_> {
     fn ffi_get_cf_file_reader(path: &str, key_manager: Option<Arc<DataKeyManager>>) -> RawVoidPtr {
         let env = get_env(key_manager, None).unwrap();
         let sst_reader_res = RocksSstReader::open_with_env(path, Some(env));
@@ -677,8 +677,10 @@ impl SSTFileReader {
             }
             Ok(_) => (),
         }
-        let mut iter = sst_reader.iter();
-        let remained = iter.seek(SeekKey::Start).unwrap();
+        let mut iter = sst_reader
+            .iter(IterOptions::default())
+            .expect("ffi_get_cf_file_reader fail get iter");
+        let remained = iter.seek_to_first().unwrap();
 
         Box::into_raw(Box::new(SSTFileReader { iter, remained })) as *mut _
     }

@@ -1572,6 +1572,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-timer",
+ "tracker",
  "uuid",
  "yatp",
 ]
@@ -1629,6 +1630,7 @@ dependencies = [
  "tikv_util",
  "time",
  "toml",
+ "tracker",
  "txn_types",
  "yatp",
 ]

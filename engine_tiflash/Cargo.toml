@@ -57,6 +57,8 @@ tempfile = "3.0"
 tikv_alloc = { path = "../components/tikv_alloc" }
 tikv_util = { path = "../components/tikv_util", default-features = false }
 time = "0.1"
+
+tracker = { path = "../components/tracker" }
 txn_types = { path = "../components/txn_types", default-features = false }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 
