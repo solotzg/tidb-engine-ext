@@ -284,13 +284,13 @@ pub extern "C" fn ffi_gc_rust_ptr(
     let type_: RawRustPtrType = type_.into();
     match type_ {
         RawRustPtrType::ReadIndexTask => unsafe {
-            Box::from_raw(data as *mut read_index_helper::ReadIndexTask);
+            drop(Box::from_raw(data as *mut read_index_helper::ReadIndexTask));
         },
         RawRustPtrType::ArcFutureWaker => unsafe {
-            Box::from_raw(data as *mut utils::ArcNotifyWaker);
+            drop(Box::from_raw(data as *mut utils::ArcNotifyWaker));
         },
         RawRustPtrType::TimerTask => unsafe {
-            Box::from_raw(data as *mut utils::TimerTask);
+            drop(Box::from_raw(data as *mut utils::TimerTask));
         },
         _ => unreachable!(),
     }
@@ -615,10 +615,10 @@ unsafe extern "C" fn ffi_sst_reader_next(mut reader: SSTReaderPtr, type_: Column
 unsafe extern "C" fn ffi_gc_sst_reader(reader: SSTReaderPtr, type_: ColumnFamilyType) {
     match type_ {
         ColumnFamilyType::Lock => {
-            Box::from_raw(reader.inner as *mut LockCFFileReader);
+            drop(Box::from_raw(reader.inner as *mut LockCFFileReader));
         }
         _ => {
-            Box::from_raw(reader.inner as *mut SSTFileReader);
+            drop(Box::from_raw(reader.inner as *mut SSTFileReader));
         }
     }
 }

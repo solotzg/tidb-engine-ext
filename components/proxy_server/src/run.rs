@@ -406,7 +406,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         if let Some(cache) = block_cache {
             builder = builder.block_cache(cache);
         }
-        let factory = builder.build();
+        let factory = Arc::new(builder.build());
         let kv_engine = factory
             .create_shared_db()
             .unwrap_or_else(|s| fatal!("failed to create kv engine: {}", s));
@@ -429,11 +429,12 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         cfg_controller.register(
             tikv::config::Module::Rocksdb,
             Box::new(DbConfigManger::new(
-                engines.kv.rocks.clone(),
+                factory.clone(),
                 DbType::Kv,
                 self.config.storage.block_cache.shared,
             )),
         );
+        self.tablet_factory = Some(factory.clone());
         engines
             .raft
             .register_config(cfg_controller, self.config.storage.block_cache.shared);
@@ -481,6 +482,7 @@ struct TiKvServer<ER: RaftEngine> {
     background_worker: Worker,
     sst_worker: Option<Box<LazyWorker<String>>>,
     quota_limiter: Arc<QuotaLimiter>,
+    tablet_factory: Option<Arc<dyn TabletFactory<RocksEngine> + Send + Sync>>,
 }
 
 struct TiKvEngines<EK: KvEngine, ER: RaftEngine> {
@@ -589,6 +591,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             flow_info_receiver: None,
             sst_worker: None,
             quota_limiter,
+            tablet_factory: None,
         }
     }
 
@@ -806,6 +809,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 ),
             ),
             engines.kv.clone(),
+            self.region_info_accessor.region_leaders(),
         );
 
         self.engines = Some(TiKvEngines {
@@ -983,7 +987,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         cfg_controller.register(
             tikv::config::Module::Storage,
             Box::new(StorageConfigManger::new(
-                self.engines.as_ref().unwrap().engine.kv_engine(),
+                self.tablet_factory.as_ref().unwrap().clone(),
                 self.config.storage.block_cache.shared,
                 ttl_scheduler,
                 flow_controller,
@@ -1029,13 +1033,17 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             cop_read_pools.handle()
         };
 
+        let mut unified_read_pool_scale_receiver = None;
         if self.config.readpool.is_unified_pool_enabled() {
+            let (unified_read_pool_scale_notifier, rx) = mpsc::sync_channel(10);
             cfg_controller.register(
                 tikv::config::Module::Readpool,
                 Box::new(ReadPoolConfigManager(
                     unified_read_pool.as_ref().unwrap().handle(),
+                    unified_read_pool_scale_notifier,
                 )),
             );
+            unified_read_pool_scale_receiver = Some(rx);
         }
 
         // // Register causal observer for RawKV API V2
@@ -1086,7 +1094,11 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         self.config
             .raft_store
-            .validate(self.config.coprocessor.region_split_size)
+            .validate(
+                self.config.coprocessor.region_split_size,
+                self.config.coprocessor.enable_region_bucket,
+                self.config.coprocessor.region_bucket_size,
+            )
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
         let raft_store = Arc::new(VersionTrack::new(self.config.raft_store.clone()));
         let health_service = HealthService::default();
@@ -1256,7 +1268,12 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             Box::new(split_config_manager.clone()),
         );
 
-        let auto_split_controller = AutoSplitController::new(split_config_manager);
+        let auto_split_controller = AutoSplitController::new(
+            split_config_manager,
+            self.config.server.grpc_concurrency,
+            self.config.readpool.unified.max_thread_count,
+            unified_read_pool_scale_receiver,
+        );
 
         node.start(
             engines.engines.clone(),
@@ -1607,9 +1624,9 @@ impl ConfiguredRaftEngine for engine_rocks::RocksEngine {
         let mut raft_db_opts = config_raftdb.build_opt();
         raft_db_opts.set_env(env.clone());
         let raft_cf_opts = config_raftdb.build_cf_opts(block_cache);
-        let raftdb = engine_rocks::util::new_engine_opt(raft_db_path, raft_db_opts, raft_cf_opts)
-            .expect("failed to open raftdb");
-        let mut raftdb = engine_rocks::RocksEngine::from_db(Arc::new(raftdb));
+        let mut raftdb =
+            engine_rocks::util::new_engine_opt(raft_db_path, raft_db_opts, raft_cf_opts)
+                .expect("failed to open raftdb");
         raftdb.set_shared_block_cache(block_cache.is_some());
 
         if should_dump {
@@ -1617,6 +1634,8 @@ impl ConfiguredRaftEngine for engine_rocks::RocksEngine {
                 RaftLogEngine::new(config.raft_engine.config(), key_manager.clone(), None)
                     .expect("failed to open raft engine for migration");
             dump_raft_engine_to_raftdb(&raft_engine, &raftdb, 8 /* threads */);
+            raft_engine.stop();
+            drop(raft_engine);
             raft_data_state_machine.after_dump_data();
         }
         raftdb
@@ -1629,7 +1648,7 @@ impl ConfiguredRaftEngine for engine_rocks::RocksEngine {
     fn register_config(&self, cfg_controller: &mut ConfigController, share_cache: bool) {
         cfg_controller.register(
             tikv::config::Module::Raftdb,
-            Box::new(DbConfigManger::new(self.clone(), DbType::Raft, share_cache)),
+            Box::new(DbConfigManger::new(Arc::new(self.clone()), DbType::Raft, share_cache)),
         );
     }
 }
@@ -1662,10 +1681,10 @@ impl ConfiguredRaftEngine for RaftLogEngine {
                 &config.raft_store.raftdb_path,
                 raft_db_opts,
                 raft_cf_opts,
-            )
-            .expect("failed to open raftdb for migration");
-            let raftdb = RocksEngine::from_db(Arc::new(raftdb));
+            ).expect("failed to open raftdb for migration");
             dump_raftdb_to_raft_engine(&raftdb, &raft_engine, 8 /* threads */);
+            raftdb.stop();
+            drop(raftdb);
             raft_data_state_machine.after_dump_data();
         }
         raft_engine
