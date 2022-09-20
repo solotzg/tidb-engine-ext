@@ -1407,50 +1407,6 @@ where
             }
         }
 
-        let cmd = Cmd::new(index, term, req.clone(), resp.clone());
-        let (modified_region, mut pending_handle_ssts) = match exec_result {
-            ApplyResult::Res(ref e) => match e {
-                ExecResult::SplitRegion { ref derived, .. } => (Some(derived.clone()), None),
-                ExecResult::PrepareMerge { ref region, .. } => (Some(region.clone()), None),
-                ExecResult::CommitMerge { ref region, .. } => (Some(region.clone()), None),
-                ExecResult::RollbackMerge { ref region, .. } => (Some(region.clone()), None),
-                ExecResult::IngestSst { ref ssts } => (None, Some(ssts.clone())),
-                _ => (None, None),
-            },
-            _ => (None, None),
-        };
-        let mut apply_ctx_info = ApplyCtxInfo {
-            pending_handle_ssts: &mut pending_handle_ssts,
-            delete_ssts: &mut ctx.delete_ssts,
-            pending_delete_ssts: &mut ctx.pending_delete_ssts,
-        };
-        let should_write = ctx.host.post_exec(
-            &self.region,
-            &cmd,
-            &self.apply_state,
-            &RegionState {
-                peer_id: self.id(),
-                pending_remove: self.pending_remove,
-                modified_region,
-            },
-            &mut apply_ctx_info,
-        );
-        match pending_handle_ssts {
-            None => (),
-            Some(mut v) => {
-                if !v.is_empty() {
-                    // All elements in `pending_handle_ssts` should be moved into either
-                    // `delete_ssts` or `pending_delete_ssts`, once handled by by any of the
-                    // `post_exec` observers. So a non-empty
-                    // `pending_handle_ssts` here indicates no `post_exec` handled.
-                    ctx.delete_ssts.append(&mut v);
-                }
-                RAFT_APPLYING_SST_GAUGE
-                    .with_label_values(&["pending_delete"])
-                    .set(ctx.pending_delete_ssts.len() as i64);
-            }
-        }
-
         if let ApplyResult::Res(ref exec_result) = exec_result {
             match *exec_result {
                 ExecResult::ChangePeer(ref cp) => {

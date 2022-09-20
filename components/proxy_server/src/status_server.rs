@@ -36,7 +36,7 @@ use openssl::{
     x509::X509,
 };
 use pin_project::pin_project;
-use raftstore::store::{region_meta, transport::CasualRouter, CasualMessage};
+use raftstore::store::{transport::CasualRouter, CasualMessage};
 use regex::Regex;
 use security::{self, SecurityConfig};
 use serde_json::Value;

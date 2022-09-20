@@ -700,7 +700,8 @@ impl<'a> SSTFileReader<'_> {
     }
 
     pub fn ffi_next(&mut self) {
-        self.remained = self.iter.next().unwrap();
+        let n = self.iter.next();
+        self.remained = n.unwrap();
     }
 }
 

@@ -27,8 +27,14 @@ pub struct StorageConfigManger<E: Engine, EL: engine_traits::KvEngine, L: LockMa
     scheduler: TxnScheduler<E, L>,
 }
 
-unsafe impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> Send for StorageConfigManger<E, EL, L> {}
-unsafe impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> Sync for StorageConfigManger<E, EL, L> {}
+unsafe impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> Send
+    for StorageConfigManger<E, EL, L>
+{
+}
+unsafe impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> Sync
+    for StorageConfigManger<E, EL, L>
+{
+}
 
 impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> StorageConfigManger<E, EL, L> {
     pub fn new(
@@ -48,7 +54,9 @@ impl<E: Engine, EL: engine_traits::KvEngine, L: LockManager> StorageConfigManger
     }
 }
 
-impl<EK: Engine, EL: engine_traits::KvEngine, L: LockManager> ConfigManager for StorageConfigManger<EK, EL, L> {
+impl<EK: Engine, EL: engine_traits::KvEngine, L: LockManager> ConfigManager
+    for StorageConfigManger<EK, EL, L>
+{
     fn dispatch(&mut self, mut change: ConfigChange) -> CfgResult<()> {
         if let Some(ConfigValue::Module(mut block_cache)) = change.remove("block_cache") {
             if !self.shared_block_cache {

@@ -826,7 +826,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         RaftRouter<TiFlashEngine, ER>,
     > {
         let engines = self.engines.as_ref().unwrap();
-        let mut gc_worker = GcWorker::new(
+        let gc_worker = GcWorker::new(
             engines.engine.clone(),
             self.router.clone(),
             self.flow_info_sender.take().unwrap(),
@@ -1648,7 +1648,11 @@ impl ConfiguredRaftEngine for engine_rocks::RocksEngine {
     fn register_config(&self, cfg_controller: &mut ConfigController, share_cache: bool) {
         cfg_controller.register(
             tikv::config::Module::Raftdb,
-            Box::new(DbConfigManger::new(Arc::new(self.clone()), DbType::Raft, share_cache)),
+            Box::new(DbConfigManger::new(
+                Arc::new(self.clone()),
+                DbType::Raft,
+                share_cache,
+            )),
         );
     }
 }
@@ -1681,7 +1685,8 @@ impl ConfiguredRaftEngine for RaftLogEngine {
                 &config.raft_store.raftdb_path,
                 raft_db_opts,
                 raft_cf_opts,
-            ).expect("failed to open raftdb for migration");
+            )
+            .expect("failed to open raftdb for migration");
             dump_raftdb_to_raft_engine(&raftdb, &raft_engine, 8 /* threads */);
             raftdb.stop();
             drop(raftdb);

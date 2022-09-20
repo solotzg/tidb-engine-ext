@@ -20,7 +20,9 @@ use kvproto::{
     raft_cmdpb::AdminCmdType,
     raft_serverpb::{RaftApplyState, RegionLocalState},
 };
-pub use mock_cluster::{Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine};
+pub use mock_cluster::{
+    must_get_equal, must_get_none, Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine,
+};
 use protobuf::Message;
 use tikv_util::{debug, error, info, warn};
 
@@ -219,7 +221,7 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
         let start = region.region.get_start_key().to_owned();
         let end = region.region.get_end_key().to_owned();
         engine
-            .scan_cf(cf_name, &start, &end, false, |k, v| {
+            .scan(cf_name, &start, &end, false, |k, v| {
                 let origin_key = if keys::validate_data_key(k) {
                     keys::origin_key(k).to_vec()
                 } else {
@@ -879,13 +881,13 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
     match RawCppPtrTypeImpl::from(tp) {
         RawCppPtrTypeImpl::None => {}
         RawCppPtrTypeImpl::String => unsafe {
-            Box::<Vec<u8>>::from_raw(ptr as *mut _);
+            drop(Box::<Vec<u8>>::from_raw(ptr as *mut _));
         },
         RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => unsafe {
-            Box::<PrehandledSnapshot>::from_raw(ptr as *mut _);
+            drop(Box::<PrehandledSnapshot>::from_raw(ptr as *mut _));
         },
         RawCppPtrTypeImpl::WakerNotifier => unsafe {
-            Box::from_raw(ptr as *mut ProxyNotifier);
+            drop(Box::from_raw(ptr as *mut ProxyNotifier));
         },
     }
 }
@@ -909,6 +911,7 @@ unsafe extern "C" fn ffi_handle_destroy(
 
 type MockRaftProxyHelper = RaftStoreProxyFFIHelper;
 
+#[derive(Debug)]
 pub struct SSTReader<'a> {
     proxy_helper: &'a MockRaftProxyHelper,
     inner: ffi_interfaces::SSTReaderPtr,
@@ -1120,8 +1123,9 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         // let _path = std::str::from_utf8_unchecked((*snapshot).path.to_slice());
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
-
+        debug!("!!! reader {:?}", sst_reader);
         while sst_reader.remained() {
+            debug!("!!! reader 1 {:?}", sst_reader);
             let key = sst_reader.key();
             let value = sst_reader.value();
 
@@ -1129,6 +1133,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             write_kv_in_mem(region, cf_index, key.to_slice(), value.to_slice());
             sst_reader.next();
         }
+        debug!("!!! reader end {:?}", sst_reader);
     }
 
     {
@@ -1140,11 +1145,13 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     fail::fail_point!("on_handle_ingest_sst_return", |_e| {
         ffi_interfaces::EngineStoreApplyRes::None
     });
+    debug!("!!! ffi_handle_ingest_sst finish 1");
     write_to_db_data(
         &mut (*store.engine_store_server),
         region,
         String::from("ingest-sst"),
     );
+    debug!("!!! ffi_handle_ingest_sst finish");
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

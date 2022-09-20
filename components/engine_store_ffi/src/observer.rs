@@ -17,7 +17,6 @@ use kvproto::{
 };
 use raft::StateRole;
 use raftstore::{
-    coprocessor,
     coprocessor::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
         BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
@@ -27,7 +26,6 @@ use raftstore::{
     },
     store,
     store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey},
-    Error, Result,
 };
 use sst_importer::SstImporter;
 use tikv_util::{debug, error, info, warn};

@@ -37,8 +37,7 @@ use proxy_server::{
 use raft::eraftpb::MessageType;
 use raftstore::store::util::find_peer;
 use sst_importer::SstImporter;
-pub use test_raftstore::{must_get_equal, must_get_none, new_peer};
-use tikv::config::{TiKvConfig, LAST_CONFIG_FILE};
+use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
     config::{ReadableDuration, ReadableSize},
     time::Duration,
@@ -191,7 +190,7 @@ mod region {
                         .proxy
                         .get_value_cf("none_cf", "123".as_bytes(), |value| {
                             let msg = value.unwrap_err();
-                            assert_eq!(msg, "Storage Engine cf none_cf not found");
+                            assert_eq!(msg, "Storage Engine Status { code: IoError, sub_code: None, sev: NoError, state: \"cf none_cf not found\" }");
                         });
                     ffi_set
                         .proxy
@@ -237,7 +236,7 @@ mod config {
         let path = file.path();
 
         let mut unrecognized_keys = Vec::new();
-        let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
+        let mut config = TikvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
         // Otherwise we have no default addr for TiKv.
         setup_default_tikv_config(&mut config);
         assert_eq!(config.memory_usage_high_water, 0.65);
@@ -287,7 +286,7 @@ mod config {
     #[test]
     fn test_validate_config() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
-        let text = "[raftstore.aaa]\nbbb=2\n[server]\nengine-addr=\"1.2.3.4:5\"\n[raftstore]\nsnap-handle-pool-size=4\nstale-peer-check-tick=9999\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
+        let text = "[raftstore.aaa]\nbbb=2\n[server]\nengine-addr=\"1.2.3.4:5\"\n[raftstore]\nsnap-handle-pool-size=4\nclean-stale-ranges-tick=9999\n[nosense]\nfoo=2\n[rocksdb]\nmax-open-files = 111\nz=1";
         write!(file, "{}", text).unwrap();
         let path = file.path();
         let tmp_store_folder = tempfile::TempDir::new().unwrap();
@@ -296,7 +295,7 @@ mod config {
         get_last_config(tmp_store_folder.path().to_str().unwrap());
 
         let mut unrecognized_keys: Vec<String> = vec![];
-        let mut config = TiKvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
+        let mut config = TikvConfig::from_file(path, Some(&mut unrecognized_keys)).unwrap();
         assert_eq!(config.raft_store.clean_stale_ranges_tick, 9999);
         address_proxy_config(&mut config, &ProxyConfig::default());
         let clean_stale_ranges_tick =
@@ -397,7 +396,7 @@ apply-low-priority-pool-size = 41
         let mut v: Vec<String> = vec![];
         let cpath = Some(path.as_os_str());
         let mut config = gen_tikv_config(&cpath, false, &mut v);
-        let mut proxy_config = gen_proxy_config(&cpath, false, &mut v);
+        let proxy_config = gen_proxy_config(&cpath, false, &mut v);
         address_proxy_config(&mut config, &proxy_config);
 
         // When raftstore.apply-low-priority-pool-size is specified, its value
@@ -1534,6 +1533,7 @@ mod snapshot {
                 None,
                 Some(vec![eng_ids[1]]),
             );
+            let engine_2 = cluster.get_engine(eng_ids[1]);
             // now snapshot must be applied on peer engine_2
             must_get_equal(&engine_2, first_key, first_value.as_slice());
 

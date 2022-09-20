@@ -14,7 +14,7 @@
 //! with.
 //!
 //! Please read the engine_trait crate docs before hacking.
-
+#![allow(dead_code)]
 #![feature(backtrace)]
 #![cfg_attr(test, feature(test))]
 #![feature(generic_associated_types)]
@@ -113,6 +113,7 @@ pub mod raw;
 
 mod proxy_utils;
 pub use proxy_utils::*;
+pub use rocksdb::DB;
 
 pub fn get_env(
     key_manager: Option<std::sync::Arc<::encryption::DataKeyManager>>,
