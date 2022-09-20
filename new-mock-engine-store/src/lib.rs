@@ -1123,17 +1123,13 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
         // let _path = std::str::from_utf8_unchecked((*snapshot).path.to_slice());
         let mut sst_reader =
             SSTReader::new(proxy_helper, &*(snapshot as *mut ffi_interfaces::SSTView));
-        debug!("!!! reader {:?}", sst_reader);
         while sst_reader.remained() {
-            debug!("!!! reader 1 {:?}", sst_reader);
             let key = sst_reader.key();
             let value = sst_reader.value();
-
             let cf_index = (*snapshot).type_ as usize;
             write_kv_in_mem(region, cf_index, key.to_slice(), value.to_slice());
             sst_reader.next();
         }
-        debug!("!!! reader end {:?}", sst_reader);
     }
 
     {
@@ -1145,13 +1141,11 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
     fail::fail_point!("on_handle_ingest_sst_return", |_e| {
         ffi_interfaces::EngineStoreApplyRes::None
     });
-    debug!("!!! ffi_handle_ingest_sst finish 1");
     write_to_db_data(
         &mut (*store.engine_store_server),
         region,
         String::from("ingest-sst"),
     );
-    debug!("!!! ffi_handle_ingest_sst finish");
     ffi_interfaces::EngineStoreApplyRes::Persist
 }
 

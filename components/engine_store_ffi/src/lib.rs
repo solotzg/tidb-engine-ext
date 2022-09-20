@@ -10,6 +10,7 @@ mod read_index_helper;
 mod utils;
 
 use std::{
+    cell::RefCell,
     pin::Pin,
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -656,11 +657,12 @@ impl RaftStoreProxyFFIHelper {
 }
 
 pub struct SSTFileReader<'a> {
-    iter: RocksSstIterator<'a>,
-    remained: bool,
+    iter: RefCell<Option<RocksSstIterator<'a>>>,
+    remained: RefCell<bool>,
+    inner: RocksSstReader,
 }
 
-impl<'a> SSTFileReader<'_> {
+impl<'a> SSTFileReader<'a> {
     fn ffi_get_cf_file_reader(path: &str, key_manager: Option<Arc<DataKeyManager>>) -> RawVoidPtr {
         let env = get_env(key_manager, None).unwrap();
         let sst_reader_res = RocksSstReader::open_with_env(path, Some(env));
@@ -677,31 +679,63 @@ impl<'a> SSTFileReader<'_> {
             }
             Ok(_) => (),
         }
-        let mut iter = sst_reader
-            .iter(IterOptions::default())
-            .expect("ffi_get_cf_file_reader fail get iter");
-        let remained = iter.seek_to_first().unwrap();
-
-        Box::into_raw(Box::new(SSTFileReader { iter, remained })) as *mut _
+        let b = Box::new(SSTFileReader {
+            iter: RefCell::new(None),
+            remained: RefCell::new(false),
+            inner:sst_reader,
+        });
+        Box::into_raw(b) as *mut _
     }
 
-    pub fn ffi_remained(&self) -> u8 {
-        self.remained as u8
+    pub fn create_iter(&'a self) {
+        let _ = self.iter.borrow_mut().insert(
+            self.inner
+                .iter(IterOptions::default())
+                .expect("fail gen iter"),
+        );
+        *self.remained.borrow_mut() = self
+            .iter
+            .borrow_mut()
+            .as_mut()
+            .expect("fail get iter")
+            .seek_to_first()
+            .unwrap();
     }
 
-    pub fn ffi_key(&self) -> BaseBuffView {
-        let ori_key = keys::origin_key(self.iter.key());
+    pub fn ffi_remained(&'a self) -> u8 {
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        *self.remained.borrow() as u8
+    }
+
+    pub fn ffi_key(&'a self) -> BaseBuffView {
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let b = self.iter.borrow();
+        let iter = b.as_ref().unwrap();
+        let ori_key = keys::origin_key(iter.key());
         ori_key.into()
     }
 
-    pub fn ffi_val(&self) -> BaseBuffView {
-        let val = self.iter.value();
+    pub fn ffi_val(&'a self) -> BaseBuffView {
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let b = self.iter.borrow();
+        let iter = b.as_ref().unwrap();
+        let val = iter.value();
         val.into()
     }
 
-    pub fn ffi_next(&mut self) {
-        let n = self.iter.next();
-        self.remained = n.unwrap();
+    pub fn ffi_next(&'a mut self) {
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let mut b = self.iter.borrow_mut();
+        let iter = b.as_mut().unwrap();
+        *self.remained.borrow_mut() = iter.next().unwrap();
     }
 }
 
