@@ -682,8 +682,9 @@ impl<'a> SSTFileReader<'a> {
         let b = Box::new(SSTFileReader {
             iter: RefCell::new(None),
             remained: RefCell::new(false),
-            inner:sst_reader,
+            inner: sst_reader,
         });
+        // Can't call `create_iter` due to self-referencing.
         Box::into_raw(b) as *mut _
     }
 

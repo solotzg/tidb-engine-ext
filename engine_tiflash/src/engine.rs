@@ -3,36 +3,20 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 use std::{
-    any::Any,
-    cell::RefCell,
-    collections::{hash_map::RandomState, HashMap},
     fmt::Formatter,
     fs,
     path::Path,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Mutex,
+        Arc,
     },
 };
 
 use engine_rocks::{RocksDbVector, RocksEngineIterator, RocksSnapshot};
-use engine_traits::{
-    Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable,
-};
-use rocksdb::{DBIterator, Writable, DB};
+use engine_traits::{IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable};
+use rocksdb::{Writable, DB};
 
-use crate::{
-    options::RocksReadOptions,
-    r2e,
-    rocks_metrics::{
-        flush_engine_histogram_metrics, flush_engine_iostall_properties, flush_engine_properties,
-        flush_engine_ticker_metrics,
-    },
-    rocks_metrics_defs::{
-        ENGINE_HIST_TYPES, ENGINE_TICKER_TYPES, TITAN_ENGINE_HIST_TYPES, TITAN_ENGINE_TICKER_TYPES,
-    },
-    util::get_cf_handle,
-};
+use crate::{r2e, util::get_cf_handle};
 
 pub struct FsStatsExt {
     pub used: u64,
