@@ -64,7 +64,6 @@ ENABLE_FEATURES += snmalloc
 else ifeq ($(SYSTEM_ALLOC),1)
 # no feature needed for system allocator
 else
-ENABLE_FEATURES += jemalloc
 endif
 
 # Disable portable on macOS to sidestep the compiler bug in clang 4.9
