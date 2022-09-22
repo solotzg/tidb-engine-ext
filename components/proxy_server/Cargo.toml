@@ -76,7 +76,6 @@ pin-project = "1.0"
 pprof = { git = "https://github.com/tikv/pprof-rs.git", rev = "3fed55af8fc6cf69dbd954a0321c799c5a111e4e", default-features = false, features = ["flamegraph", "protobuf-codec"] }
 prometheus = { version = "0.13", features = ["nightly"] }
 protobuf = { version = "2.8", features = ["bytes"] }
-raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft_log_engine = { git = "https://github.com/tikv/tikv.git", default-features = false }
 raftstore = { git = "https://github.com/tikv/tikv.git", default-features = false }
 rand = "0.8"

@@ -89,7 +89,7 @@ tidb_query_common = { git = "https://github.com/tikv/tikv.git", default-features
 tidb_query_datatype = { git = "https://github.com/tikv/tikv.git", default-features = false }
 tidb_query_executors = { git = "https://github.com/tikv/tikv.git", default-features = false }
 tidb_query_expr = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tikv = { path = "../", default-features = false }
+tikv = { git = "https://github.com/tikv/tikv.git", default-features = false }
 tikv_util = { git = "https://github.com/tikv/tikv.git", default-features = false }
 time = "0.1"
 tipb = { git = "https://github.com/pingcap/tipb.git" }
