@@ -27,8 +27,6 @@ test-engines-panic = [
 cloud-aws = ["sst_importer/cloud-aws"]
 cloud-gcp = ["sst_importer/cloud-gcp"]
 cloud-azure = ["sst_importer/cloud-azure"]
-compat_new_proxy = ["engine_tiflash/compat_new_proxy"]
-compat_old_proxy = ["engine_tiflash/compat_old_proxy"]
 
 [dependencies]
 batch-system = { path = "../batch-system", default-features = false }
@@ -45,7 +43,6 @@ engine_rocks = { path = "../engine_rocks", default-features = false, optional = 
 # Should be [dev-dependencies] but we need to control the features
 # https://github.com/rust-lang/cargo/issues/6915
 engine_test = { path = "../engine_test", default-features = false }
-engine_tiflash = { path = "../../engine_tiflash", default-features = false }
 engine_traits = { path = "../engine_traits", default-features = false }
 error_code = { path = "../error_code", default-features = false }
 fail = "0.5"

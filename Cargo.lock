@@ -4408,7 +4408,6 @@ dependencies = [
  "engine_panic",
  "engine_rocks",
  "engine_test",
- "engine_tiflash",
  "engine_traits",
  "error_code",
  "fail",
