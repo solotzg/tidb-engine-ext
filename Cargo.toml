@@ -57,8 +57,6 @@ bcc-iosnoop = [
 cloud-storage-grpc = ["sst_importer/cloud-storage-grpc"]
 cloud-storage-dylib = ["sst_importer/cloud-storage-dylib"]
 pprof-fp = ["pprof/frame-pointer"]
-compat_new_proxy = ["engine_tiflash/compat_new_proxy", "raftstore/compat_new_proxy"]
-compat_old_proxy = ["engine_tiflash/compat_old_proxy", "raftstore/compat_old_proxy"]
 
 # for testing configure propegate to other crates
 # https://stackoverflow.com/questions/41700543/can-we-share-test-utilites-between-crates
