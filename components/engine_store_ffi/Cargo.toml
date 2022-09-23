@@ -28,46 +28,46 @@ cloud-gcp = ["sst_importer/cloud-gcp"]
 cloud-azure = ["sst_importer/cloud-azure"]
 
 [dependencies]
-batch-system = { git = "https://github.com/tikv/tikv.git", default-features = false }
+batch-system = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 bitflags = "1.0.1"
 byteorder = "1.2"
 bytes = "1.0"
-collections = { git = "https://github.com/tikv/tikv.git" }
+collections = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 crossbeam = "0.8"
 derivative = "2"
-encryption = { git = "https://github.com/tikv/tikv.git", default-features = false }
+encryption = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 
-engine_rocks = { git = "https://github.com/tikv/tikv.git", default-features = false }
+engine_rocks = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 # Should be [dev-dependencies] but we need to control the features
 # https://github.com/rust-lang/cargo/issues/6915
-engine_test = { git = "https://github.com/tikv/tikv.git", default-features = false }
+engine_test = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 engine_tiflash = { path = "../../engine_tiflash", default-features = false }
-engine_traits = { git = "https://github.com/tikv/tikv.git", default-features = false }
-error_code = { git = "https://github.com/tikv/tikv.git", default-features = false }
+engine_traits = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+error_code = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 fail = "0.5"
-file_system = { git = "https://github.com/tikv/tikv.git", default-features = false }
+file_system = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 fs2 = "0.4"
 futures = "0.3"
 futures-util = { version = "0.3.1", default-features = false, features = ["io"] }
 getset = "0.1"
 grpcio-health = { version = "0.10", default-features = false, features = ["protobuf-codec"] }
-into_other = { git = "https://github.com/tikv/tikv.git", default-features = false }
+into_other = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 itertools = "0.10"
-keys = { git = "https://github.com/tikv/tikv.git", default-features = false }
+keys = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 lazy_static = "1.3"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
-log_wrappers = { git = "https://github.com/tikv/tikv.git" }
-online_config = { git = "https://github.com/tikv/tikv.git" }
+log_wrappers = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+online_config = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 ordered-float = "2.6"
 parking_lot = "0.12"
-pd_client = { git = "https://github.com/tikv/tikv.git", default-features = false }
+pd_client = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 prometheus = { version = "0.13", features = ["nightly"] }
 prometheus-static-metric = "0.5"
 protobuf = { version = "2.8", features = ["bytes"] }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft-proto = { version = "0.7.0", default-features = false }
-raftstore = { git = "https://github.com/tikv/tikv.git", default-features = false }
+raftstore = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 rand = "0.8.3"
 serde = "1.0"
 serde_derive = "1.0"
@@ -75,20 +75,20 @@ serde_with = "1.4"
 slog = { version = "2.3", features = ["max_level_trace", "release_max_level_debug"] }
 slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global.git", rev = "d592f88e4dbba5eb439998463054f1a44fbf17b9" }
 smallvec = "1.4"
-sst_importer = { git = "https://github.com/tikv/tikv.git", default-features = false }
+sst_importer = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 tempfile = "3.0"
 thiserror = "1.0"
-tikv_alloc = { git = "https://github.com/tikv/tikv.git" }
-tikv_util = { git = "https://github.com/tikv/tikv.git", default-features = false }
+tikv_alloc = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+tikv_util = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 time = "0.1"
 tokio = { version = "1.5", features = ["sync", "rt-multi-thread"] }
 tokio-timer = { git = "https://github.com/tikv/tokio", branch = "tokio-timer-hotfix" }
-tracker = { git = "https://github.com/tikv/tikv.git", default-features = false }
+tracker = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 
 [dev-dependencies]
-encryption_export = { git = "https://github.com/tikv/tikv.git", default-features = false }
-engine_panic = { git = "https://github.com/tikv/tikv.git", default-features = false }
-panic_hook = { git = "https://github.com/tikv/tikv.git" }
-test_sst_importer = { git = "https://github.com/tikv/tikv.git", default-features = false }
+encryption_export = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+engine_panic = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+panic_hook = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+test_sst_importer = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }

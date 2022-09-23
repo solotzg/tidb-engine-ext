@@ -201,12 +201,7 @@ pub extern "C" fn ffi_encryption_method(
     proxy_ptr: RaftStoreProxyPtr,
 ) -> interfaces::root::DB::EncryptionMethod {
     unsafe {
-        proxy_ptr
-            .as_ref()
-            .key_manager
-            .as_ref()
-            .map_or(EncryptionMethod::Plaintext, |x| x.encryption_method())
-            .into()
+        interfaces::root::DB::EncryptionMethod::Unknown
     }
 }
 

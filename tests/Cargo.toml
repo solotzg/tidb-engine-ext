@@ -49,52 +49,52 @@ sse = ["tikv/sse"]
 portable = ["tikv/portable"]
 
 [dependencies]
-api_version = { git = "https://github.com/tikv/tikv.git", default-features = false }
+api_version = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 async-trait = "0.1"
-batch-system = { git = "https://github.com/tikv/tikv.git", default-features = false }
-cdc = { git = "https://github.com/tikv/tikv.git", default-features = false }
-collections = { git = "https://github.com/tikv/tikv.git" }
+batch-system = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+cdc = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+collections = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 crc64fast = "0.1"
 crossbeam = "0.8"
-encryption = { git = "https://github.com/tikv/tikv.git", default-features = false }
-engine_rocks_helper = { git = "https://github.com/tikv/tikv.git" }
+encryption = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+engine_rocks_helper = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 engine_store_ffi = { path = "../components/engine_store_ffi", default-features = false }
 engine_tiflash = { path = "../engine_tiflash", default-features = false }
-error_code = { git = "https://github.com/tikv/tikv.git", default-features = false }
+error_code = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 fail = "0.5"
-file_system = { git = "https://github.com/tikv/tikv.git" }
+file_system = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 futures = "0.3"
 grpcio = { version = "0.10", default-features = false, features = ["openssl-vendored", "protobuf-codec"] }
 grpcio-health = { version = "0.10", default-features = false }
 kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 libc = "0.2"
-log_wrappers = { git = "https://github.com/tikv/tikv.git" }
+log_wrappers = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 more-asserts = "0.2"
 new-mock-engine-store = { path = "../new-mock-engine-store", default-features = false }
-online_config = { git = "https://github.com/tikv/tikv.git", default-features = false }
+online_config = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 paste = "1.0"
-pd_client = { git = "https://github.com/tikv/tikv.git", default-features = false }
+pd_client = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 protobuf = { version = "2.8", features = ["bytes"] }
 proxy_server = { path = "../components/proxy_server", default-features = false }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
-raft_log_engine = { git = "https://github.com/tikv/tikv.git", default-features = false }
-raftstore = { git = "https://github.com/tikv/tikv.git", default-features = false }
+raft_log_engine = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+raftstore = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 rand = "0.8.3"
-server = { git = "https://github.com/tikv/tikv.git", default-features = false }
+server = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 slog = { version = "2.3", features = ["max_level_trace", "release_max_level_debug"] }
 slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global.git", rev = "d592f88e4dbba5eb439998463054f1a44fbf17b9" }
 tempfile = "3.0"
-tidb_query_aggr = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tidb_query_common = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tidb_query_datatype = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tidb_query_executors = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tidb_query_expr = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tikv = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tikv_util = { git = "https://github.com/tikv/tikv.git", default-features = false }
+tidb_query_aggr = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tidb_query_common = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tidb_query_datatype = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tidb_query_executors = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tidb_query_expr = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tikv = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tikv_util = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 time = "0.1"
 tipb = { git = "https://github.com/pingcap/tipb.git" }
 toml = "0.5"
-txn_types = { git = "https://github.com/tikv/tikv.git", default-features = false }
+txn_types = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -105,35 +105,35 @@ arrow = "13.0"
 byteorder = "1.2"
 # See https://bheisler.github.io/criterion.rs/book/user_guide/known_limitations.html for the usage
 # of `real_blackbox` feature.
-causal_ts = { git = "https://github.com/tikv/tikv.git" }
+causal_ts = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 clap = "2.32"
-concurrency_manager = { git = "https://github.com/tikv/tikv.git", default-features = false }
+concurrency_manager = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 criterion = "0.3"
 criterion-cpu-time = "0.1"
-engine_rocks = { git = "https://github.com/tikv/tikv.git", default-features = false }
-engine_test = { git = "https://github.com/tikv/tikv.git", default-features = false }
-engine_traits = { git = "https://github.com/tikv/tikv.git", default-features = false }
-external_storage_export = { git = "https://github.com/tikv/tikv.git", default-features = false }
-file_system = { git = "https://github.com/tikv/tikv.git" }
+engine_rocks = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+engine_test = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+engine_traits = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+external_storage_export = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+file_system = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 hyper = { version = "0.14", default-features = false, features = ["runtime"] }
-keys = { git = "https://github.com/tikv/tikv.git", default-features = false }
-panic_hook = { git = "https://github.com/tikv/tikv.git" }
-profiler = { git = "https://github.com/tikv/tikv.git" }
+keys = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+panic_hook = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+profiler = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
 rand_xorshift = "0.3"
-resource_metering = { git = "https://github.com/tikv/tikv.git" }
-security = { git = "https://github.com/tikv/tikv.git", default-features = false }
+resource_metering = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+security = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 serde_json = "1.0"
-sst_importer = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_backup = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_coprocessor = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_pd = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_pd_client = { git = "https://github.com/tikv/tikv.git" }
-test_raftstore = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_sst_importer = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_storage = { git = "https://github.com/tikv/tikv.git", default-features = false }
-test_util = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tidb_query_datatype = { git = "https://github.com/tikv/tikv.git", default-features = false }
-tipb_helper = { git = "https://github.com/tikv/tikv.git", default-features = false }
+sst_importer = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_backup = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_coprocessor = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_pd = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_pd_client = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b" }
+test_raftstore = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_sst_importer = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_storage = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+test_util = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tidb_query_datatype = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
+tipb_helper = { git = "https://github.com/tikv/tikv.git", rev = "b5329ee00837b2b6e687129b2cdbfc77842c053b", default-features = false }
 tokio = { version = "1.5", features = ["rt-multi-thread"] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dev-dependencies]
