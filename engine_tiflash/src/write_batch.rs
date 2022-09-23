@@ -132,11 +132,8 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn should_write_to_engine(&self) -> bool {
-        if self.support_write_batch_vec {
-            self.index >= WRITE_BATCH_MAX_BATCH
-        } else {
-            self.wbs[0].count() > RocksEngine::WRITE_BATCH_MAX_KEYS
-        }
+        // Disable TiKV's logic, and using Proxy's instead.
+        false
     }
 
     fn clear(&mut self) {
