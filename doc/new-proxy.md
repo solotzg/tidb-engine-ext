@@ -36,6 +36,7 @@ Apart from `Engine Traits`, we also need `coprocessor`s to observe and control T
    1. We can't ignore empty raft entry, otherwise can cause wait index timeout.
 7. An observer to fetch used/total size of storage.
    1. TiFlash supports multi-disks, so we need to report correct storage information.
+8. An observer controls whether to persist before calling `finish_for` and `commit`.
 
 The whole work can be divided into two parts:
 1. TiKV side

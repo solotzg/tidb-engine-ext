@@ -301,6 +301,8 @@ pre-format: unset-override
 	@cargo install --force -q cargo-sort
 
 ci_fmt_check:
+	sudo yum install -y centos-release-scl-rh
+	sudo yum install -y llvm-toolset-7-git-clang-format
 	M="fmt" ./ci_check.sh
 
 ci_test:
