@@ -516,25 +516,17 @@ where
     /// If it returns true, all pending writes are persisted in engines.
     pub fn write_to_db(&mut self) -> bool {
         let need_sync = self.sync_log_hint;
-        #[cfg(any(test, feature = "testexport"))]
-        {
-            if cfg!(feature = "compat_old_proxy") {
-                // There may be put and delete requests after ingest request in the same fsm.
-                // To guarantee the correct order, we must ingest the pending_sst first, and
-                // then persist the kv write batch to engine.
-                if !self.pending_ssts.is_empty() {
-                    let tag = self.tag.clone();
-                    self.importer
-                        .ingest(&self.pending_ssts, &self.engine)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "{} failed to ingest ssts {:?}: {:?}",
-                                tag, self.pending_ssts, e
-                            );
-                        });
-                    self.pending_ssts = vec![];
-                }
-            }
+        if !self.pending_ssts.is_empty() {
+            let tag = self.tag.clone();
+            self.importer
+                .ingest(&self.pending_ssts, &self.engine)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{} failed to ingest ssts {:?}: {:?}",
+                        tag, self.pending_ssts, e
+                    );
+                });
+            self.pending_ssts = vec![];
         }
         if !self.kv_wb_mut().is_empty() {
             let mut write_opts = engine_traits::WriteOptions::new();
@@ -603,7 +595,6 @@ where
             debug!("do not persist when finish_for";
                 "region" => ?delegate.region,
                 "tag" => &delegate.tag,
-                "apply_state" => ?delegate.apply_state,
             );
         }
         self.apply_res.push(ApplyRes {
@@ -3619,11 +3610,7 @@ where
             .iter()
             .any(|res| res.region_id == self.delegate.region_id())
             && self.delegate.last_flush_applied_index != applied_index;
-        #[cfg(feature = "test-raftstore-proxy")]
         (|| fail_point!("apply_on_handle_snapshot_sync", |_| { need_sync = true }))();
-        if cfg!(feature = "test-raftstore-proxy") {
-            need_sync = true;
-        }
         if need_sync {
             if apply_ctx.timer.is_none() {
                 apply_ctx.timer = Some(Instant::now_coarse());
@@ -3795,14 +3782,7 @@ where
                 Msg::LogsUpToDate(cul) => self.logs_up_to_date_for_merge(apply_ctx, cul),
                 Msg::Noop => {}
                 Msg::Snapshot(snap_task) => {
-                    #[cfg(feature = "test-raftstore-proxy")]
-                    {
-                        return self.handle_snapshot(apply_ctx, snap_task);
-                    }
-                    #[cfg(not(feature = "test-raftstore-proxy"))]
-                    {
-                        unreachable!("should not request snapshot")
-                    }
+                    return self.handle_snapshot(apply_ctx, snap_task);
                 }
                 Msg::Change {
                     cmd,

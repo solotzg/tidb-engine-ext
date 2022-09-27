@@ -14,8 +14,6 @@ protobuf-codec = [
   "protobuf/bytes",
   "kvproto/protobuf-codec",
 ]
-compat_new_proxy = ["engine_tiflash/compat_new_proxy"]
-compat_old_proxy = ["engine_tiflash/compat_old_proxy"]
 
 [dependencies]
 api_version = { path = "../components/api_version", default-features = false }

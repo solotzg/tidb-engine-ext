@@ -77,21 +77,17 @@ impl RocksWriteBatch {
         // It will fire if we write by both observer(compat_old_proxy is not enabled)
         // and TiKV's WriteBatch.
         tikv_util::debug!("check if double write happens");
-        if cfg!(feature = "compat_old_proxy") {
-            // We need write to RocksEngine by WriteBatch other than observer.
-        } else {
-            for (_, cf, k, _) in self.wb.iter() {
-                let handle = self.db.cf_handle_by_id(cf as usize).unwrap();
-                let cf_name = self.cf_to_name(handle.id());
-                match cf_name {
-                    engine_traits::CF_DEFAULT
-                    | engine_traits::CF_LOCK
-                    | engine_traits::CF_WRITE => {
-                        assert_eq!(crate::do_write(cf_name, k), true);
-                    }
-                    _ => (),
-                };
-            }
+        for (_, cf, k, _) in self.wb.iter() {
+            let handle = self.db.cf_handle_by_id(cf as usize).unwrap();
+            let cf_name = self.cf_to_name(handle.id());
+            match cf_name {
+                engine_traits::CF_DEFAULT
+                | engine_traits::CF_LOCK
+                | engine_traits::CF_WRITE => {
+                    assert_eq!(crate::do_write(cf_name, k), true);
+                }
+                _ => (),
+            };
         }
     }
     #[cfg(not(any(test, feature = "testexport")))]
@@ -155,20 +151,13 @@ impl engine_traits::WriteBatch for RocksWriteBatch {
 }
 
 pub fn do_write(cf: &str, key: &[u8]) -> bool {
-    #[cfg(not(feature = "compat_old_proxy"))]
-    {
-        return match cf {
-            engine_traits::CF_RAFT => true,
-            engine_traits::CF_DEFAULT => {
-                key == keys::PREPARE_BOOTSTRAP_KEY || key == keys::STORE_IDENT_KEY
-            }
-            _ => false,
-        };
-    }
-    #[cfg(feature = "compat_old_proxy")]
-    {
-        return true;
-    }
+    return match cf {
+        engine_traits::CF_RAFT => true,
+        engine_traits::CF_DEFAULT => {
+            key == keys::PREPARE_BOOTSTRAP_KEY || key == keys::STORE_IDENT_KEY
+        }
+        _ => false,
+    };
 }
 
 impl RocksWriteBatch {
