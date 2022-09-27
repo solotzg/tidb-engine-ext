@@ -10,7 +10,7 @@ use std::{
 
 use clap::{App, Arg};
 use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
-use engine_traits::MiscExt;
+use engine_traits::{MiscExt, CF_DEFAULT, CF_LOCK, CF_WRITE};
 use kvproto::{
     import_sstpb::SstMeta,
     metapb::RegionEpoch,
@@ -29,8 +29,8 @@ use pd_client::PdClient;
 use proxy_server::{
     config::{
         address_proxy_config, ensure_no_common_unrecognized_keys, get_last_config,
-        setup_default_tikv_config, validate_and_persist_config, TIFLASH_DEFAULT_LISTENING_ADDR,
-        TIFLASH_DEFAULT_STATUS_ADDR,
+        memory_limit_for_cf, setup_default_tikv_config, validate_and_persist_config,
+        TIFLASH_DEFAULT_LISTENING_ADDR, TIFLASH_DEFAULT_STATUS_ADDR,
     },
     proxy::gen_tikv_config,
 };
@@ -40,6 +40,7 @@ use sst_importer::SstImporter;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
     config::{ReadableDuration, ReadableSize},
+    sys::SysQuota,
     time::Duration,
     HandyRwLock,
 };
@@ -364,6 +365,7 @@ mod config {
         overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
         address_proxy_config(&mut config, &proxy_config);
 
+        let total_mem = SysQuota::memory_limit_in_bytes();
         assert_eq!(config.rocksdb.max_open_files, 56);
         assert_eq!(config.server.addr, DEFAULT_LISTENING_ADDR);
         assert_eq!(config.server.status_addr, "");
@@ -377,6 +379,22 @@ mod config {
                 .raft_store
                 .apply_low_priority_pool_size,
             config.raft_store.apply_batch_system.low_priority_pool_size
+        );
+        assert_eq!(
+            config.raftdb.defaultcf.block_cache_size,
+            memory_limit_for_cf(true, CF_DEFAULT, total_mem)
+        );
+        assert_eq!(
+            config.rocksdb.defaultcf.block_cache_size,
+            memory_limit_for_cf(false, CF_DEFAULT, total_mem)
+        );
+        assert_eq!(
+            config.rocksdb.writecf.block_cache_size,
+            memory_limit_for_cf(false, CF_WRITE, total_mem)
+        );
+        assert_eq!(
+            config.rocksdb.lockcf.block_cache_size,
+            memory_limit_for_cf(false, CF_LOCK, total_mem)
         );
     }
 
