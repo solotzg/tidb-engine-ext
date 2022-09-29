@@ -5,6 +5,8 @@ set -e
 source env.sh
 
 if [[ $(uname -s) == "Darwin" ]]; then
+  export CFLAGS=-w
+  export CXXFLAGS=-w
   echo "Kernel is Darwin, change build type to debug"
   echo ""
   target_path="target/release"
