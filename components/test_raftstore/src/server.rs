@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{thread, usize};
+use std::sync::atomic::AtomicBool;
 
 use futures::executor::block_on;
 use grpcio::{ChannelBuilder, EnvBuilder, Environment, Error as GrpcError, Service};
@@ -351,7 +352,10 @@ impl Simulator for ServerCluster {
             storage_read_pool.handle(),
             lock_mgr.clone(),
             concurrency_manager.clone(),
-            lock_mgr.get_storage_dynamic_configs(),
+            storage::DynamicConfigs {
+                pipelined_pessimistic_lock: Arc::new(AtomicBool::new(false)),
+                in_memory_pessimistic_lock: Arc::new(AtomicBool::new(false)),
+            },
             Arc::new(FlowController::empty()),
             pd_sender,
             res_tag_factory.clone(),
@@ -381,7 +385,7 @@ impl Simulator for ServerCluster {
         );
 
         // Create deadlock service.
-        let deadlock_service = lock_mgr.deadlock_service();
+        // let deadlock_service = lock_mgr.deadlock_service();
 
         // Create pd client, snapshot manager, server.
         let (resolver, state) =
@@ -459,7 +463,7 @@ impl Simulator for ServerCluster {
             .unwrap();
             svr.register_service(create_import_sst(import_service.clone()));
             svr.register_service(create_debug(debug_service.clone()));
-            svr.register_service(create_deadlock(deadlock_service.clone()));
+            // svr.register_service(create_deadlock(deadlock_service.clone()));
             if let Some(svcs) = self.pending_services.get(&node_id) {
                 for fact in svcs {
                     svr.register_service(fact());
@@ -487,7 +491,7 @@ impl Simulator for ServerCluster {
         let server_cfg = Arc::new(VersionTrack::new(cfg.server.clone()));
 
         // Register the role change observer of the lock manager.
-        lock_mgr.register_detector_role_change_observer(&mut coprocessor_host);
+        // lock_mgr.register_detector_role_change_observer(&mut coprocessor_host);
 
         let pessimistic_txn_cfg = cfg.tikv.pessimistic_txn;
 
@@ -518,15 +522,15 @@ impl Simulator for ServerCluster {
             .insert(node_id, region_info_accessor);
         self.importers.insert(node_id, importer);
 
-        lock_mgr
-            .start(
-                node.id(),
-                Arc::clone(&self.pd_client),
-                resolver,
-                Arc::clone(&security_mgr),
-                &pessimistic_txn_cfg,
-            )
-            .unwrap();
+        // lock_mgr
+        //     .start(
+        //         node.id(),
+        //         Arc::clone(&self.pd_client),
+        //         resolver,
+        //         Arc::clone(&security_mgr),
+        //         &pessimistic_txn_cfg,
+        //     )
+        //     .unwrap();
 
         server.start(server_cfg, security_mgr).unwrap();
 
