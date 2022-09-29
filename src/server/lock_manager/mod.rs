@@ -51,7 +51,7 @@ fn detected_slot_idx(txn_ts: TimeStamp) -> usize {
 ///   * One is the `WaiterManager` which manages transactions waiting for locks.
 ///   * The other one is the `Detector` which detects deadlocks between transactions.
 #[allow(dead_code)]
-struct LockManager {
+pub struct LockManager {
     waiter_mgr_worker: Option<FutureWorker<waiter_manager::Task>>,
     detector_worker: Option<FutureWorker<deadlock::Task>>,
 

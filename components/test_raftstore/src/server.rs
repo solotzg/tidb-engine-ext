@@ -51,6 +51,7 @@ use tikv::import::{ImportSSTService, SSTImporter};
 use tikv::read_pool::ReadPool;
 use tikv::server::gc_worker::GcWorker;
 use tikv::server::load_statistics::ThreadLoadPool;
+// use tikv::server::lock_manager::HackedLockManager as LockManager;
 use tikv::server::lock_manager::LockManager;
 use tikv::server::resolve::{self, StoreAddrResolver};
 use tikv::server::service::DebugService;
@@ -343,6 +344,7 @@ impl Simulator for ServerCluster {
         let check_leader_scheduler = bg_worker.start("check-leader", check_leader_runner);
 
         let mut lock_mgr = LockManager::new(&cfg.pessimistic_txn);
+        let mut lock_mgr = tikv::server::lock_manager::HackedLockManager::new();
         let store = create_raft_storage(
             engine,
             &cfg.storage,
