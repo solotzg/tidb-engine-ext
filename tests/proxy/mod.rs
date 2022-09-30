@@ -10,3 +10,4 @@ extern crate slog_global;
 mod normal;
 mod proxy;
 mod util;
+mod server_cluster_test;

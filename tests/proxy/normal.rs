@@ -24,6 +24,7 @@ use new_mock_engine_store::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
     Cluster, ProxyConfig, Simulator, TestPdClient,
+    server::ServerCluster
 };
 use pd_client::PdClient;
 use proxy_server::{
@@ -1654,6 +1655,10 @@ mod snapshot {
         }
 
         (cluster, pd_client)
+    }
+
+    fn new_mock_server_cluster(pd_client: Arc<TestPdClient>) -> (ServerCluster) {
+        ServerCluster::new(pd_client)
     }
 
     #[test]
