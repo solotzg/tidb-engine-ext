@@ -30,6 +30,7 @@ pub mod config;
 pub mod mock_cluster;
 pub mod node;
 pub mod transport_simulate;
+pub mod server;
 
 type RegionId = u64;
 #[derive(Default, Clone)]
@@ -655,7 +656,7 @@ pub fn gen_engine_store_server_helper(
         fn_get_config: None,
         fn_set_store: None,
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
-        fn_handle_safe_ts_update: None,
+        fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
     }
 }
 
@@ -1040,6 +1041,19 @@ pub fn cf_to_name(cf: ffi_interfaces::ColumnFamilyType) -> &'static str {
         ffi_interfaces::ColumnFamilyType::Default => CF_DEFAULT,
         _ => unreachable!(),
     }
+}
+
+pub static mut EXPECTED_LEADER_SAFE_TS: u64 = 0;
+pub static mut EXPECTED_SELF_SAFE_TS: u64 = 0;
+
+unsafe extern "C" fn ffi_handle_safe_ts_update(
+    _arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    _region_id: u64,
+    self_safe_ts: u64,
+    leader_safe_ts: u64,
+) {
+    assert_eq!(self_safe_ts, EXPECTED_SELF_SAFE_TS);
+    assert_eq!(leader_safe_ts, EXPECTED_LEADER_SAFE_TS);
 }
 
 unsafe extern "C" fn ffi_apply_pre_handled_snapshot(

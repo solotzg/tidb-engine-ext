@@ -23,7 +23,7 @@ use kvproto::{
     errorpb::Error as PbError,
     metapb::{self, PeerRole, RegionEpoch, StoreLabel},
     raft_cmdpb::{RaftCmdRequest, RaftCmdResponse, Request, *},
-    raft_serverpb::RaftMessage,
+    raft_serverpb::RaftMessage, kvrpcpb::*,
 };
 use pd_client::PdClient;
 pub use proxy_server::config::ProxyConfig;
@@ -50,7 +50,7 @@ pub use test_raftstore::{
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
     new_transfer_leader_cmd, sleep_ms, TestPdClient,
 };
-use tikv::{config::TiKvConfig, server::Result as ServerResult};
+use tikv::{config::TiKvConfig, server::Result as ServerResult, storage::mvcc::TimeStamp};
 use tikv_util::{
     debug, error, safe_panic,
     sys::SysQuota,
@@ -62,7 +62,7 @@ use tikv_util::{
 pub use crate::config::Config;
 use crate::{
     gen_engine_store_server_helper, transport_simulate::Filter, EngineStoreServer,
-    EngineStoreServerWrap, MockConfig,
+    EngineStoreServerWrap, MockConfig, EXPECTED_LEADER_SAFE_TS, EXPECTED_SELF_SAFE_TS,
 };
 
 pub struct FFIHelperSet {
@@ -367,6 +367,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.associate_ffi_helper_set(None, node_id);
         }
         Ok(())
+    }
+
+    pub unsafe fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
+        EXPECTED_LEADER_SAFE_TS = leader_safe_ts;
+        EXPECTED_SELF_SAFE_TS = self_safe_ts;
     }
 }
 

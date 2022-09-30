@@ -3192,6 +3192,7 @@ name = "new-mock-engine-store"
 version = "0.0.1"
 dependencies = [
  "api_version",
+ "causal_ts",
  "collections",
  "concurrency_manager",
  "crossbeam",
@@ -3205,6 +3206,8 @@ dependencies = [
  "fail",
  "file_system",
  "futures 0.3.15",
+ "grpcio",
+ "grpcio-health",
  "keys",
  "kvproto",
  "lazy_static",
@@ -3215,7 +3218,9 @@ dependencies = [
  "raft",
  "raftstore",
  "rand 0.8.3",
+ "resolved_ts",
  "resource_metering",
+ "security",
  "slog",
  "slog-global",
  "tempfile",
@@ -3223,6 +3228,9 @@ dependencies = [
  "test_util",
  "tikv",
  "tikv_util",
+ "tokio",
+ "tokio-timer",
+ "txn_types",
 ]
 
 [[package]]
