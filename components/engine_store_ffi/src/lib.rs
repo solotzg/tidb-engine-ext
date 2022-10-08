@@ -200,9 +200,7 @@ pub extern "C" fn ffi_is_encryption_enabled(proxy_ptr: RaftStoreProxyPtr) -> u8 
 pub extern "C" fn ffi_encryption_method(
     proxy_ptr: RaftStoreProxyPtr,
 ) -> interfaces::root::DB::EncryptionMethod {
-    unsafe {
-        interfaces::root::DB::EncryptionMethod::Unknown
-    }
+    unsafe { interfaces::root::DB::EncryptionMethod::Unknown }
 }
 
 pub extern "C" fn ffi_batch_read_index(

@@ -19,6 +19,31 @@ name = "proxy"
 path = "proxy/mod.rs"
 required-features = ["failpoints", "testexport"]
 
+[[bench]]
+name = "raftstore"
+harness = false
+path = "benches/raftstore/mod.rs"
+
+[[bench]]
+name = "coprocessor_executors"
+harness = false
+path = "benches/coprocessor_executors/mod.rs"
+
+[[bench]]
+name = "hierarchy"
+harness = false
+path = "benches/hierarchy/mod.rs"
+
+[[bench]]
+name = "misc"
+path = "benches/misc/mod.rs"
+test = true
+
+[[bench]]
+name = "deadlock_detector"
+harness = false
+path = "benches/deadlock_detector/mod.rs"
+
 [features]
 default = ["failpoints", "testexport", "test-engine-kv-rocksdb", "test-engine-raft-raft-engine", "cloud-aws", "cloud-gcp", "cloud-azure"]
 failpoints = ["fail/failpoints", "tikv/failpoints"]

@@ -2,12 +2,17 @@
 
 use std::{collections::HashSet, iter::FromIterator, path::Path};
 
+use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use itertools::Itertools;
 use online_config::OnlineConfig;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::with_prefix;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
-use tikv_util::{config::ReadableDuration, crit, sys::SysQuota};
+use tikv_util::{
+    config::{ReadableDuration, ReadableSize},
+    crit,
+    sys::SysQuota,
+};
 
 use crate::fatal;
 
@@ -33,7 +38,9 @@ impl Default for RaftstoreConfig {
             region_worker_tick_interval: ReadableDuration::millis(500),
             // This pool is used when handling raft Snapshots, e.g. when
             // adding a new TiFlash replica, or scaling TiFlash instances.
-            snap_handle_pool_size: (cpu_num * 0.3).clamp(2.0, 8.0) as usize,
+            // The rate limit is by default controlled by PD scheduling limit,
+            // so it is safe to have a large default here.
+            snap_handle_pool_size: (cpu_num * 0.7).clamp(2.0, 16.0) as usize,
             // This pool is used when handling ingest SST raft messages, e.g.
             // when using BR / lightning.
             apply_low_priority_pool_size: (cpu_num * 0.3).clamp(2.0, 8.0) as usize,
@@ -70,6 +77,11 @@ pub struct ProxyConfig {
     #[online_config(submodule)]
     #[serde(rename = "raftstore")]
     pub raft_store: RaftstoreConfig,
+
+    #[online_config(submodule)]
+    pub rocksdb: RocksDbConfig,
+    #[online_config(submodule)]
+    pub raftdb: RaftDbConfig,
 }
 
 pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
@@ -78,11 +90,102 @@ pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
     ""
 };
 
+const GIB: u64 = 1024 * 1024 * 1024;
+const MIB: u64 = 1024 * 1024;
+
+pub fn memory_limit_for_cf(is_raft_db: bool, cf: &str, total_mem: u64) -> ReadableSize {
+    let (ratio, min, max) = match (is_raft_db, cf) {
+        (true, CF_DEFAULT) => (0.05, 256 * MIB as usize, usize::MAX),
+        (false, CF_DEFAULT) => (0.25, 0, 128 * MIB as usize),
+        (false, CF_LOCK) => (0.02, 0, 128 * MIB as usize),
+        (false, CF_WRITE) => (0.15, 0, 128 * MIB as usize),
+        _ => unreachable!(),
+    };
+    let mut size = (total_mem as f64 * ratio) as usize;
+    if size < min {
+        size = min;
+    } else if size > max {
+        size = max;
+    }
+    ReadableSize::mb(size as u64 / MIB)
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct DefaultCfConfig {
+    pub block_cache_size: ReadableSize,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct LockCfConfig {
+    pub block_cache_size: ReadableSize,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct WriteCfConfig {
+    pub block_cache_size: ReadableSize,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct RaftDbConfig {
+    #[online_config(submodule)]
+    pub defaultcf: DefaultCfConfig,
+}
+
+impl Default for RaftDbConfig {
+    fn default() -> Self {
+        let total_mem = SysQuota::memory_limit_in_bytes();
+        RaftDbConfig {
+            defaultcf: DefaultCfConfig {
+                block_cache_size: memory_limit_for_cf(true, CF_DEFAULT, total_mem),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct RocksDbConfig {
+    #[online_config(submodule)]
+    pub lockcf: LockCfConfig,
+    #[online_config(submodule)]
+    pub writecf: WriteCfConfig,
+    #[online_config(submodule)]
+    pub defaultcf: DefaultCfConfig,
+}
+
+impl Default for RocksDbConfig {
+    fn default() -> Self {
+        let total_mem = SysQuota::memory_limit_in_bytes();
+        RocksDbConfig {
+            defaultcf: DefaultCfConfig {
+                block_cache_size: memory_limit_for_cf(false, CF_DEFAULT, total_mem),
+            },
+            writecf: WriteCfConfig {
+                block_cache_size: memory_limit_for_cf(false, CF_WRITE, total_mem),
+            },
+            lockcf: LockCfConfig {
+                block_cache_size: memory_limit_for_cf(false, CF_LOCK, total_mem),
+            },
+        }
+    }
+}
+
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
             raft_store: RaftstoreConfig::default(),
             server: ServerConfig::default(),
+            rocksdb: RocksDbConfig::default(),
+            raftdb: RaftDbConfig::default(),
         }
     }
 }
@@ -144,11 +247,11 @@ pub fn make_tikv_config() -> TikvConfig {
 }
 
 pub fn setup_default_tikv_config(default: &mut TikvConfig) {
-    // Compact test
+    // Compat test.
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
-    // Do not add here, try use `address_proxy_config`
+    // Do not add here, try use `address_proxy_config`.
 }
 
 /// This function changes TiKV's config according to ProxyConfig.
@@ -172,6 +275,10 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
     config.raft_store.apply_batch_system.low_priority_pool_size =
         proxy_config.raft_store.apply_low_priority_pool_size;
+    config.raftdb.defaultcf.block_cache_size = proxy_config.raftdb.defaultcf.block_cache_size;
+    config.rocksdb.defaultcf.block_cache_size = proxy_config.rocksdb.defaultcf.block_cache_size;
+    config.rocksdb.writecf.block_cache_size = proxy_config.rocksdb.writecf.block_cache_size;
+    config.rocksdb.lockcf.block_cache_size = proxy_config.rocksdb.lockcf.block_cache_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {

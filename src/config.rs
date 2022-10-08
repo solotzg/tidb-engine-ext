@@ -105,7 +105,7 @@ const MAX_BLOCK_SIZE: usize = 32 * MIB as usize;
 
 fn memory_limit_for_cf(is_raft_db: bool, cf: &str, total_mem: u64) -> ReadableSize {
     let (ratio, min, max) = match (is_raft_db, cf) {
-        (true, CF_DEFAULT) => (0.05, 256 * MIB as usize, usize::MAX),
+        (true, CF_DEFAULT) => (0.02, 256 * MIB as usize, usize::MAX),
         (false, CF_DEFAULT) => (0.25, 0, 128 * MIB as usize),
         (false, CF_LOCK) => (0.02, 0, 128 * MIB as usize),
         (false, CF_WRITE) => (0.15, 0, 128 * MIB as usize),

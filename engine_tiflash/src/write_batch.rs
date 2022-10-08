@@ -132,11 +132,8 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn should_write_to_engine(&self) -> bool {
-        if self.support_write_batch_vec {
-            self.index >= WRITE_BATCH_MAX_BATCH
-        } else {
-            self.wbs[0].count() > RocksEngine::WRITE_BATCH_MAX_KEYS
-        }
+        // Disable TiKV's logic, and using Proxy's instead.
+        false
     }
 
     fn clear(&mut self) {
@@ -283,6 +280,46 @@ mod tests {
         assert_eq!(v.unwrap(), b"bbb");
         let mut wb = RocksWriteBatchVec::with_unit_capacity(&engine, 1024);
         for _i in 0..RocksEngine::WRITE_BATCH_MAX_KEYS {
+            wb.put(b"aaa", b"bbb").unwrap();
+        }
+        assert!(!wb.should_write_to_engine());
+        wb.put(b"aaa", b"bbb").unwrap();
+        assert!(wb.should_write_to_engine());
+        wb.clear();
+        assert!(!wb.should_write_to_engine());
+    }
+
+    #[test]
+    fn test_should_write_to_engine_with_multi_batch_write_mode() {
+        let path = Builder::new()
+            .prefix("test-should-write-to-engine")
+            .tempdir()
+            .unwrap();
+        let opt = RawDBOptions::default();
+        opt.enable_unordered_write(false);
+        opt.enable_pipelined_write(false);
+        opt.enable_multi_batch_write(true);
+        let engine = new_engine_opt(
+            path.path().join("db").to_str().unwrap(),
+            RocksDbOptions::from_raw(opt),
+            vec![(CF_DEFAULT, RocksCfOptions::default())],
+        )
+        .unwrap();
+        assert!(
+            engine
+                .as_inner()
+                .get_db_options()
+                .is_enable_multi_batch_write()
+        );
+        let mut wb = engine.write_batch();
+        for _i in 0..RocksEngine::WRITE_BATCH_MAX_KEYS {
+            wb.put(b"aaa", b"bbb").unwrap();
+        }
+        assert!(!wb.should_write_to_engine());
+        wb.put(b"aaa", b"bbb").unwrap();
+        assert!(wb.should_write_to_engine());
+        let mut wb = RocksWriteBatchVec::with_unit_capacity(&engine, 1024);
+        for _i in 0..WRITE_BATCH_MAX_BATCH * WRITE_BATCH_LIMIT {
             wb.put(b"aaa", b"bbb").unwrap();
         }
         assert!(!wb.should_write_to_engine());
