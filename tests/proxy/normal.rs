@@ -35,11 +35,11 @@ use proxy_server::{
     proxy::gen_tikv_config,
 };
 use raft::eraftpb::MessageType;
-use raftstore::store::util::find_peer;
 use sst_importer::SstImporter;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
     config::{ReadableDuration, ReadableSize},
+    store::find_peer,
     sys::SysQuota,
     time::Duration,
     HandyRwLock,

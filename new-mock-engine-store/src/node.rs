@@ -344,6 +344,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             AutoSplitController::default(),
             cm,
             CollectorRegHandle::new_for_test(),
+            None,
         )?;
         assert!(
             engines
