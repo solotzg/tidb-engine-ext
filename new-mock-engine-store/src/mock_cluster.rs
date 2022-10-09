@@ -21,9 +21,10 @@ use file_system::IoRateLimiter;
 use futures::executor::block_on;
 use kvproto::{
     errorpb::Error as PbError,
+    kvrpcpb::*,
     metapb::{self, PeerRole, RegionEpoch, StoreLabel},
     raft_cmdpb::{RaftCmdRequest, RaftCmdResponse, Request, *},
-    raft_serverpb::RaftMessage, kvrpcpb::*,
+    raft_serverpb::RaftMessage,
 };
 use pd_client::PdClient;
 pub use proxy_server::config::ProxyConfig;
@@ -63,7 +64,7 @@ use tikv_util::{
 pub use crate::config::Config;
 use crate::{
     gen_engine_store_server_helper, transport_simulate::Filter, EngineStoreServer,
-    EngineStoreServerWrap, MockConfig, EXPECTED_LEADER_SAFE_TS, EXPECTED_SELF_SAFE_TS,
+    EngineStoreServerWrap, MockConfig,
 };
 
 pub struct FFIHelperSet {
@@ -80,6 +81,11 @@ pub struct EngineHelperSet {
     pub engine_store_server: Box<EngineStoreServer>,
     pub engine_store_server_wrap: Box<EngineStoreServerWrap>,
     pub engine_store_server_helper: Box<engine_store_ffi::EngineStoreServerHelper>,
+}
+
+pub struct TestData {
+    pub expected_leader_safe_ts: u64,
+    pub expected_self_safe_ts: u64,
 }
 
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
@@ -101,6 +107,7 @@ pub struct Cluster<T: Simulator<TiFlashEngine>> {
     pub group_props: HashMap<u64, GroupProperties>,
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
+    pub test_data: TestData,
 }
 
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
@@ -139,6 +146,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
+            test_data: TestData {
+                expected_leader_safe_ts: 0,
+                expected_self_safe_ts: 0,
+            },
         }
     }
 
@@ -370,9 +381,9 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         Ok(())
     }
 
-    pub unsafe fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
-        EXPECTED_LEADER_SAFE_TS = leader_safe_ts;
-        EXPECTED_SELF_SAFE_TS = self_safe_ts;
+    pub fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
+        self.test_data.expected_leader_safe_ts = leader_safe_ts;
+        self.test_data.expected_self_safe_ts = self_safe_ts;
     }
 }
 
