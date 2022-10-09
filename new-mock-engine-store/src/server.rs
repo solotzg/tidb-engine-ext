@@ -63,21 +63,23 @@ use tikv::{
     storage::{self, kv::SnapContext, txn::flow_controller::FlowController, Engine},
 };
 use tikv_util::{
+    box_err,
     config::VersionTrack,
     quota_limiter::QuotaLimiter,
+    thd_name,
     time::ThreadReadId,
     worker::{Builder as WorkerBuilder, LazyWorker},
-    HandyRwLock, box_err, thd_name,
+    HandyRwLock,
 };
 use tokio::runtime::Builder as TokioBuilder;
+use transport_simulate::SimulateTransport;
 use txn_types::TxnExtraScheduler;
 
 use super::*;
 use crate::config::Config;
 
-use transport_simulate::SimulateTransport;
-
-type SimulateStoreTransport = SimulateTransport<ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>>;
+type SimulateStoreTransport =
+    SimulateTransport<ServerRaftStoreRouter<TiFlashEngine, engine_rocks::RocksEngine>>;
 type SimulateServerTransport =
     SimulateTransport<ServerTransport<SimulateStoreTransport, PdStoreAddrResolver, TiFlashEngine>>;
 
@@ -707,7 +709,10 @@ impl Simulator<TiFlashEngine> for ServerCluster {
             .clear_filters();
     }
 
-    fn get_router(&self, node_id: u64) -> Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>> {
+    fn get_router(
+        &self,
+        node_id: u64,
+    ) -> Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>> {
         self.metas.get(&node_id).map(|m| m.raw_router.clone())
     }
 
