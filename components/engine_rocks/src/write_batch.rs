@@ -129,7 +129,11 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn should_write_to_engine(&self) -> bool {
-        false
+        if self.support_write_batch_vec {
+            self.index >= WRITE_BATCH_MAX_BATCH
+        } else {
+            self.wbs[0].count() > RocksEngine::WRITE_BATCH_MAX_KEYS
+        }
     }
 
     fn clear(&mut self) {

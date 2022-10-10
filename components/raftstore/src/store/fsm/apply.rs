@@ -953,8 +953,6 @@ where
     /// impact on other normal commands.
     priority: Priority,
 
-    pending_clean_ssts: Vec<SstMetaInfo>,
-
     /// To fetch Raft entries for applying if necessary.
     #[derivative(Debug = "ignore")]
     raft_engine: Box<dyn RaftEngineReadOnly>,
@@ -993,7 +991,6 @@ where
             // use a default `CmdObserveInfo` because observing is disable by default
             observe_info: CmdObserveInfo::default(),
             priority: Priority::Normal,
-            pending_clean_ssts: vec![],
             raft_engine: reg.raft_engine,
             trace: ApplyMemoryTrace::default(),
             buckets: None,
@@ -1545,10 +1542,8 @@ where
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
             AdminCmdType::CompactLog => self.exec_compact_log(request),
             AdminCmdType::TransferLeader => self.exec_transfer_leader(request, ctx.exec_log_term),
-            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request), /* Will filtered
-                                                                                 * by pre_exec */
-            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request), /* Will filtered by
-                                                                               * pre_exec */
+            AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request),
+            AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request),
             // TODO: is it backward compatible to add new cmd_type?
             AdminCmdType::PrepareMerge => self.exec_prepare_merge(ctx, request),
             AdminCmdType::CommitMerge => self.exec_commit_merge(ctx, request),

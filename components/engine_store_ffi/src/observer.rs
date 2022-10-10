@@ -480,7 +480,7 @@ impl QueryObserver for TiFlashObserver {
                     // Before, BR/Lightning may let ingest sst cmd contain only one cf,
                     // which may cause that TiFlash can not flush all region cache into column.
                     // so we have a optimization proxy@cee1f003.
-                    // The optimization is to introduce a `pending_clean_ssts`,
+                    // The optimization is to introduce a `pending_delete_ssts`,
                     // which holds ssts from being cleaned(by adding into `delete_ssts`),
                     // when engine-store returns None.
                     // Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
