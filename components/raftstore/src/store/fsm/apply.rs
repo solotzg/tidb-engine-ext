@@ -2592,11 +2592,8 @@ where
         fail_point!("apply_after_prepare_merge");
         PEER_ADMIN_CMD_COUNTER.prepare_merge.success.inc();
 
-        let mut response = AdminResponse::default();
-        response.mut_split().set_left(region.clone());
-
         Ok((
-            response,
+            AdminResponse::default(),
             ApplyResult::Res(ExecResult::PrepareMerge {
                 region,
                 state: merging_state,
@@ -2744,11 +2741,10 @@ where
 
         PEER_ADMIN_CMD_COUNTER.commit_merge.success.inc();
 
-        let mut response = AdminResponse::default();
-        response.mut_split().set_left(region.clone());
+        let resp = AdminResponse::default();
 
         Ok((
-            response,
+            resp,
             ApplyResult::Res(ExecResult::CommitMerge {
                 index: ctx.exec_log_index,
                 region,
@@ -2790,11 +2786,10 @@ where
         });
 
         PEER_ADMIN_CMD_COUNTER.rollback_merge.success.inc();
-        let mut response = AdminResponse::new();
-        response.mut_split().set_left(region.clone());
+        let resp = AdminResponse::default();
 
         Ok((
-            response,
+            resp,
             ApplyResult::Res(ExecResult::RollbackMerge {
                 region,
                 commit: rollback.get_commit(),
@@ -3872,14 +3867,7 @@ where
                 Msg::LogsUpToDate(cul) => self.logs_up_to_date_for_merge(apply_ctx, cul),
                 Msg::Noop => {}
                 Msg::Snapshot(snap_task) => {
-                    #[cfg(feature = "test-raftstore-proxy")]
-                    {
-                        return self.handle_snapshot(apply_ctx, snap_task);
-                    }
-                    #[cfg(not(feature = "test-raftstore-proxy"))]
-                    {
-                        unreachable!("should not request snapshot")
-                    }
+                    self.handle_snapshot(apply_ctx, snap_task)
                 }
                 Msg::Change {
                     cmd,

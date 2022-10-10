@@ -31,18 +31,6 @@ lazy_static! {
     .unwrap();
 }
 
-#[cfg(test)]
-pub const STALE_PEER_CHECK_TICK: usize = 1; // 1000 milliseconds
-
-#[cfg(not(test))]
-pub const STALE_PEER_CHECK_TICK: usize = 10; // 10000 milliseconds
-
-// used to periodically check whether schedule pending applies in region runner
-#[cfg(not(test))]
-pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 1_000; // 1000 milliseconds
-#[cfg(test)]
-pub const PENDING_APPLY_CHECK_INTERVAL: u64 = 200; // 200 milliseconds
-
 with_prefix!(prefix_apply "apply-");
 with_prefix!(prefix_store "store-");
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
