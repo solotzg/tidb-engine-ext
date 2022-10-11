@@ -280,7 +280,16 @@ pub unsafe fn run_proxy(
     let mut proxy_unrecognized_keys = Vec::new();
     let mut proxy_config = gen_proxy_config(&cpath, is_config_check, &mut proxy_unrecognized_keys);
 
-    check_engine_label(&matches);
+    // We don't check if the value of argument 'engine-label' is same with
+    // 'ENGINE_LABEL_VALUE'(env variable specified at compile time), because we
+    // need to distinguish TiFlash role (tiflash-compute or tiflash-storage) in
+    // the disaggregated architecture.
+    const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
+    config.server.labels.insert(
+        DEFAULT_ENGINE_LABEL_KEY.to_owned(),
+        String::from(matches.value_of("engine-label").unwrap()),
+    );
+
     // Replace config from `match` from TiFlash's side.
     overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
     config.logger_compatible_adjust();
@@ -306,16 +315,5 @@ pub unsafe fn run_proxy(
         crate::run::run_tikv_only_decryption(config, proxy_config, engine_store_server_helper);
     } else {
         crate::run::run_tikv_proxy(config, proxy_config, engine_store_server_helper);
-    }
-}
-
-fn check_engine_label(matches: &clap::ArgMatches<'_>) {
-    let engine_label = matches.value_of("engine-label").unwrap();
-    let expect_engine_label = option_env!("ENGINE_LABEL_VALUE").unwrap();
-    if engine_label != expect_engine_label {
-        panic!(
-            "`engine-label` is `{}`, expect `{}`",
-            engine_label, expect_engine_label
-        );
     }
 }

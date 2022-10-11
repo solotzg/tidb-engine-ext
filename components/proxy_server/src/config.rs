@@ -155,18 +155,8 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
 
 /// This function changes TiKV's config according to ProxyConfig.
 pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig) {
-    // We must add engine label to our TiFlash config
-    pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
-    let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
-        None => {
-            fatal!("should set engine name with env variable `ENGINE_LABEL_VALUE`");
-        }
-        Some(name) => name.to_owned(),
-    };
-    config
-        .server
-        .labels
-        .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
+    // TiFlash engine label is already setup in run_proxy() using the command
+    // arguments.
     config.raft_store.region_worker_tick_interval =
         proxy_config.raft_store.region_worker_tick_interval;
     let clean_stale_ranges_tick =
