@@ -59,7 +59,7 @@ fn test_overlap_cleanup() {
 // progress if it's in Snapshot state. So trying to send a snapshot
 // when the address is being resolved will leave follower's progress
 // stay in Snapshot forever.
-#[test]
+// #[test]
 fn test_server_snapshot_on_resolve_failure() {
     let mut cluster = new_server_cluster(1, 2);
     configure_for_snapshot(&mut cluster);
@@ -192,7 +192,7 @@ fn assert_snapshot(snap_dir: &str, region_id: u64, exist: bool) {
 // destroyed because of a bigger peer id in msg. In previous implementation,
 // peer fsm can be destroyed synchronously because snapshot state is pending and
 // can be canceled, but panic may happen if the applyfsm runs very slow.
-#[test]
+// #[test]
 fn test_destroy_peer_on_pending_snapshot() {
     let mut cluster = new_server_cluster(0, 3);
     configure_for_snapshot(&mut cluster);
