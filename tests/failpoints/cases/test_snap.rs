@@ -515,7 +515,7 @@ fn test_gen_snapshot_with_no_committed_entries_ready() {
 // 3. disable the failpoint to continue snapshot generating;
 // 4. the generated snapshot should have a larger index than the latest
 // `truncated_idx`.
-#[test]
+// #[test]
 fn test_cancel_snapshot_generating() {
     let mut cluster = new_node_cluster(0, 5);
     cluster.cfg.raft_store.snap_mgr_gc_tick_interval = ReadableDuration(Duration::from_secs(100));
