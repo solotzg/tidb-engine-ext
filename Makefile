@@ -208,13 +208,13 @@ ci_prof:
 	M="suc" ./r.sh
 
 ci_fmt_check:
-	M="prof" ./ci_check.sh
-	# M="fmt" ./ci_check.sh
+	# M="prof" ./ci_check.sh
+	M="fmt" ./ci_check.sh
 
 ci_test:
-	M="prof" ./ci_check.sh
-	# M="testold" ./ci_check.sh
-	# M="testnew" ./ci_check.sh
+	# M="prof" ./ci_check.sh
+	M="testold" ./ci_check.sh
+	M="testnew" ./ci_check.sh
 
 gen_proxy_ffi: pre-format
 	./gen-proxy-ffi.sh
