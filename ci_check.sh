@@ -43,4 +43,7 @@ elif [[ $M == "debug" ]]; then
 elif [[ $M == "release" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     make release
+elif [[ $M == "prof" ]]; then
+    M="err" sh r.sh
+    M="suc" sh r.sh
 fi
