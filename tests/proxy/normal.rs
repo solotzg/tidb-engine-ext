@@ -50,6 +50,10 @@ use crate::proxy::*;
 mod store {
     use super::*;
     #[test]
+    fn test_panic() {
+        panic!("!!!!! panic");
+    }
+    #[test]
     fn test_store_stats() {
         let (mut cluster, pd_client) = new_mock_cluster(0, 1);
 

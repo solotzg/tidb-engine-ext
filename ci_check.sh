@@ -44,6 +44,8 @@ elif [[ $M == "release" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     make release
 elif [[ $M == "prof" ]]; then
-    M="err" sh r.sh
+    export ENGINE_LABEL_VALUE=tiflash
+    export RUST_BACKTRACE=full
+    cargo test --package tests --test proxy normal::store::test_panic
     M="suc" sh r.sh
 fi
