@@ -46,6 +46,8 @@ elif [[ $M == "release" ]]; then
 elif [[ $M == "prof" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
-    cargo test --package tests --test proxy normal::store::test_panic
+    cargo test --package tests --test proxy normal::store
+    cargo test --package tests --test proxy normal::config
+    cargo test --package tests --test proxy normal::restart
     M="suc" sh r.sh
 fi
