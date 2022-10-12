@@ -368,6 +368,38 @@ pub mod root {
                     arg5: u64,
                 ) -> u8,
             >,
+            pub fn_create_write_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                ) -> root::DB::RawCppPtr,
+            >,
+            pub fn_write_batch_put_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: u64, // raft group id
+                    arg3: u64,
+                    arg4: root::DB::BaseBuffView,
+                ),
+            >,
+            pub fn_write_batch_del_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: u64, // raft group id
+                    arg3: u64,
+                ),
+            >,
+            pub fn_consume_write_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::RawVoidPtr,
+                ),
+            >,
+            pub fn_handle_read_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: u64,
+                    arg3: u64,
+                ) -> root::DB::CppStrWithView,
+            >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,

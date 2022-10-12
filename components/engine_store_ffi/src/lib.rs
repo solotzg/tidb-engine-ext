@@ -8,6 +8,7 @@ mod lock_cf_reader;
 pub mod observer;
 mod read_index_helper;
 mod utils;
+pub mod ps_engine;
 
 use std::{
     pin::Pin,
@@ -36,7 +37,7 @@ pub use self::interfaces::root::DB::{
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
-    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
+    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, CppStrWithView,
     SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
     RAFT_STORE_PROXY_VERSION,
 };
@@ -964,6 +965,77 @@ impl EngineStoreServerHelper {
                 index,
                 term,
             ) != 0
+        }
+    }
+
+    pub fn create_write_batch(
+        &self,
+    ) -> RawCppPtr {
+        debug_assert!(self.fn_create_write_batch.is_some());
+        unsafe {
+            (self.fn_create_write_batch.into_inner())()
+        }
+    }
+
+    pub fn write_batch_put_page(
+        &self,
+        wb: RawVoidPtr,
+        raft_group_id: u64,
+        page_id: u64,
+        page: BaseBuffView,
+    ) {
+        debug_assert!(self.fn_write_batch_put_page.is_some());
+        unsafe {
+            (self.fn_write_batch_put_page.into_inner())(
+                wb,
+                raft_group_id,
+                page_id,
+                page,
+            )
+        }
+    }
+
+    pub fn write_batch_del_page(
+        &self,
+        wb: RawVoidPtr,
+        raft_group_id: u64,
+        page_id: u64,
+    ) {
+        debug_assert!(self.fn_write_batch_del_page.is_some());
+        unsafe {
+            (self.fn_write_batch_del_page.into_inner())(
+                wb,
+                raft_group_id,
+                page_id,
+            )
+        }
+    }
+
+    pub fn consume_write_batch(
+        &self,
+        wb: RawVoidPtr,
+    ) {
+        debug_assert!(self.fn_consume_write_batch.is_some());
+        unsafe {
+            (self.fn_consume_write_batch.into_inner())(
+                self.inner,
+                wb,
+            )
+        }
+    }
+
+    pub fn read_page(
+        &self,
+        raft_group_id: u64,
+        page_id: u64,
+    ) -> CppStrWithView {
+        debug_assert!(self.fn_handle_read_page.is_some());
+        unsafe {
+            (self.fn_handle_read_page.into_inner())(
+                self.inner,
+                raft_group_id,
+                page_id,
+            )
         }
     }
 
