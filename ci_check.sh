@@ -25,17 +25,17 @@ elif [[ $M == "testnew" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     # tests based on new-mock-engine-store, with compat for new proxy
-    cargo test --package tests --test proxy normal::store -- --test-threads=1
-    cargo test --package tests --test proxy normal::region -- --test-threads=1
-    cargo test --package tests --test proxy normal::config -- --test-threads=1
-    cargo test --package tests --test proxy normal::write -- --test-threads=1
-    cargo test --package tests --test proxy normal::ingest -- --test-threads=1
-    cargo test --package tests --test proxy normal::snapshot -- --test-threads=1
-    cargo test --package tests --test proxy normal::restart -- --test-threads=1
-    cargo test --package tests --test proxy normal::persist -- --test-threads=1
-    cargo test --package tests --test proxy server_cluster_test -- --test-threads=1
+    cargo test --package tests --test proxy normal::store
+    cargo test --package tests --test proxy normal::region
+    cargo test --package tests --test proxy normal::config
+    cargo test --package tests --test proxy normal::write
+    cargo test --package tests --test proxy normal::ingest
+    cargo test --package tests --test proxy normal::snapshot
+    cargo test --package tests --test proxy normal::restart
+    cargo test --package tests --test proxy normal::persist
+    cargo test --package tests --test proxy server_cluster_test
     # tests based on new-mock-engine-store, for some tests not available for new proxy
-    cargo test --package tests --test proxy proxy -- --test-threads=1
+    cargo test --package tests --test proxy proxy
 elif [[ $M == "debug" ]]; then
     # export RUSTC_WRAPPER=~/.cargo/bin/sccache
     export ENGINE_LABEL_VALUE=tiflash
