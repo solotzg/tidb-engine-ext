@@ -594,7 +594,17 @@ impl RegionChangeObserver for TiFlashObserver {
             if cmd.has_admin_request() {
                 match cmd.get_admin_request().get_cmd_type() {
                     // Merge needs to get the latest apply index.
-                    AdminCmdType::CommitMerge | AdminCmdType::RollbackMerge => true,
+                    AdminCmdType::CommitMerge | AdminCmdType::RollbackMerge => {
+                        // Consider:
+                        // 1. CommitMerge at index 1, will advance and write and persist;
+                        // 2. normal kv at index 2, will advance, not write and persist;
+                        // 3. when in `should_write_to_engine`, if we vote true here,
+                        //    we may have index to be persisted as 2,
+                        //    while real data in TiFlash is of index 1.
+                        // We are free to not to call `write_to_db`, because we will call `commit`,
+                        // rather than just write apply state after `CommitMerge` and `RollbackMerge` as before.
+                        false
+                    },
                     _ => false,
                 }
             } else {
