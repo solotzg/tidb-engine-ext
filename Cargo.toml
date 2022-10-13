@@ -203,6 +203,7 @@ procinfo = { git = "https://github.com/tikv/procinfo-rs", rev = "5125fc1a69496b7
 
 [workspace]
 members = [
+  "components/api_version",
   "components/tikv_alloc",
   "components/match_template",
   "components/codec",
@@ -245,7 +246,7 @@ members = [
   "mock-engine-store",
   "raftstore-proxy",
   "gen-proxy-ffi",
-  "components/api_version",
+  "tests",
 ]
 default-members = ["raftstore-proxy"]
 
