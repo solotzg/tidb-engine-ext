@@ -602,9 +602,10 @@ impl RegionChangeObserver for TiFlashObserver {
                         //    we may have index to be persisted as 2,
                         //    while real data in TiFlash is of index 1.
                         // We are free to not to call `write_to_db`, because we will call `commit`,
-                        // rather than just write apply state after `CommitMerge` and `RollbackMerge` as before.
+                        // rather than just write apply state after `CommitMerge` and
+                        // `RollbackMerge` as before.
                         false
-                    },
+                    }
                     _ => false,
                 }
             } else {
