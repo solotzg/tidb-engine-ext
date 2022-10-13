@@ -280,8 +280,10 @@ pub unsafe fn run_proxy(
     let mut proxy_unrecognized_keys = Vec::new();
     let mut proxy_config = gen_proxy_config(&cpath, is_config_check, &mut proxy_unrecognized_keys);
 
-    // User can specify engine label, because we need to distinguish TiFlash role (tiflash-compute or tiflash-storage) in the disaggregated architecture.
-    // If no engine label is specified, we use 'ENGINE_LABEL_VALUE'(env variable specified at compile time).
+    // User can specify engine label, because we need to distinguish TiFlash role
+    // (tiflash-compute or tiflash-storage) in the disaggregated architecture.
+    // If no engine label is specified, we use 'ENGINE_LABEL_VALUE'(env variable
+    // specified at compile time).
     const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     let def_engine_label_value = option_env!("ENGINE_LABEL_VALUE");
     config.server.labels.insert(
