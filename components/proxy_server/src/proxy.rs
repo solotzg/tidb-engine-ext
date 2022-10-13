@@ -280,14 +280,18 @@ pub unsafe fn run_proxy(
     let mut proxy_unrecognized_keys = Vec::new();
     let mut proxy_config = gen_proxy_config(&cpath, is_config_check, &mut proxy_unrecognized_keys);
 
-    // We don't check if the value of argument 'engine-label' is same with
-    // 'ENGINE_LABEL_VALUE'(env variable specified at compile time), because we
-    // need to distinguish TiFlash role (tiflash-compute or tiflash-storage) in
-    // the disaggregated architecture.
+    // User can specify engine label, because we need to distinguish TiFlash role (tiflash-compute or tiflash-storage) in the disaggregated architecture.
+    // If no engine label is specified, we use 'ENGINE_LABEL_VALUE'(env variable specified at compile time).
     const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
+    let def_engine_label_value = option_env!("ENGINE_LABEL_VALUE");
     config.server.labels.insert(
         DEFAULT_ENGINE_LABEL_KEY.to_owned(),
-        String::from(matches.value_of("engine-label").unwrap()),
+        String::from(
+            matches
+                .value_of("engine-label")
+                .or(def_engine_label_value)
+                .unwrap(),
+        ),
     );
 
     // Replace config from `match` from TiFlash's side.
