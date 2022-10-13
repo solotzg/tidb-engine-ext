@@ -739,7 +739,7 @@ fn test_snapshot_clean_up_logs_with_unfinished_log_gc() {
 
 /// Redo snapshot apply after restart when kvdb state is updated but raftdb
 /// state is not.
-#[test]
+// #[test]
 fn test_snapshot_recover_from_raft_write_failure() {
     let mut cluster = new_server_cluster(0, 3);
     configure_for_snapshot(&mut cluster);
@@ -797,7 +797,7 @@ fn test_snapshot_recover_from_raft_write_failure() {
 /// Test whether applying snapshot is resumed properly when last_index before
 /// applying snapshot is larger than the snapshot index and applying is aborted
 /// between kv write and raft write.
-#[test]
+// #[test]
 fn test_snapshot_recover_from_raft_write_failure_with_uncommitted_log() {
     let mut cluster = new_server_cluster(0, 3);
     configure_for_snapshot(&mut cluster);
