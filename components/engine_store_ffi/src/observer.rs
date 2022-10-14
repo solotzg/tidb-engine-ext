@@ -612,6 +612,7 @@ impl RegionChangeObserver for TiFlashObserver {
                         //    while real data in TiFlash is of index 1.
                         // We are free to not to call `write_to_db`, because we will suggest a write
                         // after `post_exec` when meets `CommitMerge` and `RollbackMerge`.
+                        // TODO(tiflash) A optimization can be laterly introduced to allow Yield here.
                         false
                     }
                     _ => false,
