@@ -518,14 +518,15 @@ impl QueryObserver for TiFlashObserver {
                     match apply_ctx_info.pending_handle_ssts {
                         None => (),
                         Some(v) => {
-                            // TODO(tiflash) we can perform a optimization by using
-                            // `pending_delete_ssts` in `ApplyDelegate`. However not necessary.
+                            // TODO(tiflash) we can perform a optimization by moving
+                            // `pending_delete_ssts` to `ApplyDelegate`.
                             // Notice if a delegate is then moved to another apply context, it will
                             // result in: 1. `delete_ssts` remaind in
                             // one apply context. 2. we always delete a sst when we accepts
                             // `pending_handle_ssts`, we can always move it to `delete_ssts` of
-                            // current `ApplyContext`.
-                            // So there is only a limited memory waste scenario.
+                            // current `ApplyContext`. 3. We may lost track of and not be able to
+                            // delete previous sst files.
+
                             let mut sst_in_region: Vec<SstMetaInfo> = apply_ctx_info
                                 .pending_delete_ssts
                                 .drain_filter(|e| {
@@ -612,7 +613,8 @@ impl RegionChangeObserver for TiFlashObserver {
                         //    while real data in TiFlash is of index 1.
                         // We are free to not to call `write_to_db`, because we will suggest a write
                         // after `post_exec` when meets `CommitMerge` and `RollbackMerge`.
-                        // TODO(tiflash) A optimization can be laterly introduced to allow Yield here.
+                        // TODO(tiflash) A optimization can be laterly introduced to allow Yield
+                        // here.
                         false
                     }
                     _ => false,
