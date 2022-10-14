@@ -285,13 +285,12 @@ pub unsafe fn run_proxy(
     // If no engine label is specified, we use 'ENGINE_LABEL_VALUE'(env variable
     // specified at compile time).
     const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
-    let def_engine_label_value = option_env!("ENGINE_LABEL_VALUE");
     config.server.labels.insert(
         DEFAULT_ENGINE_LABEL_KEY.to_owned(),
         String::from(
             matches
                 .value_of("engine-label")
-                .or(def_engine_label_value)
+                .or(option_env!("ENGINE_LABEL_VALUE"))
                 .unwrap(),
         ),
     );
