@@ -1354,7 +1354,7 @@ where
                             "peer_id" => self.id(),
                             "err" => ?e
                         ),
-_ => error!(?e;
+                        _ => error!(?e;
                             "execute raft command";
                             "region_id" => self.region_id(),
                             "peer_id" => self.id(),

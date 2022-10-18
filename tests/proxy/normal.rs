@@ -35,11 +35,11 @@ use proxy_server::{
     proxy::gen_tikv_config,
 };
 use raft::eraftpb::MessageType;
-use tikv_util::store::find_peer;
 use sst_importer::SstImporter;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
     config::{ReadableDuration, ReadableSize},
+    store::find_peer,
     sys::SysQuota,
     time::Duration,
     HandyRwLock,
@@ -1492,7 +1492,8 @@ mod snapshot {
     }
 
     fn test_huge_snapshot(is_multi: bool) {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
 
         fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
         disable_auto_gen_compact_log(&mut cluster);
@@ -1584,8 +1585,8 @@ mod snapshot {
 
     #[test]
     fn test_concurrent_snapshot() {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
-
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
         disable_auto_gen_compact_log(&mut cluster);
 
         // Disable default max peer count check.
@@ -1657,7 +1658,8 @@ mod snapshot {
 
     #[test]
     fn test_prehandle_fail() {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
 
         // Disable raft log gc in this test case.
         cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::secs(60);
@@ -1713,7 +1715,8 @@ mod snapshot {
 
     #[test]
     fn test_split_merge() {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
 
         // Can always apply snapshot immediately
         fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
@@ -1797,11 +1800,10 @@ mod snapshot {
 
     #[test]
     fn test_basic_concurrent_snapshot() {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
 
         disable_auto_gen_compact_log(&mut cluster);
-        // Is now dynamicly computed.
-        // assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 4);
 
         // Disable default max peer count check.
         pd_client.disable_default_operator();
@@ -1826,10 +1828,12 @@ mod snapshot {
             .clone();
         pd_client.add_peer(r1, new_peer(2, 2));
         pd_client.add_peer(r3, new_peer(2, 2));
+        // handle_pending_applies will do nothing.
         fail::cfg("apply_pending_snapshot", "return").unwrap();
+        // wait snapshot is generated.
         std::thread::sleep(std::time::Duration::from_millis(500));
-        // Now, k1 and k3 are not handled, since pre-handle process is not finished.
-        // This is because `pending_applies_count` is not greater than
+        // Now, region k1 and k3 are not handled, since pre-handle process is not
+        // finished. This is because `pending_applies_count` is not greater than
         // `snap_handle_pool_size`, So there are no `handle_pending_applies`
         // until `on_timeout`.
 
@@ -1933,7 +1937,8 @@ mod persist {
 
     #[test]
     fn test_persist_when_merge() {
-        let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+        let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+        assert_eq!(cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size, 2);
 
         // disable_auto_gen_compact_log(&mut cluster);
         cluster.cfg.raft_store.right_derive_when_split = false;
