@@ -35,7 +35,7 @@ use proxy_server::{
     proxy::gen_tikv_config,
 };
 use raft::eraftpb::MessageType;
-use raftstore::store::util::find_peer;
+use tikv_util::store::find_peer;
 use sst_importer::SstImporter;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 use tikv_util::{
