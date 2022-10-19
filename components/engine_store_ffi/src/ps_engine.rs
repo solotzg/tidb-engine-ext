@@ -25,9 +25,6 @@ use tikv_util::{box_err};
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
 
-pub const RAFT_STATE_PAGE_ID: u64 = 0x02;
-pub const RAFT_LOG_PAGE_ID_OFFSET: u64 = 0x05;
-
 pub struct PSEngineWriteBatch {
     pub engine_store_server_helper: isize,
     pub raw_write_batch: RawCppPtr,
@@ -40,15 +37,15 @@ impl PSEngineWriteBatch {
         PSEngineWriteBatch { engine_store_server_helper, raw_write_batch }
     }
 
-    fn put_page(&mut self, ns_id: u64, page_id: u64, value: &[u8]) -> Result<()> {
+    fn put_page(&mut self, page_id: &[u8], value: &[u8]) -> Result<()> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        helper.write_batch_put_page(self.raw_write_batch.ptr, ns_id, page_id, value.into());
+        helper.write_batch_put_page(self.raw_write_batch.ptr, page_id.into(), value.into());
         Ok(())
     }
 
-    fn del_page(&mut self, ns_id: u64, page_id: u64) -> Result<()> {
+    fn del_page(&mut self, page_id: &[u8]) -> Result<()> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        helper.write_batch_del_page(self.raw_write_batch.ptr, ns_id, page_id);
+        helper.write_batch_del_page(self.raw_write_batch.ptr, page_id.into());
         Ok(())
     }
 
@@ -61,21 +58,24 @@ impl PSEngineWriteBatch {
         for entry in entries {
             ser_buf.clear();
             entry.write_to_vec(&mut ser_buf).unwrap();
-            self.put_page(raft_group_id, entry.get_index() + RAFT_LOG_PAGE_ID_OFFSET, &ser_buf)?;
+            let key = keys::raft_log_key(raft_group_id, entry.get_index());
+            self.put_page(&key, &ser_buf)?;
         }
         Ok(())
     }
 
-    fn put_msg<M: protobuf::Message>(&mut self, ns_id: u64, page_id: u64, m: &M) -> Result<()> {
-        self.put_page(ns_id, page_id, &m.write_to_bytes()?)
+    fn put_msg<M: protobuf::Message>(&mut self, page_id: &[u8], m: &M) -> Result<()> {
+        self.put_page(page_id, &m.write_to_bytes()?)
     }
 
     fn data_size(&self) -> usize {
-        panic!("not implemented");
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        return helper.write_batch_size(self.raw_write_batch.ptr) as usize;
     }
 
     fn clear(&self) {
-        panic!("not implemented");
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.write_batch_clear(self.raw_write_batch.ptr);
     }
 }
 
@@ -90,24 +90,28 @@ impl RaftLogBatch for PSEngineWriteBatch {
 
     fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
         for index in from..to {
-            self.del_page(raft_group_id, index + RAFT_LOG_PAGE_ID_OFFSET).unwrap();
+            let key = keys::raft_log_key(raft_group_id, index);
+            self.del_page(&key).unwrap();
         }
     }
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
-        self.put_msg(raft_group_id, RAFT_STATE_PAGE_ID, state)
+        self.put_msg(&keys::raft_state_key(raft_group_id), state)
     }
 
     fn persist_size(&self) -> usize {
-        0
+        self.data_size()
     }
 
     fn is_empty(&self) -> bool {
-        false
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.write_batch_is_empty(self.raw_write_batch.ptr) == 0
     }
 
     fn merge(&mut self, src: Self) -> Result<()> {
-        std::panic!("not implemented")
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.write_batch_merge(self.raw_write_batch.ptr, src.raw_write_batch.ptr);
+        Ok(())
     }
 }
 
@@ -141,11 +145,10 @@ impl PSEngine {
 
     fn get_msg_cf<M: protobuf::Message + Default>(
         &self,
-        raft_group_id: u64,
-        page_id: u64,
+        page_id: &[u8],
     ) -> Result<Option<M>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let value = helper.read_page(raft_group_id, page_id);
+        let value = helper.read_page(page_id.into());
         if value.view.len == 0 {
             return Ok(None);
         }
@@ -157,26 +160,48 @@ impl PSEngine {
 
     fn get_value(
         &self,
-        raft_group_id: u64,
-        page_id: u64,
+        page_id: &[u8],
     ) -> Option<Vec<u8>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let value = helper.read_page(raft_group_id, page_id);
+        let value = helper.read_page(page_id.into());
         return if value.view.len == 0 {
             None
         } else {
             Some(value.view.to_slice().to_vec())
         }
     }
+
+    /// scan the key between start_key(inclusive) and end_key(exclusive),
+    /// the upper bound is omitted if end_key is empty
+    fn scan<F>(&self, start_key: &[u8], end_key: &[u8], mut f: F) -> Result<()>
+        where
+            F: FnMut(&[u8], &[u8]) -> Result<bool>,
+    {
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        let values = helper.scan_page(start_key.into(), end_key.into());
+        for i in 0..values.len {
+            let value = unsafe {
+                &*values.inner.offset(i as isize)
+            };
+            if value.view.len != 0 {
+                if !f(&[], &value.view.to_slice().to_vec())? {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl RaftEngineReadOnly for PSEngine {
     fn get_raft_state(&self, raft_group_id: u64) -> Result<Option<RaftLocalState>> {
-        self.get_msg_cf(raft_group_id, RAFT_STATE_PAGE_ID)
+        let key = keys::raft_state_key(raft_group_id);
+        self.get_msg_cf(&key)
     }
 
     fn get_entry(&self, raft_group_id: u64, index: u64) -> Result<Option<Entry>> {
-        self.get_msg_cf(raft_group_id, index + RAFT_LOG_PAGE_ID_OFFSET)
+        let key = keys::raft_log_key(raft_group_id, index);
+        self.get_msg_cf(&key)
     }
 
     fn fetch_entries_to(
@@ -189,49 +214,40 @@ impl RaftEngineReadOnly for PSEngine {
     ) -> Result<usize> {
         let (max_size, mut total_size, mut count) = (max_size.unwrap_or(usize::MAX), 0, 0);
 
-        for i in low..high {
-            let index = i + RAFT_LOG_PAGE_ID_OFFSET;
-            if total_size > 0 && total_size >= max_size {
-                break;
-            }
-            match self.get_value(region_id, index) {
-                None => {
-                    continue;
-                },
-                Some(bytes) => {
-                    let mut entry = Entry::default();
-                    entry.merge_from_bytes(&bytes)?;
-                    assert_eq!(entry.get_index(), index);
-                    buf.push(entry);
-                    total_size += bytes.len();
-                    count += 1;
-                }
-            }
-        }
+        let start_key = keys::raft_log_key(region_id, low);
+        let end_key = keys::raft_log_key(region_id, high);
+
+        let mut count = 1;
+
+        self.scan(
+            &start_key,
+            &end_key,
+            |_, page| {
+                let mut entry = Entry::default();
+                entry.merge_from_bytes(page)?;
+                buf.push(entry);
+                total_size += page.len();
+                count += 1;
+                Ok(total_size < max_size)
+            },
+        )?;
+
         return Ok(count);
     }
 
     fn get_all_entries_to(&self, region_id: u64, buf: &mut Vec<Entry>) -> Result<()> {
-        let mut found_entry = false;
-        for i in 0..u64::MAX {
-            let index = i + RAFT_LOG_PAGE_ID_OFFSET;
-            match self.get_value(region_id, index) {
-                None => {
-                    if found_entry {
-                        break;
-                    } else {
-                        continue;
-                    }
-                },
-                Some(bytes) => {
-                    found_entry = true;
-                    let mut entry = Entry::default();
-                    entry.merge_from_bytes(&bytes)?;
-                    assert_eq!(entry.get_index(), index);
-                    buf.push(entry);
-                }
-            }
-        }
+        let start_key = keys::raft_log_key(region_id, 0);
+        let end_key = keys::raft_log_key(region_id, u64::MAX);
+        self.scan(
+            &start_key,
+            &end_key,
+            |_, page| {
+                let mut entry = Entry::default();
+                entry.merge_from_bytes(page)?;
+                buf.push(entry);
+                Ok(true)
+            },
+        )?;
         Ok(())
     }
 }
@@ -241,26 +257,17 @@ impl RaftEngineDebug for PSEngine {
         where
             F: FnMut(&Entry) -> Result<bool>,
     {
-        let mut found_entry = false;
-        for i in 0..u64::MAX {
-            let index = i + RAFT_LOG_PAGE_ID_OFFSET;
-            match self.get_value(raft_group_id, index) {
-                None => {
-                    if found_entry {
-                        break;
-                    } else {
-                        continue;
-                    }
-                },
-                Some(bytes) => {
-                    found_entry = true;
-                    let mut entry = Entry::default();
-                    entry.merge_from_bytes(&bytes)?;
-                    assert_eq!(entry.get_index(), index);
-                    f(&entry);
-                }
-            }
-        }
+        let start_key = keys::raft_log_key(raft_group_id, 0);
+        let end_key = keys::raft_log_key(raft_group_id, u64::MAX);
+        self.scan(
+            &start_key,
+            &end_key,
+            |_, value| {
+                let mut entry = Entry::default();
+                entry.merge_from_bytes(value)?;
+                f(&entry)
+            },
+        );
         Ok(())
     }
 }
@@ -291,7 +298,7 @@ impl RaftEngine for PSEngine {
         max_capacity: usize,
         shrink_to: usize,
     ) -> Result<usize> {
-        panic!("cannot understand what it is doing")
+        self.consume(batch, sync_log)
     }
 
     fn clean(
@@ -301,11 +308,11 @@ impl RaftEngine for PSEngine {
         state: &RaftLocalState,
         batch: &mut Self::LogBatch,
     ) -> Result<()> {
-        batch.del_page(raft_group_id, RAFT_STATE_PAGE_ID);
+        batch.del_page(&keys::raft_state_key(raft_group_id))?;
         // TODO: find the first raft log index of this raft group
         if first_index <= state.last_index {
             for index in first_index..=state.last_index {
-                batch.del_page(raft_group_id, index + RAFT_LOG_PAGE_ID_OFFSET);
+                batch.del_page( &keys::raft_log_key(raft_group_id, index));
             }
         }
         self.consume(batch, true);
@@ -324,7 +331,7 @@ impl RaftEngine for PSEngine {
 
     fn put_raft_state(&self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
         let mut wb = self.log_batch(0);
-        wb.put_msg(raft_group_id, RAFT_STATE_PAGE_ID, state);
+        wb.put_msg(&keys::raft_state_key(raft_group_id), state);
         self.consume(&mut wb, false);
         Ok(())
     }
@@ -332,7 +339,7 @@ impl RaftEngine for PSEngine {
     fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize> {
         let mut raft_wb = self.log_batch(0);
         for idx in from..to {
-            raft_wb.del_page(raft_group_id, idx);
+            raft_wb.del_page(&keys::raft_log_key(raft_group_id, idx));
         }
         self.consume(&mut raft_wb, false);
         Ok((from - to) as usize)
@@ -343,7 +350,7 @@ impl RaftEngine for PSEngine {
         let mut raft_wb = self.log_batch(0);
         for task in groups {
             for idx in task.from..task.to {
-                raft_wb.del_page(task.raft_group_id, idx);
+                raft_wb.del_page(&keys::raft_log_key(task.raft_group_id, idx));
             }
             total += (task.to - task.from) as usize;
         }
