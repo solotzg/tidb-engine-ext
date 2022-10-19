@@ -86,6 +86,11 @@ struct CppStrWithView {
   BaseBuffView view;
 };
 
+struct CppStrWithViewVec {
+    const CppStrWithView * inner;
+    const uint64_t len;
+};
+
 enum class HttpRequestStatus : uint8_t {
   Ok = 0,
   ErrorParam,
@@ -190,6 +195,16 @@ struct EngineStoreServerHelper {
   uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
   uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
                                uint64_t, uint64_t);
+    RawCppPtr (*fn_create_write_batch)();
+    void (*fn_write_batch_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
+    void (*fn_write_batch_del_page)(RawVoidPtr, BaseBuffView);
+    uint64_t (*fn_write_batch_size)(RawVoidPtr);
+    uint8_t (*fn_write_batch_is_empty)(RawVoidPtr);
+    void (*fn_write_batch_merge)(RawVoidPtr, RawVoidPtr);
+    void (*fn_write_batch_clear)(RawVoidPtr);
+    void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
+    CppStrWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
+    CppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
