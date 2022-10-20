@@ -301,7 +301,7 @@ impl AdminObserver for TiFlashObserver {
 
         if response.get_header().has_error() {
             info!(
-                "error occurs when apply_raft_cmd, {:?}",
+                "error occurs when apply_admin_cmd, {:?}",
                 response.get_header().get_error()
             );
             return self.handle_error_apply(ob_ctx, cmd, region_state);
@@ -431,10 +431,20 @@ impl QueryObserver for TiFlashObserver {
         let requests = cmd.request.get_requests();
         let response = &cmd.response;
         if response.get_header().has_error() {
-            info!(
-                "error occurs when apply_raft_cmd, {:?}",
-                response.get_header().get_error()
-            );
+            match esponse.get_header().get_error() {
+                Error::FlashbackInProgress(..) => {
+                    debug!(
+                        "error occurs when apply_write_cmd, {:?}",
+                        response.get_header().get_error()
+                    );
+                }
+                _ => {
+                    info!(
+                        "error occurs when apply_write_cmd, {:?}",
+                        response.get_header().get_error()
+                    );
+                }
+            }
             return self.handle_error_apply(ob_ctx, cmd, region_state);
         }
 
