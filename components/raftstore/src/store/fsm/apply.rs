@@ -516,25 +516,20 @@ where
     /// If it returns true, all pending writes are persisted in engines.
     pub fn write_to_db(&mut self) -> bool {
         let need_sync = self.sync_log_hint;
-        #[cfg(any(test, feature = "testexport"))]
-        {
-            if cfg!(feature = "compat_old_proxy") {
-                // There may be put and delete requests after ingest request in the same fsm.
-                // To guarantee the correct order, we must ingest the pending_sst first, and
-                // then persist the kv write batch to engine.
-                if !self.pending_ssts.is_empty() {
-                    let tag = self.tag.clone();
-                    self.importer
-                        .ingest(&self.pending_ssts, &self.engine)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "{} failed to ingest ssts {:?}: {:?}",
-                                tag, self.pending_ssts, e
-                            );
-                        });
-                    self.pending_ssts = vec![];
-                }
-            }
+        // There may be put and delete requests after ingest request in the same fsm.
+        // To guarantee the correct order, we must ingest the pending_sst first, and
+        // then persist the kv write batch to engine.
+        if !self.pending_ssts.is_empty() {
+            let tag = self.tag.clone();
+            self.importer
+                .ingest(&self.pending_ssts, &self.engine)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{} failed to ingest ssts {:?}: {:?}",
+                        tag, self.pending_ssts, e
+                    );
+                });
+            self.pending_ssts = vec![];
         }
         if !self.kv_wb_mut().is_empty() {
             let mut write_opts = engine_traits::WriteOptions::new();
@@ -1084,7 +1079,7 @@ where
             if apply_ctx.yield_high_latency_operation && has_high_latency_operation(&cmd) {
                 self.priority = Priority::Low;
                 if apply_ctx.priority != Priority::Low {
-                    apply_ctx.commit_opt(self, true);
+                    apply_ctx.commit(self);
                     return ApplyResult::Yield;
                 }
             }
@@ -2550,11 +2545,8 @@ where
         fail_point!("apply_after_prepare_merge");
         PEER_ADMIN_CMD_COUNTER.prepare_merge.success.inc();
 
-        let mut response = AdminResponse::default();
-        response.mut_split().set_left(region.clone());
-
         Ok((
-            response,
+            AdminResponse::new(),
             ApplyResult::Res(ExecResult::PrepareMerge {
                 region,
                 state: merging_state,
@@ -2697,11 +2689,8 @@ where
 
         PEER_ADMIN_CMD_COUNTER.commit_merge.success.inc();
 
-        let mut response = AdminResponse::default();
-        response.mut_split().set_left(region.clone());
-
         Ok((
-            response,
+            AdminResponse::new(),
             ApplyResult::Res(ExecResult::CommitMerge {
                 index: ctx.exec_log_index,
                 region,
@@ -3795,14 +3784,7 @@ where
                 Msg::LogsUpToDate(cul) => self.logs_up_to_date_for_merge(apply_ctx, cul),
                 Msg::Noop => {}
                 Msg::Snapshot(snap_task) => {
-                    #[cfg(feature = "test-raftstore-proxy")]
-                    {
-                        return self.handle_snapshot(apply_ctx, snap_task);
-                    }
-                    #[cfg(not(feature = "test-raftstore-proxy"))]
-                    {
-                        unreachable!("should not request snapshot")
-                    }
+                    return self.handle_snapshot(apply_ctx, snap_task);
                 }
                 Msg::Change {
                     cmd,

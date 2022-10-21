@@ -154,24 +154,24 @@ pub fn setup_default_tikv_config(default: &mut TiKvConfig) {
 /// This function changes TiKV's config according to ProxyConfig.
 pub fn address_proxy_config(config: &mut TiKvConfig, proxy_config: &ProxyConfig) {
     // We must add engine label to our TiFlash config
-    pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
-    let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
-        None => {
-            fatal!("should set engine name with env variable `ENGINE_LABEL_VALUE`");
-        }
-        Some(name) => name.to_owned(),
-    };
-    config
-        .server
-        .labels
-        .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
-    config.raft_store.region_worker_tick_interval =
-        proxy_config.raft_store.region_worker_tick_interval;
-    let clean_stale_ranges_tick =
-        (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
-    config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
-    config.raft_store.apply_batch_system.low_priority_pool_size =
-        proxy_config.raft_store.apply_low_priority_pool_size;
+    // pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
+    // let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
+    //     None => {
+    //         fatal!("should set engine name with env variable `ENGINE_LABEL_VALUE`");
+    //     }
+    //     Some(name) => name.to_owned(),
+    // };
+    // config
+    //     .server
+    //     .labels
+    //     .insert(DEFAULT_ENGINE_LABEL_KEY.to_owned(), engine_name);
+    // config.raft_store.region_worker_tick_interval =
+    //     proxy_config.raft_store.region_worker_tick_interval;
+    // let clean_stale_ranges_tick =
+    //     (10_000 / config.raft_store.region_worker_tick_interval.as_millis()) as usize;
+    // config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
+    // config.raft_store.apply_batch_system.low_priority_pool_size =
+    //     proxy_config.raft_store.apply_low_priority_pool_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TiKvConfig, persist: bool) {
