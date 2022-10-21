@@ -27,7 +27,7 @@ use engine_rocks::{
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
     self, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine, ps_engine::PSEngine,
+    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, ps_engine::PSEngine, TiFlashEngine
 };
 use engine_traits::{
     CFOptionsExt, ColumnFamilyOptions, Engines, FlowControlFactorsExt, KvEngine, MiscExt,
@@ -78,6 +78,8 @@ use tikv::{
         ttl::TtlChecker,
         KvEngineFactoryBuilder, Node, RaftKv, Server, CPU_CORES_QUOTA_GAUGE, DEFAULT_CLUSTER_ID,
         GRPC_THREAD_PREFIX,
+        status_server::StatusServer,
+        lock_manager::LockManager,
     },
     storage::{
         self, config_manager::StorageConfigManger, txn::flow_controller::FlowController, Engine,
@@ -96,8 +98,8 @@ use tikv_util::{
 use tokio::runtime::Builder;
 
 use crate::{
-    config::ProxyConfig, fatal, hacked_lock_mgr::HackedLockManager as LockManager, setup::*,
-    status_server::StatusServer, util::ffi_server_info,
+    config::ProxyConfig, fatal, setup::*,
+    util::ffi_server_info,
 };
 
 #[inline]
@@ -403,11 +405,11 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
 
         // Create kv engine.
         let mut builder = KvEngineFactoryBuilder::<CER>::new(env, &self.config, &self.store_path)
-            // TODO(tiflash) check if we need a old version of RocksEngine, or if we need to upgrade
-            // .compaction_filter_router(self.router.clone())
-            .region_info_accessor(self.region_info_accessor.clone())
-            .sst_recovery_sender(self.init_sst_recovery_sender())
-            .flow_listener(flow_listener);
+        // TODO(tiflash) check if we need a old version of RocksEngine, or if we need to upgrade
+        // .compaction_filter_router(self.router.clone())
+        .region_info_accessor(self.region_info_accessor.clone())
+        .sst_recovery_sender(self.init_sst_recovery_sender())
+        .flow_listener(flow_listener);
         if let Some(cache) = block_cache {
             builder = builder.block_cache(cache);
         }
@@ -442,11 +444,10 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         engines
             .raft
             .register_config(cfg_controller, self.config.storage.block_cache.shared);
-
         let engines_info = Arc::new(EnginesResourceInfo::new(
             &engines, 180, /*max_samples_to_preserve*/
         ));
-
+        
         (engines, engines_info)
     }
 }
@@ -866,13 +867,13 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //     .engine
         //     .set_txn_extra_scheduler(Arc::new(txn_extra_scheduler));
 
-        // let lock_mgr = LockManager::new(&self.config.pessimistic_txn);
-        let lock_mgr = LockManager::new();
-        // cfg_controller.register(
-        //     tikv::config::Module::PessimisticTxn,
-        //     Box::new(lock_mgr.config_manager()),
-        // );
-        // lock_mgr.register_detector_role_change_observer(self.coprocessor_host.as_mut().unwrap());
+        let lock_mgr = LockManager::new(&self.config.pessimistic_txn);
+        // let lock_mgr = LockManager::new();
+        cfg_controller.register(
+            tikv::config::Module::PessimisticTxn,
+            Box::new(lock_mgr.config_manager()),
+        );
+        lock_mgr.register_detector_role_change_observer(self.coprocessor_host.as_mut().unwrap());
 
         let engines = self.engines.as_ref().unwrap();
 
@@ -1044,7 +1045,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //     }
         //     let causal_ts_provider = Arc::new(tso.unwrap());
         //     info!("Causal timestamp provider startup.");
-        //
+        
         //     let causal_ob = causal_ts::CausalObserver::new(causal_ts_provider);
         //     causal_ob.register_to(self.coprocessor_host.as_mut().unwrap());
         // }
@@ -1058,23 +1059,23 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //     Box::new(CdcConfigManager(cdc_worker.scheduler())),
         // );
 
-        // // Create resolved ts worker
-        // let rts_worker = if self.config.resolved_ts.enable {
-        //     let worker = Box::new(LazyWorker::new("resolved-ts"));
-        //     // Register the resolved ts observer
-        //     let resolved_ts_ob = resolved_ts::Observer::new(worker.scheduler());
-        //     resolved_ts_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-        //     // Register config manager for resolved ts worker
-        //     cfg_controller.register(
-        //         tikv::config::Module::ResolvedTs,
-        //         Box::new(resolved_ts::ResolvedTsConfigManager::new(
-        //             worker.scheduler(),
-        //         )),
-        //     );
-        //     Some(worker)
-        // } else {
-        //     None
-        // };
+        // Create resolved ts worker
+        let rts_worker = if self.config.resolved_ts.enable {
+            let worker = Box::new(LazyWorker::new("resolved-ts"));
+            // Register the resolved ts observer
+            let resolved_ts_ob = resolved_ts::Observer::new(worker.scheduler());
+            resolved_ts_ob.register_to(self.coprocessor_host.as_mut().unwrap());
+            // Register config manager for resolved ts worker
+            cfg_controller.register(
+                tikv::config::Module::ResolvedTs,
+                Box::new(resolved_ts::ResolvedTsConfigManager::new(
+                    worker.scheduler(),
+                )),
+            );
+            Some(worker)
+        } else {
+            None
+        };
 
         let server_config = Arc::new(VersionTrack::new(self.config.server.clone()));
 
@@ -1114,7 +1115,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             self.state.clone(),
             self.background_worker.clone(),
             Some(health_service.clone()),
-            Some(default_store),
+            None,
         );
         node.try_bootstrap_store(engines.engines.clone())
             .unwrap_or_else(|e| fatal!("failed to bootstrap node id: {}", e));
@@ -1147,13 +1148,13 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         }
         let importer = Arc::new(importer);
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
-            node.id(),
-            self.engines.as_ref().unwrap().engines.kv.clone(),
-            importer.clone(),
-            self.proxy_config.raft_store.snap_handle_pool_size,
-        );
-        tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
+        // let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+        //     node.id(),
+        //     self.engines.as_ref().unwrap().engines.kv.clone(),
+        //     importer.clone(),
+        //     self.proxy_config.raft_store.snap_handle_pool_size,
+        // );
+        // tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 
         let check_leader_runner = CheckLeaderRunner::new(
             engines.store_meta.clone(),
@@ -1518,9 +1519,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         let status_enabled = !self.config.server.status_addr.is_empty();
         if status_enabled {
             let mut status_server = match StatusServer::new(
-                engine_store_ffi::gen_engine_store_server_helper(
-                    self.engine_store_server_helper_ptr,
-                ),
                 self.config.server.status_thread_pool_size,
                 self.cfg_controller.take().unwrap(),
                 Arc::new(self.config.security.clone()),
