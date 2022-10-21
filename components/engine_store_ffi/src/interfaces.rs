@@ -136,6 +136,12 @@ pub mod root {
             pub inner: root::DB::RawCppPtr,
             pub view: root::DB::BaseBuffView,
         }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct CppStrWithViewVec {
+            pub inner: * const CppStrWithView,
+            pub len: u64,
+        }
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum HttpRequestStatus {
@@ -367,6 +373,63 @@ pub mod root {
                     arg4: u64,
                     arg5: u64,
                 ) -> u8,
+            >,
+            pub fn_create_write_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                ) -> root::DB::RawCppPtr,
+            >,
+            pub fn_write_batch_put_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: root::DB::BaseBuffView,
+                    arg3: root::DB::BaseBuffView,
+                ),
+            >,
+            pub fn_write_batch_del_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: root::DB::BaseBuffView,
+                ),
+            >,
+            pub fn_write_batch_size: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                ) -> u64,
+            >,
+            pub fn_write_batch_is_empty: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                ) -> u8,
+            >,
+            pub fn_write_batch_merge: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: root::DB::RawVoidPtr,
+                ),
+            >,
+            pub fn_write_batch_clear: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                ),
+            >,
+            pub fn_consume_write_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::RawVoidPtr,
+                ),
+            >,
+            pub fn_handle_read_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::BaseBuffView,
+                ) -> root::DB::CppStrWithView,
+            >,
+            pub fn_handle_scan_page: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::BaseBuffView,
+                    arg3: root::DB::BaseBuffView,
+                ) -> root::DB::CppStrWithViewVec,
             >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(

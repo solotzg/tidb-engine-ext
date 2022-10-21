@@ -27,7 +27,7 @@ use engine_rocks::{
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
     self, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
+    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine, ps_engine::PSEngine,
 };
 use engine_traits::{
     CFOptionsExt, ColumnFamilyOptions, Engines, FlowControlFactorsExt, KvEngine, MiscExt,
@@ -327,7 +327,7 @@ pub unsafe fn run_tikv_proxy(
                 engine_store_server_helper,
             )
         } else {
-            run_impl::<RaftLogEngine, API>(config, proxy_config, engine_store_server_helper)
+            run_impl::<PSEngine, API>(config, proxy_config, engine_store_server_helper)
         }
     })
 }
@@ -386,12 +386,20 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             .unwrap();
 
         // Create raft engine
-        let raft_engine = CER::build(
+        let mut raft_engine = CER::build(
             &self.config,
             &env,
             &self.encryption_key_manager,
             &block_cache,
         );
+        match raft_engine.as_ps_engine() {
+            None => {
+
+            }
+            Some(ps_engine) => {
+                ps_engine.init(engine_store_server_helper);
+            }
+        }
 
         // Create kv engine.
         let mut builder = KvEngineFactoryBuilder::<CER>::new(env, &self.config, &self.store_path)
@@ -1565,6 +1573,9 @@ pub trait ConfiguredRaftEngine: RaftEngine {
     fn as_rocks_engine(&self) -> Option<&RocksEngine> {
         None
     }
+    fn as_ps_engine(&mut self) -> Option<&mut PSEngine> {
+        None
+    }
     fn register_config(&self, _cfg_controller: &mut ConfigController, _share_cache: bool) {}
 }
 
@@ -1650,6 +1661,21 @@ impl ConfiguredRaftEngine for RaftLogEngine {
             raft_data_state_machine.after_dump_data();
         }
         raft_engine
+    }
+}
+
+impl ConfiguredRaftEngine for PSEngine {
+    fn build(
+        config: &TiKvConfig,
+        env: &Arc<Env>,
+        key_manager: &Option<Arc<DataKeyManager>>,
+        block_cache: &Option<Cache>,
+    ) -> Self {
+        PSEngine::new()
+    }
+
+    fn as_ps_engine(&mut self) -> Option<&mut PSEngine> {
+        Some(self)
     }
 }
 
