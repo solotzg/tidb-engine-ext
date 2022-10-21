@@ -128,8 +128,9 @@ impl engine_traits::WriteBatch for RocksWriteBatch {
     }
 
     fn should_write_to_engine(&self) -> bool {
-        // Always not write to engine for kv
-        false
+        // // Always not write to engine for kv
+        // false
+        self.count() > RocksEngine::WRITE_BATCH_MAX_KEYS
     }
 
     fn clear(&mut self) {
@@ -155,20 +156,21 @@ impl engine_traits::WriteBatch for RocksWriteBatch {
 }
 
 pub fn do_write(cf: &str, key: &[u8]) -> bool {
-    #[cfg(not(feature = "compat_old_proxy"))]
-    {
-        return match cf {
-            engine_traits::CF_RAFT => true,
-            engine_traits::CF_DEFAULT => {
-                key == keys::PREPARE_BOOTSTRAP_KEY || key == keys::STORE_IDENT_KEY
-            }
-            _ => false,
-        };
-    }
-    #[cfg(feature = "compat_old_proxy")]
-    {
-        return true;
-    }
+    // #[cfg(not(feature = "compat_old_proxy"))]
+    // {
+    //     return match cf {
+    //         engine_traits::CF_RAFT => true,
+    //         engine_traits::CF_DEFAULT => {
+    //             key == keys::PREPARE_BOOTSTRAP_KEY || key == keys::STORE_IDENT_KEY
+    //         }
+    //         _ => false,
+    //     };
+    // }
+    // #[cfg(feature = "compat_old_proxy")]
+    // {
+    //     return true;
+    // }
+    return true;
 }
 
 impl RocksWriteBatch {
@@ -208,14 +210,17 @@ impl Mutable for RocksWriteBatch {
         Ok(())
     }
 
-    fn delete_range(&mut self, _begin_key: &[u8], _end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
+    fn delete_range(&mut self, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
+        self.wb
+            .delete_range(begin_key, end_key)
+            .map_err(Error::Engine)
     }
 
-    fn delete_range_cf(&mut self, _cf: &str, _begin_key: &[u8], _end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
+    fn delete_range_cf(&mut self, cf: &str, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
+        let handle = get_cf_handle(self.db.as_ref(), cf)?;
+        self.wb
+            .delete_range_cf(handle, begin_key, end_key)
+            .map_err(Error::Engine)
     }
 }
 

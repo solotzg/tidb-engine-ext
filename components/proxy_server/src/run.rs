@@ -27,7 +27,7 @@ use engine_rocks::{
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
     self, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine, ps_engine::PSEngine,
+    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, ps_engine::PSEngine, TiFlashEngine
 };
 use engine_traits::{
     CFOptionsExt, ColumnFamilyOptions, Engines, FlowControlFactorsExt, KvEngine, MiscExt,
@@ -404,11 +404,12 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         }
 
         // Create kv engine.
-        let mut builder = KvEngineFactoryBuilder::new(env, &self.config, &self.store_path)
-            .compaction_filter_router(self.router.clone())
-            .region_info_accessor(self.region_info_accessor.clone())
-            .sst_recovery_sender(self.init_sst_recovery_sender())
-            .flow_listener(flow_listener);
+        let mut builder = KvEngineFactoryBuilder::<CER>::new(env, &self.config, &self.store_path)
+        // TODO(tiflash) check if we need a old version of RocksEngine, or if we need to upgrade
+        // .compaction_filter_router(self.router.clone())
+        .region_info_accessor(self.region_info_accessor.clone())
+        .sst_recovery_sender(self.init_sst_recovery_sender())
+        .flow_listener(flow_listener);
         if let Some(cache) = block_cache {
             builder = builder.block_cache(cache);
         }
@@ -416,13 +417,26 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         let kv_engine = factory
             .create_tablet()
             .unwrap_or_else(|s| fatal!("failed to create kv engine: {}", s));
+
+        let helper = engine_store_ffi::gen_engine_store_server_helper(engine_store_server_helper);
+        let ffi_hub = Arc::new(engine_store_ffi::observer::TiFlashFFIHub {
+            engine_store_server_helper: helper,
+        });
+        // engine_tiflash::RocksEngine has engine_rocks::RocksEngine inside
+        let mut kv_engine = TiFlashEngine::from_rocks(kv_engine);
+        kv_engine.init(
+            engine_store_server_helper,
+            self.proxy_config.raft_store.snap_handle_pool_size,
+            Some(ffi_hub),
+        );
+
         let engines = Engines::new(kv_engine, raft_engine);
 
         let cfg_controller = self.cfg_controller.as_mut().unwrap();
         cfg_controller.register(
             tikv::config::Module::Rocksdb,
             Box::new(DBConfigManger::new(
-                engines.kv.clone(),
+                engines.kv.rocks.clone(),
                 DBType::Kv,
                 self.config.storage.block_cache.shared,
             )),
@@ -430,11 +444,10 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         engines
             .raft
             .register_config(cfg_controller, self.config.storage.block_cache.shared);
-
         let engines_info = Arc::new(EnginesResourceInfo::new(
             &engines, 180, /*max_samples_to_preserve*/
         ));
-
+        
         (engines, engines_info)
     }
 }
@@ -1020,22 +1033,22 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             );
         }
 
-        // Register causal observer for RawKV API V2
-        if let ApiVersion::V2 = F::TAG {
-            let tso = block_on(causal_ts::BatchTsoProvider::new_opt(
-                self.pd_client.clone(),
-                self.config.causal_ts.renew_interval.0,
-                self.config.causal_ts.renew_batch_min_size,
-            ));
-            if let Err(e) = tso {
-                panic!("Causal timestamp provider initialize failed: {:?}", e);
-            }
-            let causal_ts_provider = Arc::new(tso.unwrap());
-            info!("Causal timestamp provider startup.");
+        // // Register causal observer for RawKV API V2
+        // if let ApiVersion::V2 = F::TAG {
+        //     let tso = block_on(causal_ts::BatchTsoProvider::new_opt(
+        //         self.pd_client.clone(),
+        //         self.config.causal_ts.renew_interval.0,
+        //         self.config.causal_ts.renew_batch_min_size,
+        //     ));
+        //     if let Err(e) = tso {
+        //         panic!("Causal timestamp provider initialize failed: {:?}", e);
+        //     }
+        //     let causal_ts_provider = Arc::new(tso.unwrap());
+        //     info!("Causal timestamp provider startup.");
         
-            let causal_ob = causal_ts::CausalObserver::new(causal_ts_provider);
-            causal_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-        }
+        //     let causal_ob = causal_ts::CausalObserver::new(causal_ts_provider);
+        //     causal_ob.register_to(self.coprocessor_host.as_mut().unwrap());
+        // }
 
         // // Register cdc.
         // let cdc_ob = cdc::CdcObserver::new(cdc_scheduler.clone());
