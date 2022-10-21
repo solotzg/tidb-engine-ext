@@ -1433,14 +1433,6 @@ impl RaftDataStateMachine {
                 self.target.display()
             ));
         }
-        let exists = Self::data_exists(&self.source) || Self::data_exists(&self.target);
-        if exists != should_exist {
-            if should_exist {
-                return Err("Cannot find raft data set.".to_owned());
-            } else {
-                return Err("Found raft data set when it should not exist.".to_owned());
-            }
-        }
         Ok(())
     }
 
