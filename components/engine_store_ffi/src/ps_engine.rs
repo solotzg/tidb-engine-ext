@@ -394,6 +394,8 @@ impl RaftEngine for PSEngine {
     }
 
     fn purge_expired_files(&self) -> Result<Vec<u64>> {
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.purge_pagestorage();
         Ok(vec![])
     }
 
