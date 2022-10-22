@@ -1098,6 +1098,17 @@ impl EngineStoreServerHelper {
         }
     }
 
+    pub fn purge_pagestorage(
+        &self,
+    ) {
+        debug_assert!(self.fn_handle_scan_page.is_some());
+        unsafe {
+            (self.fn_handle_purge_pagestorage.into_inner())(
+                self.inner,
+            )
+        }
+    }
+
     pub fn pre_handle_snapshot(
         &self,
         region: &metapb::Region,
