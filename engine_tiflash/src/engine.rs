@@ -160,19 +160,7 @@ impl KvEngine for RocksEngine {
     //    We need to compare to what's in queue.
 
     fn can_apply_snapshot(&self, is_timeout: bool, new_batch: bool, _region_id: u64) -> bool {
-        // is called after calling observer's pre_handle_snapshot
-        let in_queue = self.pending_applies_count.load(Ordering::SeqCst);
-        // if queue is full, we should begin to handle
-        let can = if is_timeout && new_batch {
-            true
-        } else {
-            in_queue > self.pool_capacity
-        };
-        fail::fail_point!("on_can_apply_snapshot", |e| e
-            .unwrap()
-            .parse::<bool>()
-            .unwrap());
-        can
+        true
     }
 }
 
@@ -257,13 +245,17 @@ impl SyncMutable for RocksEngine {
     }
 
     fn delete_range(&self, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
+        return self.rocks.get_sync_db().delete_range(begin_key, end_key).map_err(Error::Engine);
     }
 
     fn delete_range_cf(&self, cf: &str, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
+        let db = self.rocks.get_sync_db();
+        let handle = get_cf_handle(&db, cf)?;
+        return self
+            .rocks
+            .get_sync_db()
+            .delete_range_cf(handle, begin_key, end_key)
+            .map_err(Error::Engine);
     }
 }
 
