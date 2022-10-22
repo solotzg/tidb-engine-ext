@@ -205,6 +205,7 @@ struct EngineStoreServerHelper {
     void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
     CppStrWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
     CppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
+    void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);

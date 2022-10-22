@@ -140,7 +140,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
 
     fn is_empty(&self) -> bool {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        helper.write_batch_is_empty(self.raw_write_batch.ptr) == 0
+        helper.write_batch_is_empty(self.raw_write_batch.ptr) != 0
     }
 
     fn merge(&mut self, src: Self) -> Result<()> {
@@ -394,6 +394,8 @@ impl RaftEngine for PSEngine {
     }
 
     fn purge_expired_files(&self) -> Result<Vec<u64>> {
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.purge_pagestorage();
         Ok(vec![])
     }
 

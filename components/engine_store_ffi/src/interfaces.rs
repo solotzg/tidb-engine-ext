@@ -431,6 +431,11 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::CppStrWithViewVec,
             >,
+            pub fn_handle_purge_pagestorage: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                ),
+            >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
