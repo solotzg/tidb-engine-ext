@@ -138,6 +138,18 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
+        pub struct PageWithView {
+            pub inner: root::DB::RawCppPtr,
+            pub view: root::DB::BaseBuffView,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct PageWithViewVec {
+            pub inner: * mut PageWithView,
+            pub len: u64,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
         pub struct CppStrWithViewVec {
             pub inner: * const CppStrWithView,
             pub len: u64,
@@ -422,14 +434,20 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::BaseBuffView,
-                ) -> root::DB::CppStrWithView,
+                ) -> root::DB::PageWithView,
             >,
             pub fn_handle_scan_page: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::BaseBuffView,
                     arg3: root::DB::BaseBuffView,
-                ) -> root::DB::CppStrWithViewVec,
+                ) -> root::DB::PageWithViewVec,
+            >,
+            pub fn_gc_page_with_view_vec: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: * mut PageWithView,
+                    arg2: u64,
+                ),
             >,
             pub fn_handle_purge_pagestorage: ::std::option::Option<
                 unsafe extern "C" fn(

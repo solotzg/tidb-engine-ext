@@ -86,8 +86,13 @@ struct CppStrWithView {
   BaseBuffView view;
 };
 
-struct CppStrWithViewVec {
-    const CppStrWithView * inner;
+struct PageWithView {
+  RawCppPtr inner;
+  BaseBuffView view;
+};
+
+struct PageWithViewVec {
+    PageWithView * inner;
     const uint64_t len;
 };
 
@@ -203,10 +208,11 @@ struct EngineStoreServerHelper {
     void (*fn_write_batch_merge)(RawVoidPtr, RawVoidPtr);
     void (*fn_write_batch_clear)(RawVoidPtr);
     void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
-    CppStrWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
-    CppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
+    PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
+    PageWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
+    void (*fn_gc_page_with_view_vec)(PageWithView * inner, uint64_t len);
     void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
-  void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
+    void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
   EngineStoreApplyRes (*fn_handle_ingest_sst)(EngineStoreServerWrap *,
