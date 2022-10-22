@@ -38,7 +38,7 @@ pub use self::interfaces::root::DB::{
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, CppStrWithView,
-    CppStrWithViewVec, SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
+    CppStrWithViewVec, PageWithView, PageWithViewVec, SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
     RAFT_STORE_PROXY_VERSION,
 };
 use crate::lock_cf_reader::LockCFFileReader;
@@ -827,6 +827,17 @@ impl Drop for RawCppPtr {
     }
 }
 
+impl Drop for PageWithViewVec {
+    fn drop(&mut self) {
+        if self.inner != std::ptr::null_mut() {
+            let helper = get_engine_store_server_helper();
+            helper.gc_page_with_view_vec(self.inner, self.len);
+            self.inner = std::ptr::null_mut();
+            self.len = 0;
+        }
+    }
+}
+
 static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
 pub fn get_engine_store_server_helper_ptr() -> isize {
@@ -1073,7 +1084,7 @@ impl EngineStoreServerHelper {
     pub fn read_page(
         &self,
         page_id: BaseBuffView,
-    ) -> CppStrWithView {
+    ) -> PageWithView {
         debug_assert!(self.fn_handle_read_page.is_some());
         unsafe {
             (self.fn_handle_read_page.into_inner())(
@@ -1087,13 +1098,27 @@ impl EngineStoreServerHelper {
         &self,
         start_page_id: BaseBuffView,
         end_page_id: BaseBuffView,
-    ) -> CppStrWithViewVec {
+    ) -> PageWithViewVec {
         debug_assert!(self.fn_handle_scan_page.is_some());
         unsafe {
             (self.fn_handle_scan_page.into_inner())(
                 self.inner,
                 start_page_id,
                 end_page_id,
+            )
+        }
+    }
+
+    pub fn gc_page_with_view_vec(
+        &self,
+        arg1: * mut PageWithView,
+        arg2: u64,
+    ) {
+        debug_assert!(self.fn_gc_page_with_view_vec.is_some());
+        unsafe {
+            (self.fn_gc_page_with_view_vec.into_inner())(
+                arg1,
+                arg2,
             )
         }
     }

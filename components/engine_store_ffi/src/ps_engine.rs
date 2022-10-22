@@ -13,6 +13,8 @@ use std::{
     ops::Deref,
 };
 
+use tikv_util::info;
+
 use engine_traits::{
     RaftEngine, RaftEngineDebug, RaftEngineReadOnly, RaftLogBatch, RaftLogGCTask, Result,
 };
