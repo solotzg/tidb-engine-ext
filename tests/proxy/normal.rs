@@ -223,6 +223,7 @@ mod region {
 }
 
 mod config {
+    use futures::io::Read;
     use proxy_server::{proxy::gen_proxy_config, setup::overwrite_config_with_cmd_args};
     use tikv::server::DEFAULT_LISTENING_ADDR;
 
@@ -395,6 +396,7 @@ mod config {
             config.rocksdb.lockcf.block_cache_size,
             memory_limit_for_cf(false, CF_LOCK, total_mem)
         );
+        assert_eq!(config.storage.reserve_space, ReadableSize::gb(1));
     }
 
     #[test]

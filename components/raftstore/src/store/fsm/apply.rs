@@ -1139,7 +1139,7 @@ where
             {
                 // TODO(tiflash) may write apply state twice here.
                 // Originally use only `commit_opt`.
-                apply_ctx.commit_opt(self);
+                apply_ctx.commit_opt(self, true);
                 if let Some(start) = self.handle_start.as_ref() {
                     if start.saturating_elapsed() >= apply_ctx.yield_duration {
                         return ApplyResult::Yield;
