@@ -431,19 +431,17 @@ impl QueryObserver for TiFlashObserver {
         let requests = cmd.request.get_requests();
         let response = &cmd.response;
         if response.get_header().has_error() {
-            match esponse.get_header().get_error() {
-                Error::FlashbackInProgress(..) => {
-                    debug!(
-                        "error occurs when apply_write_cmd, {:?}",
-                        response.get_header().get_error()
-                    );
-                }
-                _ => {
-                    info!(
-                        "error occurs when apply_write_cmd, {:?}",
-                        response.get_header().get_error()
-                    );
-                }
+            let proto_err = response.get_header().get_error();
+            if proto_err.has_flashback_in_progress() {
+                debug!(
+                    "error occurs when apply_write_cmd, {:?}",
+                    response.get_header().get_error()
+                );
+            } else {
+                info!(
+                    "error occurs when apply_write_cmd, {:?}",
+                    response.get_header().get_error()
+                );
             }
             return self.handle_error_apply(ob_ctx, cmd, region_state);
         }
