@@ -1134,7 +1134,7 @@ where
             if apply_ctx.yield_high_latency_operation && has_high_latency_operation(&cmd) {
                 self.priority = Priority::Low;
                 if apply_ctx.priority != Priority::Low {
-                    apply_ctx.commit_opt(self, true);
+                    apply_ctx.commit(self);
                     return ApplyResult::Yield;
                 }
             }
@@ -1146,7 +1146,7 @@ where
             {
                 // TODO(tiflash) may write apply state twice here.
                 // Originally use only `commit_opt`.
-                apply_ctx.commit_opt(self, true);
+                apply_ctx.commit(self);
                 if let Some(start) = self.handle_start.as_ref() {
                     if start.saturating_elapsed() >= apply_ctx.yield_duration {
                         return ApplyResult::Yield;
