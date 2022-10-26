@@ -85,26 +85,6 @@ impl Default for StorageConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
-#[serde(default)]
-#[serde(rename_all = "kebab-case")]
-pub struct ProxyConfig {
-    #[online_config(submodule)]
-    pub server: ServerConfig,
-
-    #[online_config(submodule)]
-    #[serde(rename = "raftstore")]
-    pub raft_store: RaftstoreConfig,
-
-    #[online_config(submodule)]
-    pub rocksdb: RocksDbConfig,
-    #[online_config(submodule)]
-    pub raftdb: RaftDbConfig,
-
-    #[online_config(submodule)]
-    pub storage: StorageConfig,
-}
-
 pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
     "127.0.0.1:20206"
 } else {
@@ -200,6 +180,31 @@ impl Default for RocksDbConfig {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ProxyConfig {
+    #[online_config(submodule)]
+    pub server: ServerConfig,
+
+    #[online_config(submodule)]
+    #[serde(rename = "raftstore")]
+    pub raft_store: RaftstoreConfig,
+
+    #[online_config(submodule)]
+    pub rocksdb: RocksDbConfig,
+    #[online_config(submodule)]
+    pub raftdb: RaftDbConfig,
+
+    #[online_config(submodule)]
+    pub storage: StorageConfig,
+
+    #[doc(hidden)]
+    #[serde(skip_serializing)]
+    #[online_config(skip)]
+    pub enable_io_snoop: bool,
+}
+
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
@@ -208,6 +213,7 @@ impl Default for ProxyConfig {
             rocksdb: RocksDbConfig::default(),
             raftdb: RaftDbConfig::default(),
             storage: StorageConfig::default(),
+            enable_io_snoop: false,
         }
     }
 }
@@ -303,6 +309,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.rocksdb.lockcf.block_cache_size = proxy_config.rocksdb.lockcf.block_cache_size;
 
     config.storage.reserve_space = proxy_config.storage.reserve_space;
+    config.enable_io_snoop = proxy_config.enable_io_snoop;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
