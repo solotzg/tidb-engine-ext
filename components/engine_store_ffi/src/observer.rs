@@ -258,6 +258,7 @@ impl AdminObserver for TiFlashObserver {
                 if !self.engine_store_server_helper.try_flush_data(
                     ob_ctx.region().get_id(),
                     false,
+                    false,
                     index,
                     term,
                 ) {
