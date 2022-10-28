@@ -331,7 +331,7 @@ mod config {
         assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
         assert_eq!(
             config.server.advertise_status_addr,
-            TIFLASH_DEFAULT_STATUS_ADDR
+            TIFLASH_DEFAULT_LISTENING_ADDR
         );
         assert_eq!(
             config.raft_store.region_worker_tick_interval.as_millis(),
@@ -371,7 +371,7 @@ mod config {
         assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
         assert_eq!(
             config.server.advertise_status_addr,
-            TIFLASH_DEFAULT_STATUS_ADDR
+            TIFLASH_DEFAULT_LISTENING_ADDR
         );
         assert_eq!(
             config.raft_store.region_worker_tick_interval.as_millis(),
