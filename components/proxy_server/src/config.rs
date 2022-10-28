@@ -55,6 +55,10 @@ pub struct ServerConfig {
     pub engine_addr: String,
     pub engine_store_version: String,
     pub engine_store_git_hash: String,
+    pub addr: String,
+    pub status_addr: String,
+    pub advertise_status_addr: String,
+    pub advertise_addr: String,
 }
 
 impl Default for ServerConfig {
@@ -63,6 +67,10 @@ impl Default for ServerConfig {
             engine_addr: DEFAULT_ENGINE_ADDR.to_string(),
             engine_store_version: String::default(),
             engine_store_git_hash: String::default(),
+            addr: TIFLASH_DEFAULT_LISTENING_ADDR.to_string(),
+            status_addr: TIFLASH_DEFAULT_STATUS_ADDR.to_string(),
+            advertise_status_addr: TIFLASH_DEFAULT_STATUS_ADDR.to_string(),
+            advertise_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
         }
     }
 }
@@ -70,18 +78,19 @@ impl Default for ServerConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
-pub struct ProxyConfig {
-    #[online_config(submodule)]
-    pub server: ServerConfig,
+pub struct StorageConfig {
+    #[online_config(skip)]
+    // Reserve disk space to make tikv would have enough space to compact when disk is full.
+    pub reserve_space: ReadableSize,
+}
 
-    #[online_config(submodule)]
-    #[serde(rename = "raftstore")]
-    pub raft_store: RaftstoreConfig,
-
-    #[online_config(submodule)]
-    pub rocksdb: RocksDbConfig,
-    #[online_config(submodule)]
-    pub raftdb: RaftDbConfig,
+impl Default for StorageConfig {
+    fn default() -> StorageConfig {
+        let _cpu_num = SysQuota::cpu_cores_quota();
+        StorageConfig {
+            reserve_space: ReadableSize::gb(1), // No longer use DEFAULT_RESERVED_SPACE_GB
+        }
+    }
 }
 
 pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
@@ -179,6 +188,58 @@ impl Default for RocksDbConfig {
     }
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Debug, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct UnifiedReadPoolConfig {
+    pub max_thread_count: usize,
+}
+
+pub const TIFLASH_UNIFIED_READPOOL_MIN_CONCURRENCY: usize = 4;
+impl Default for UnifiedReadPoolConfig {
+    fn default() -> UnifiedReadPoolConfig {
+        Self {
+            max_thread_count: TIFLASH_UNIFIED_READPOOL_MIN_CONCURRENCY,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Debug, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ReadPoolConfig {
+    #[online_config(submodule)]
+    pub unified: UnifiedReadPoolConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ProxyConfig {
+    #[online_config(submodule)]
+    pub server: ServerConfig,
+
+    #[online_config(submodule)]
+    #[serde(rename = "raftstore")]
+    pub raft_store: RaftstoreConfig,
+
+    #[online_config(submodule)]
+    pub rocksdb: RocksDbConfig,
+    #[online_config(submodule)]
+    pub raftdb: RaftDbConfig,
+
+    #[online_config(submodule)]
+    pub storage: StorageConfig,
+
+    #[doc(hidden)]
+    #[serde(skip_serializing)]
+    #[online_config(skip)]
+    pub enable_io_snoop: bool,
+
+    #[online_config(submodule)]
+    pub readpool: ReadPoolConfig,
+}
+
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
@@ -186,6 +247,9 @@ impl Default for ProxyConfig {
             server: ServerConfig::default(),
             rocksdb: RocksDbConfig::default(),
             raftdb: RaftDbConfig::default(),
+            storage: StorageConfig::default(),
+            enable_io_snoop: false,
+            readpool: ReadPoolConfig::default(),
         }
     }
 }
@@ -239,6 +303,8 @@ pub fn ensure_no_common_unrecognized_keys(
 // Not the same as TiKV
 pub const TIFLASH_DEFAULT_LISTENING_ADDR: &str = "127.0.0.1:20170";
 pub const TIFLASH_DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20292";
+// Same as TiKV
+pub const TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR: &str = "";
 
 pub fn make_tikv_config() -> TikvConfig {
     let mut default = TikvConfig::default();
@@ -247,8 +313,9 @@ pub fn make_tikv_config() -> TikvConfig {
 }
 
 pub fn setup_default_tikv_config(default: &mut TikvConfig) {
-    // Compat test.
+    // Compat CI test. If there is no config file given, we will use this default.
     default.server.addr = TIFLASH_DEFAULT_LISTENING_ADDR.to_string();
+    default.server.advertise_addr = TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string();
     default.server.status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     default.server.advertise_status_addr = TIFLASH_DEFAULT_STATUS_ADDR.to_string();
     // Do not add here, try use `address_proxy_config`.
@@ -256,6 +323,13 @@ pub fn setup_default_tikv_config(default: &mut TikvConfig) {
 
 /// This function changes TiKV's config according to ProxyConfig.
 pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig) {
+    // We must add engine label to our TiFlash config
+    {
+        let cpu_num = SysQuota::cpu_cores_quota();
+        let total_mem = SysQuota::memory_limit_in_bytes();
+        info!("quota: cpu {} mem in bytes {}", cpu_num, total_mem);
+    }
+
     // If label is not setup in run_proxy(), we use 'ENGINE_LABEL_VALUE'.
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     config
@@ -279,6 +353,18 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.rocksdb.defaultcf.block_cache_size = proxy_config.rocksdb.defaultcf.block_cache_size;
     config.rocksdb.writecf.block_cache_size = proxy_config.rocksdb.writecf.block_cache_size;
     config.rocksdb.lockcf.block_cache_size = proxy_config.rocksdb.lockcf.block_cache_size;
+
+    config.storage.reserve_space = proxy_config.storage.reserve_space;
+
+    config.enable_io_snoop = proxy_config.enable_io_snoop;
+    config.server.addr = proxy_config.server.addr.clone();
+    config.server.advertise_addr = proxy_config.server.advertise_addr.clone();
+    config.server.status_addr = proxy_config.server.status_addr.clone();
+    config.server.advertise_status_addr = proxy_config.server.advertise_status_addr.clone();
+
+    // TiKV now pose a quota limitation on unified_readpool.
+    // However, we still want to limit max_thread_count.
+    config.readpool.unified.max_thread_count = proxy_config.readpool.unified.max_thread_count;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {

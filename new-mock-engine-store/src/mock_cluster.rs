@@ -29,6 +29,7 @@ use kvproto::{
 use pd_client::PdClient;
 pub use proxy_server::config::ProxyConfig;
 use raftstore::{
+    router::RaftStoreRouter,
     store::{
         bootstrap_store,
         fsm::{
@@ -49,8 +50,8 @@ pub use test_pd_client::TestPdClient;
 use test_raftstore::FilterFactory;
 pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,
-    new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
-    new_transfer_leader_cmd, sleep_ms,
+    new_put_cmd, new_region_leader_cmd, new_request, new_status_request, new_store,
+    new_tikv_config, new_transfer_leader_cmd, sleep_ms,
 };
 use tikv::{config::TikvConfig, server::Result as ServerResult, storage::mvcc::TimeStamp};
 use tikv_util::{
@@ -60,6 +61,8 @@ use tikv_util::{
     time::{Instant, ThreadReadId},
     warn, HandyRwLock,
 };
+use tokio::sync::oneshot;
+use txn_types::WriteBatchFlags;
 
 pub use crate::config::Config;
 use crate::{
@@ -118,8 +121,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         pd_client: Arc<TestPdClient>,
         proxy_cfg: ProxyConfig,
     ) -> Cluster<T> {
-        // Force sync to enable Leader run as a Leader, rather than proxy
         test_util::init_log_for_test();
+        // Force sync to enable Leader run as a Leader, rather than proxy
         fail::cfg("apply_on_handle_snapshot_sync", "return").unwrap();
 
         Cluster {
@@ -497,7 +500,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             }
         }
         let ret = if is_read {
-            self.sim.rl().read(None, request.clone(), timeout)
+            self.sim.wl().read(None, request.clone(), timeout)
         } else {
             self.sim.rl().call_command(request.clone(), timeout)
         };
@@ -1131,6 +1134,51 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         let router = self.sim.rl().get_router(node_id).unwrap();
         StoreRouter::send(&router, StoreMsg::Tick(StoreTick::PdStoreHeartbeat)).unwrap();
     }
+
+    pub async fn send_flashback_msg(
+        &mut self,
+        region_id: u64,
+        store_id: u64,
+        cmd_type: AdminCmdType,
+        epoch: metapb::RegionEpoch,
+        peer: metapb::Peer,
+    ) {
+        let (result_tx, result_rx) = oneshot::channel();
+        let cb = Callback::write(Box::new(move |resp| {
+            if resp.response.get_header().has_error() {
+                result_tx.send(false).unwrap();
+                error!("send flashback msg failed"; "region_id" => region_id);
+                return;
+            }
+            result_tx.send(true).unwrap();
+        }));
+
+        let mut admin = AdminRequest::default();
+        admin.set_cmd_type(cmd_type);
+        let mut req = RaftCmdRequest::default();
+        req.mut_header().set_region_id(region_id);
+        req.mut_header().set_region_epoch(epoch);
+        req.mut_header().set_peer(peer);
+        req.set_admin_request(admin);
+        req.mut_header()
+            .set_flags(WriteBatchFlags::FLASHBACK.bits());
+
+        let router = self.sim.rl().get_router(store_id).unwrap();
+        if let Err(e) = router.send_command(
+            req,
+            cb,
+            RaftCmdExtraOpts {
+                deadline: None,
+                disk_full_opt: kvproto::kvrpcpb::DiskFullOpt::AllowedOnAlmostFull,
+            },
+        ) {
+            panic!("router send failed, error{}", e);
+        }
+
+        if !result_rx.await.unwrap() {
+            panic!("Flashback call msg failed");
+        }
+    }
 }
 
 // We simulate 3 or 5 nodes, each has a store.
@@ -1186,7 +1234,7 @@ pub trait Simulator<EK: KvEngine> {
     }
 
     fn read(
-        &self,
+        &mut self,
         batch_id: Option<ThreadReadId>,
         request: RaftCmdRequest,
         timeout: Duration,
@@ -1199,7 +1247,7 @@ pub trait Simulator<EK: KvEngine> {
     }
 
     fn async_read(
-        &self,
+        &mut self,
         node_id: u64,
         batch_id: Option<ThreadReadId>,
         request: RaftCmdRequest,

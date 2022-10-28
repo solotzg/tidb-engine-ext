@@ -4,7 +4,7 @@ use std::{
     ops::DerefMut,
     path::PathBuf,
     str::FromStr,
-    sync::{atomic::Ordering, mpsc, Arc, Mutex},
+    sync::{atomic::Ordering, mpsc, Arc, Mutex, RwLock},
 };
 
 use collections::HashMap;
@@ -97,6 +97,7 @@ pub struct TiFlashObserver {
     pub pre_handle_snapshot_ctx: Arc<Mutex<PrehandleContext>>,
     pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
+    pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
 }
 
 impl Clone for TiFlashObserver {
@@ -109,6 +110,7 @@ impl Clone for TiFlashObserver {
             pre_handle_snapshot_ctx: self.pre_handle_snapshot_ctx.clone(),
             snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
+            pending_delete_ssts: self.pending_delete_ssts.clone(),
         }
     }
 }
@@ -138,6 +140,7 @@ impl TiFlashObserver {
             pre_handle_snapshot_ctx: Arc::new(Mutex::new(PrehandleContext::default())),
             snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
+            pending_delete_ssts: Arc::new(RwLock::new(vec![])),
         }
     }
 
@@ -255,6 +258,7 @@ impl AdminObserver for TiFlashObserver {
                 if !self.engine_store_server_helper.try_flush_data(
                     ob_ctx.region().get_id(),
                     false,
+                    false,
                     index,
                     term,
                 ) {
@@ -301,7 +305,7 @@ impl AdminObserver for TiFlashObserver {
 
         if response.get_header().has_error() {
             info!(
-                "error occurs when apply_raft_cmd, {:?}",
+                "error occurs when apply_admin_cmd, {:?}",
                 response.get_header().get_error()
             );
             return self.handle_error_apply(ob_ctx, cmd, region_state);
@@ -431,10 +435,18 @@ impl QueryObserver for TiFlashObserver {
         let requests = cmd.request.get_requests();
         let response = &cmd.response;
         if response.get_header().has_error() {
-            info!(
-                "error occurs when apply_raft_cmd, {:?}",
-                response.get_header().get_error()
-            );
+            let proto_err = response.get_header().get_error();
+            if proto_err.has_flashback_in_progress() {
+                debug!(
+                    "error occurs when apply_write_cmd, {:?}",
+                    response.get_header().get_error()
+                );
+            } else {
+                info!(
+                    "error occurs when apply_write_cmd, {:?}",
+                    response.get_header().get_error()
+                );
+            }
             return self.handle_error_apply(ob_ctx, cmd, region_state);
         }
 
@@ -480,12 +492,26 @@ impl QueryObserver for TiFlashObserver {
                     // Before, BR/Lightning may let ingest sst cmd contain only one cf,
                     // which may cause that TiFlash can not flush all region cache into column.
                     // so we have a optimization proxy@cee1f003.
-                    // The optimization is to introduce a `pending_clean_ssts`,
+                    // The optimization is to introduce a `pending_delete_ssts`,
                     // which holds ssts from being cleaned(by adding into `delete_ssts`),
                     // when engine-store returns None.
                     // Though this is fixed by br#1150 & tikv#10202, we still have to handle None,
                     // since TiKV's compaction filter can also cause mismatch between default and
                     // write. According to tiflash#1811.
+                    // Since returning None will cause no persistence of advanced apply index,
+                    // So in a recovery, we can replay ingestion in `pending_delete_ssts`,
+                    // thus leaving no un-tracked sst files.
+
+                    // We must hereby move all ssts to `pending_delete_ssts` for protection.
+                    let pending_count = match apply_ctx_info.pending_handle_ssts {
+                        None => (), // No ssts to handle, unlikely.
+                        Some(v) => {
+                            self.pending_delete_ssts
+                                .write()
+                                .expect("lock error")
+                                .append(v);
+                        }
+                    };
                     info!(
                         "skip persist for ingest sst";
                         "region_id" => ob_ctx.region().get_id(),
@@ -493,15 +519,8 @@ impl QueryObserver for TiFlashObserver {
                         "term" => cmd.term,
                         "index" => cmd.index,
                         "ssts_to_clean" => ?ssts,
-                        "sst cf" => ssts.len(),
+                        "pending_count" => pending_count,
                     );
-                    // We must hereby move all ssts to `pending_delete_ssts` for protection.
-                    match apply_ctx_info.pending_handle_ssts {
-                        None => (),
-                        Some(v) => {
-                            apply_ctx_info.pending_delete_ssts.append(v);
-                        }
-                    }
                     false
                 }
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
@@ -512,13 +531,14 @@ impl QueryObserver for TiFlashObserver {
                         "term" => cmd.term,
                         "index" => cmd.index,
                         "ssts_to_clean" => ?ssts,
-                        "sst cf" => ssts.len(),
                     );
                     match apply_ctx_info.pending_handle_ssts {
                         None => (),
                         Some(v) => {
-                            let mut sst_in_region: Vec<SstMetaInfo> = apply_ctx_info
+                            let mut sst_in_region: Vec<SstMetaInfo> = self
                                 .pending_delete_ssts
+                                .write()
+                                .expect("lock error")
                                 .drain_filter(|e| {
                                     e.meta.get_region_id() == ob_ctx.region().get_id()
                                 })
@@ -587,8 +607,7 @@ impl RegionChangeObserver for TiFlashObserver {
         cmd: Option<&RaftCmdRequest>,
     ) -> bool {
         let should_persist = if is_finished {
-            fail::fail_point!("on_pre_persist_with_finish", |_| { true });
-            false
+            true
         } else {
             let cmd = cmd.unwrap();
             if cmd.has_admin_request() {
@@ -616,6 +635,11 @@ impl RegionChangeObserver for TiFlashObserver {
             );
         };
         should_persist
+    }
+
+    fn pre_write_apply_state(&self, ob_ctx: &mut ObserverContext<'_>) -> bool {
+        fail::fail_point!("on_pre_persist_with_finish", |_| { true });
+        false
     }
 }
 
@@ -649,13 +673,19 @@ fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)
         }
         // We have only one file for each cf for now.
         let mut full_paths = cf_file.file_paths();
-        if full_paths.len() != 1 {
-            tikv_util::warn!("observe multi-file snapshot";
-                "snap" => ?snap
-            );
-        }
         assert!(full_paths.len() != 0);
-        {
+        if full_paths.len() != 1 {
+            // Multi sst files for one cf.
+            tikv_util::info!("observe multi-file snapshot";
+                "snap" => ?snap,
+                "cf" => ?cf_file.cf,
+                "total" => full_paths.len(),
+            );
+            for f in full_paths.into_iter() {
+                ssts.push((f, name_to_cf(cf_file.cf)));
+            }
+        } else {
+            // Old case, one file for one cf.
             ssts.push((full_paths.remove(0), name_to_cf(cf_file.cf)));
         }
     }
