@@ -264,7 +264,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
         .entry(DEFAULT_ENGINE_LABEL_KEY.to_owned())
         .or_insert(String::from(option_env!("ENGINE_LABEL_VALUE").unwrap()));
     info!(
-        "config.server.labels after address: {}",
+        "config.server.labels after address: {:?}",
         config.server.labels
     );
 
