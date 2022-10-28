@@ -824,6 +824,7 @@ where
             region_id: self.get_region_id(),
             peer_id: self.peer_id,
             status,
+            peer_id: self.peer_id,
         };
 
         // Don't schedule the snapshot to region worker.
