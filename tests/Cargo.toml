@@ -77,11 +77,13 @@ api_version = { workspace = true }
 async-trait = "0.1"
 batch-system = { workspace = true }
 cdc = { workspace = true }
+clap = "2.32"
 collections = { workspace = true }
 crc64fast = "0.1"
 crossbeam = "0.8"
 encryption = { workspace = true }
 engine_rocks_helper = { workspace = true }
+engine_store_ffi = { workspace = true, default-features = false }
 error_code = { workspace = true }
 fail = "0.5"
 file_system = { workspace = true }
@@ -92,10 +94,12 @@ kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 libc = "0.2"
 log_wrappers = { workspace = true }
 more-asserts = "0.2"
+new-mock-engine-store = { workspace = true, default-features = false }
 online_config = { workspace = true }
 paste = "1.0"
 pd_client = { workspace = true }
 protobuf = { version = "2.8", features = ["bytes"] }
+proxy_server = { workspace = true, default-features = false }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft_log_engine = { workspace = true }
 raftstore = { workspace = true }

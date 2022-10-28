@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use engine_store_ffi::RaftStoreProxyFFI;
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 use engine_traits::{Peekable, CF_RAFT};
 use kvproto::{
