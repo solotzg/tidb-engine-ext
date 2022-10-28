@@ -14,6 +14,11 @@ name = "integrations"
 path = "integrations/mod.rs"
 required-features = ["testexport"]
 
+[[test]]
+name = "proxy"
+path = "proxy/mod.rs"
+required-features = ["failpoints", "testexport"]
+
 [[bench]]
 name = "raftstore"
 harness = false
