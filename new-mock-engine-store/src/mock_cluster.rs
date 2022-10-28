@@ -121,8 +121,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         pd_client: Arc<TestPdClient>,
         proxy_cfg: ProxyConfig,
     ) -> Cluster<T> {
-        // Force sync to enable Leader run as a Leader, rather than proxy
         test_util::init_log_for_test();
+        // Force sync to enable Leader run as a Leader, rather than proxy
         fail::cfg("apply_on_handle_snapshot_sync", "return").unwrap();
 
         Cluster {

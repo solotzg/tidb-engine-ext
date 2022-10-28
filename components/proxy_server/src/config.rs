@@ -327,7 +327,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     {
         let cpu_num = SysQuota::cpu_cores_quota();
         let total_mem = SysQuota::memory_limit_in_bytes();
-        info!("quota: cpu {} mem in bytes {}", cpu_num, total_num);
+        info!("quota: cpu {} mem in bytes {}", cpu_num, total_mem);
     }
     pub const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
     let engine_name = match option_env!("ENGINE_LABEL_VALUE") {
