@@ -69,7 +69,7 @@ impl Default for ServerConfig {
             engine_store_git_hash: String::default(),
             addr: TIFLASH_DEFAULT_LISTENING_ADDR.to_string(),
             status_addr: TIFLASH_DEFAULT_STATUS_ADDR.to_string(),
-            advertise_status_addr: TIFLASH_DEFAULT_STATUS_ADDR.to_string(),
+            advertise_status_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
             advertise_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
         }
     }
