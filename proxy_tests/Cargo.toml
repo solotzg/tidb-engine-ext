@@ -1,43 +1,13 @@
 [package]
-name = "tests"
+name = "proxy_tests"
 version = "0.0.1"
 edition = "2018"
 publish = false
 
 [[test]]
-name = "failpoints"
-path = "failpoints/mod.rs"
+name = "proxy"
+path = "proxy/mod.rs"
 required-features = ["failpoints", "testexport"]
-
-[[test]]
-name = "integrations"
-path = "integrations/mod.rs"
-required-features = ["testexport"]
-
-[[bench]]
-name = "raftstore"
-harness = false
-path = "benches/raftstore/mod.rs"
-
-[[bench]]
-name = "coprocessor_executors"
-harness = false
-path = "benches/coprocessor_executors/mod.rs"
-
-[[bench]]
-name = "hierarchy"
-harness = false
-path = "benches/hierarchy/mod.rs"
-
-[[bench]]
-name = "misc"
-path = "benches/misc/mod.rs"
-test = true
-
-[[bench]]
-name = "deadlock_detector"
-harness = false
-path = "benches/deadlock_detector/mod.rs"
 
 [features]
 default = ["failpoints", "testexport", "test-engine-kv-rocksdb", "test-engine-raft-raft-engine", "cloud-aws", "cloud-gcp", "cloud-azure"]
@@ -72,11 +42,13 @@ api_version = { workspace = true }
 async-trait = "0.1"
 batch-system = { workspace = true }
 cdc = { workspace = true }
+clap = "2.32"
 collections = { workspace = true }
 crc64fast = "0.1"
 crossbeam = "0.8"
 encryption = { workspace = true }
 engine_rocks_helper = { workspace = true }
+engine_store_ffi = { workspace = true, default-features = false }
 error_code = { workspace = true }
 fail = "0.5"
 file_system = { workspace = true }
@@ -87,10 +59,12 @@ kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 libc = "0.2"
 log_wrappers = { workspace = true }
 more-asserts = "0.2"
+new-mock-engine-store = { workspace = true, default-features = false }
 online_config = { workspace = true }
 paste = "1.0"
 pd_client = { workspace = true }
 protobuf = { version = "2.8", features = ["bytes"] }
+proxy_server = { workspace = true, default-features = false }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft_log_engine = { workspace = true }
 raftstore = { workspace = true }
