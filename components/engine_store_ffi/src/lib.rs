@@ -1004,7 +1004,7 @@ impl EngineStoreServerHelper {
                 self.inner,
                 region_id,
                 if force_persist {
-                    error!("we don't support try_flush_data for now");
+                    tikv_util::error!("we don't support try_flush_data for now");
                     2
                 } else {
                     if try_until_succeed { 1 } else { 0 }
