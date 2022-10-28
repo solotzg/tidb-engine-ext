@@ -351,7 +351,11 @@ mod config {
         );
 
         const EXPECTED_ENGINE_LABEL: &str = "tiflash_compute";
-        let args = vec!["test_config_proxy_default1", "--engine-label", EXPECTED_ENGINE_LABEL];
+        let args = vec![
+            "test_config_proxy_default1",
+            "--engine-label",
+            EXPECTED_ENGINE_LABEL,
+        ];
         let matches = App::new("RaftStore Proxy")
             .arg(
                 Arg::with_name("engine-label")
