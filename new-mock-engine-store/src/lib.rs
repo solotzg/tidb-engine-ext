@@ -261,7 +261,6 @@ unsafe fn write_to_db_data(
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             if !pending_remove.contains(&k) {
-                debug!("!!!!! have {:?}", tikv_key);
                 kv.rocks.put_cf(cf_name, &tikv_key.as_slice(), &v).unwrap();
             } else {
                 pending_remove.remove(&k);

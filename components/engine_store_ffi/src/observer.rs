@@ -638,7 +638,7 @@ impl RegionChangeObserver for TiFlashObserver {
     }
 
     fn pre_write_apply_state(&self, ob_ctx: &mut ObserverContext<'_>) -> bool {
-        fail::fail_point!("on_pre_write_apply_state", |_| { true });
+        fail::fail_point!("on_pre_persist_with_finish", |_| { true });
         false
     }
 }
