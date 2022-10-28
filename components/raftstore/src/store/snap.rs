@@ -576,19 +576,6 @@ impl Snapshot {
         snapshot_meta: SnapshotMeta,
     ) -> RaftStoreResult<Self> {
         let mut s = Self::new(dir, key, false, CheckPolicy::ErrNotAllowed, mgr)?;
-        // TODO(tiflash) remove when we support big snapshot and multi-file
-        if snapshot_meta.get_cf_files().len() > 3 {
-            error!(
-                "we don't support multi-file snapshot, snap_key {:?}, got {}",
-                key,
-                snapshot_meta.get_cf_files().len(),
-            );
-            return Err(box_err!(
-                "we don't support multi-file snapshot, snap_key {:?}, got {}",
-                key,
-                snapshot_meta.get_cf_files().len()
-            ));
-        }
         s.set_snapshot_meta(snapshot_meta)?;
         if s.exists() {
             return Ok(s);
@@ -904,6 +891,7 @@ impl Snapshot {
                     &self.mgr.limiter,
                 )?
             };
+            SNAPSHOT_LIMIT_GENERATE_BYTES.inc_by(cf_stat.total_size as u64);
             cf_file.kv_count = cf_stat.key_count as u64;
             if cf_file.kv_count > 0 {
                 // Use `kv_count` instead of file size to check empty files because encrypted
