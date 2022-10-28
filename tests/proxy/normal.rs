@@ -336,6 +336,37 @@ mod config {
             config.raft_store.region_worker_tick_interval.as_millis(),
             500
         );
+
+        // If engine-label not specified in arguments, use default value.
+        const DEFAULT_ENGINE_LABEL_KEY: &str = "engine";
+        assert_eq!(
+            config
+                .server
+                .labels
+                .get(DEFAULT_ENGINE_LABEL_KEY)
+                .unwrap()
+                .as_str(),
+            option_env!("ENGINE_LABEL_VALUE").unwrap()
+        );
+
+        const EXPECTED_ENGINE_LABEL: &str = "tiflash_compute";
+        let args = vec![format!("--engine-label={}", EXPECTED_ENGINE_LABEL)];
+        let matches = App::new("RaftStore Proxy")
+            .arg(
+                Arg::with_name("engine-label")
+                    .long("engine-label")
+                    .short("E")
+                    .help("Set engine label")
+                    .required(true)
+                    .takes_value(true),
+            )
+            .get_matches_from(args);
+        overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
+        address_proxy_config(&mut config, &proxy_config);
+        assert_eq!(
+            config.server.labels.get(DEFAULT_ENGINE_LABEL_KEY).unwrap(),
+            EXPECTED_ENGINE_LABEL
+        );
     }
 
     /// We test here if we can use proxy's default value with given file,
