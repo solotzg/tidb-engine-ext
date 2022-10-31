@@ -371,6 +371,7 @@ mod config {
         address_proxy_config(&mut config, &proxy_config);
 
         let total_mem = SysQuota::memory_limit_in_bytes();
+        let cpu_num = SysQuota::cpu_cores_quota();
         assert_eq!(config.rocksdb.max_open_files, 56);
         assert_eq!(config.server.addr, TIFLASH_DEFAULT_LISTENING_ADDR);
         assert_eq!(config.server.status_addr, TIFLASH_DEFAULT_STATUS_ADDR);
@@ -405,6 +406,12 @@ mod config {
             memory_limit_for_cf(false, CF_LOCK, total_mem)
         );
         assert_eq!(config.storage.reserve_space, ReadableSize::gb(1));
+
+        let background_thread_count = std::cmp::min(4, cpu_num as usize);
+        assert_eq!(
+            config.server.background_thread_count,
+            background_thread_count
+        );
     }
 
     // We test whether Proxy will overwrite TiKV's value,
