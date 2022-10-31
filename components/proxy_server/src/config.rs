@@ -389,7 +389,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.readpool.unified.max_thread_count = proxy_config.readpool.unified.max_thread_count;
 
     config.server.background_thread_count = proxy_config.server.background_thread_count;
-    config.import.num_threads = proxy_config.server.num_threads;
+    config.import.num_threads = proxy_config.import.num_threads;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
