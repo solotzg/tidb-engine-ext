@@ -217,6 +217,19 @@ pub struct ReadPoolConfig {
     pub unified: UnifiedReadPoolConfig,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ImportConfig {
+    pub num_threads: usize,
+}
+
+impl Default for ImportConfig {
+    fn default() -> ImportConfig {
+        ImportConfig { num_threads: 4 }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, OnlineConfig)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
@@ -243,6 +256,9 @@ pub struct ProxyConfig {
 
     #[online_config(submodule)]
     pub readpool: ReadPoolConfig,
+
+    #[online_config(skip)]
+    pub import: ImportConfig,
 }
 
 impl Default for ProxyConfig {
@@ -255,6 +271,7 @@ impl Default for ProxyConfig {
             storage: StorageConfig::default(),
             enable_io_snoop: false,
             readpool: ReadPoolConfig::default(),
+            import: ImportConfig::default(),
         }
     }
 }
@@ -372,6 +389,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.readpool.unified.max_thread_count = proxy_config.readpool.unified.max_thread_count;
 
     config.server.background_thread_count = proxy_config.server.background_thread_count;
+    config.import.num_threads = proxy_config.server.num_threads;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {

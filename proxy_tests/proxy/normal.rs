@@ -412,6 +412,8 @@ mod config {
             config.server.background_thread_count,
             background_thread_count
         );
+
+        assert_eq!(config.import.num_threads, 4);
     }
 
     // We test whether Proxy will overwrite TiKV's value,
