@@ -7,7 +7,7 @@ elif [[ $M == "testold" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
-    cargo check
+    cargo check --features $ENABLE_FEATURES
     cargo test --package tests --test failpoints cases::test_normal --features $ENABLE_FEATURES
     cargo test --package tests --test failpoints cases::test_bootstrap --features $ENABLE_FEATURES
     cargo test --package tests --test failpoints cases::test_compact_log --features $ENABLE_FEATURES
