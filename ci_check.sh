@@ -6,16 +6,17 @@ if [[ $M == "fmt" ]]; then
 elif [[ $M == "testold" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
+    ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
     cargo check
-    cargo test --package tests --test failpoints cases::test_normal
-    cargo test --package tests --test failpoints cases::test_bootstrap
-    cargo test --package tests --test failpoints cases::test_compact_log
-    cargo test --package tests --test failpoints cases::test_early_apply
-    cargo test --package tests --test failpoints cases::test_encryption
-    cargo test --package tests --test failpoints cases::test_pd_client
-    cargo test --package tests --test failpoints cases::test_pending_peers
-    cargo test --package tests --test failpoints cases::test_transaction
-    cargo test --package tests --test failpoints cases::test_cmd_epoch_checker
+    cargo test --package tests --test failpoints cases::test_normal --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_bootstrap --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_compact_log --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_early_apply --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_encryption --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_pd_client --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_pending_peers --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_transaction --features $ENABLE_FEATURES
+    cargo test --package tests --test failpoints cases::test_cmd_epoch_checker --features $ENABLE_FEATURES
     # cargo test --package tests --test failpoints cases::test_disk_full
     cargo test --package tests --test failpoints cases::test_merge
     # cargo test --package tests --test failpoints cases::test_snap
