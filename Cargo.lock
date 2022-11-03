@@ -947,6 +947,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea221b5284a47e40033bf9b66f35f984ec0ea2931eb03505246cd27a963f981b"
 
 [[package]]
+name = "cpp_demangle"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eeaa953eaad386a53111e47172c2fedba671e5684c8dd601a5f474f4f118710f"
+dependencies = [
+ "cfg-if 1.0.0",
+]
+
+[[package]]
 name = "cpu-time"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5541,6 +5550,7 @@ version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b77ecb5460a87faa37ed53521eed8f073c8339b7a5788c1f93efc09ce74e1b68"
 dependencies = [
+ "cpp_demangle",
  "rustc-demangle",
  "symbolic-common",
 ]
@@ -7201,6 +7211,11 @@ dependencies = [
  "cc",
  "libc 0.2.132",
 ]
+
+[[patch.unused]]
+name = "pprof"
+version = "0.10.1"
+source = "git+https://github.com/tikv/pprof-rs.git?rev=09c0e73ab29cd2f586d0502397b3ea96ac8b2171#09c0e73ab29cd2f586d0502397b3ea96ac8b2171"
 
 [[patch.unused]]
 name = "rusoto_mock"
