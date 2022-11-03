@@ -125,11 +125,13 @@ async fn check(authority: SocketAddr, region_id: u64) -> Result<(), Box<dyn Erro
         String::from_utf8(body.to_vec())?
     );
     assert_eq!("image/svg+xml", parts.headers["content-type"].to_str()?);
-    // {
-    //     let d = body.as_ref();
-    //     let mut file = File::create("/tmp/prof2.xml")?;
-    //     file.write_all(d)?;
-    // }
+    {
+        let xmldata = body.as_ref();
+        let xmlstr = std::str::from_utf8(xmldata);
+        assert_eq!(xmlstr.is_ok(), true);
+        let res = String::from(xmlstr.unwrap()).find("raftstore");
+        assert_eq!(res.is_some(), true);
+    }
     Ok(())
 }
 
