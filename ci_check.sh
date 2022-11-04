@@ -39,7 +39,7 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --test proxy server_cluster_test
     # tests based on new-mock-engine-store, for some tests not available for new proxy
     cargo test --package proxy_tests --test proxy proxy
-    make debug
+    cargo clippy --features "$ENABLE_FEATURES" --package engine_store_ffi --no-deps -- -Dwarnings -A clippy::clone_on_copy -A clippy::upper_case_acronyms -A clippy::missing_safety_doc
 elif [[ $M == "debug" ]]; then
     # export RUSTC_WRAPPER=~/.cargo/bin/sccache
     export ENGINE_LABEL_VALUE=tiflash
