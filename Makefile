@@ -217,7 +217,6 @@ ci_fmt_check:
 	M="fmt" ./ci_check.sh
 
 ci_test:
-	@rustup component add clippy
 	M="testold" ./ci_check.sh
 	M="testnew" ./ci_check.sh
 	make debug
