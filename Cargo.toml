@@ -25,10 +25,10 @@ cmake = { git = "https://github.com/rust-lang/cmake-rs" }
 
 [workspace]
 members = [
+  "gen-proxy-ffi",
   "proxy_tests",
   "raftstore-proxy",
   "tests",
-  "gen-proxy-ffi",
 ]
 default-members = ["raftstore-proxy"]
 
