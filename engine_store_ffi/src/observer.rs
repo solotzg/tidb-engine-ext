@@ -187,9 +187,9 @@ impl TiFlashObserver {
         let mut sst_views = vec![];
 
         info!("begin handle ingest sst";
-            "region": ?ob_ctx.region(),
-            "index": index,
-            "term": term,
+            "region" => ?ob_ctx.region(),
+            "index" => index,
+            "term" => term,
         );
 
         for sst in ssts {
