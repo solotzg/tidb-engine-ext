@@ -8,7 +8,11 @@ elif [[ $M == "testold" ]]; then
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
 	rustup component add clippy
-    cargo clippy --features "$ENABLE_FEATURES" --package engine_store_ffi --no-deps -- -Dwarnings -A clippy::clone_on_copy -A clippy::upper_case_acronyms -A clippy::missing_safety_doc
+    export BASIC_CLIPPY="-Dwarnings -A clippy::clone_on_copy -A clippy::upper_case_acronyms -A clippy::missing_safety_doc"
+    cargo clippy --features "$ENABLE_FEATURES" --package engine_store_ffi --no-deps -- "$BASIC_CLIPPY"
+    cargo clippy --features "test-engine-kv-rocksdb test-engine-raft-raft-engine" --package proxy_tests  --no-deps -- "$BASIC_CLIPPY"
+    cargo clippy --features "$ENABLE_FEATURES" --package proxy_server  --no-deps -- "$BASIC_CLIPPY -A clippy::derive_partial_eq_without_eq"
+    cargo clippy --features "test-engine-kv-rocksdb test-engine-raft-raft-engine" --package new-mock-engine-store  --no-deps -- "$BASIC_CLIPPY -A clippy::derive_partial_eq_without_eq -A clippy::redundant_clone -A clippy::too_many_arguments"
     cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_normal
     cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_bootstrap
     cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_compact_log

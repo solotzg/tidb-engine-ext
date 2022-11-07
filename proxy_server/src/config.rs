@@ -104,7 +104,6 @@ pub const DEFAULT_ENGINE_ADDR: &str = if cfg!(feature = "failpoints") {
     ""
 };
 
-const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
 
 pub fn memory_limit_for_cf(is_raft_db: bool, cf: &str, total_mem: u64) -> ReadableSize {
@@ -261,6 +260,8 @@ pub struct ProxyConfig {
     pub import: ImportConfig,
 }
 
+/// We use custom default, in case of later non-ordinary config items.
+#[allow(clippy::derivable_impls)]
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
