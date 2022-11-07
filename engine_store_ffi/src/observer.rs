@@ -621,7 +621,7 @@ impl RegionChangeObserver for TiFlashObserver {
             }
         };
         if should_persist {
-            info!(
+            debug!(
             "observe pre_persist, persist";
             "region_id" => ob_ctx.region().get_id(),
             "peer_id" => self.peer_id,
