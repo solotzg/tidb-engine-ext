@@ -184,7 +184,7 @@ ifeq ($(PROXY_FRAME_POINTER),1)
 build: ENABLE_FEATURES += pprof-fp
 endif
 build:
-	PROXY_ENABLE_FEATURES="${ENABLE_FEATURES}" ./build.sh
+	PROXY_ENABLE_FEATURES="${ENABLE_FEATURES}" ./proxy_scripts/build.sh
 
 debug: export PROXY_PROFILE=debug
 debug:
