@@ -504,7 +504,7 @@ fn test_old_kv_write() {
         cluster.must_put(k.as_bytes(), v.as_bytes());
     }
 
-    // Since we disable all observers, we can get nothing in either memory and disk.
+    // We can get from memory.
     for i in 0..10 {
         let k = format!("k{}", i);
         let v = format!("v{}", i);
@@ -514,53 +514,6 @@ fn test_old_kv_write() {
     let new_states = collect_all_states(&mut cluster, r1);
     must_altered_memory_apply_state(&prev_states, &new_states);
     must_unaltered_disk_apply_state(&prev_states, &new_states);
-
-    debug!("now CompactLog can persist");
-    fail::remove("no_persist_compact_log");
-
-    let prev_states = collect_all_states(&mut cluster, r1);
-    // Write more after we force persist when CompactLog.
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        cluster.must_put(k.as_bytes(), v.as_bytes());
-    }
-
-    // We can read from mock-store's memory, we are not sure if we can read from
-    // disk, since there may be or may not be a CompactLog.
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
-    }
-
-    // Force a compact log to persist.
-    let region_r = cluster.get_region("k1".as_bytes());
-    let region_id = region_r.get_id();
-    let compact_log = test_raftstore::new_compact_log_request(100, 10);
-    let req =
-        test_raftstore::new_admin_request(region_id, region_r.get_region_epoch(), compact_log);
-    let res = cluster
-        .call_command_on_leader(req, Duration::from_secs(3))
-        .unwrap();
-    assert!(res.get_header().has_error(), "{:?}", res);
-
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(
-            &cluster,
-            k.as_bytes(),
-            v.as_bytes(),
-            Some(true),
-            Some(true),
-            None,
-        );
-    }
-
-    let new_states = collect_all_states(&mut cluster, r1);
-    must_altered_memory_apply_state(&prev_states, &new_states);
-    must_altered_disk_apply_state(&prev_states, &new_states);
 
     fail::remove("no_persist_compact_log");
     cluster.shutdown();

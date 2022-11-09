@@ -464,20 +464,13 @@ mod ingest {
 
         let new_states1 = collect_all_states(&cluster, region1.get_id());
         let new_states5 = collect_all_states(&cluster, region5.get_id());
-        for i in prev_states1.keys() {
-            let old = prev_states1.get(i).unwrap();
-            let new = new_states1.get(i).unwrap();
-            assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
-            assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
-            assert_eq!(old.in_disk_apply_state, new.in_disk_apply_state);
-        }
-        for i in prev_states5.keys() {
-            let old = prev_states5.get(i).unwrap();
-            let new = new_states5.get(i).unwrap();
-            assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
-            assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
-            assert_eq!(old.in_disk_apply_state, new.in_disk_apply_state);
-        }
+        must_altered_memory_apply_state(&prev_states1, &new_states1);
+        must_unaltered_memory_apply_term(&prev_states1, &new_states1);
+        must_unaltered_disk_apply_state(&prev_states1, &new_states1);
+
+        must_altered_memory_apply_state(&prev_states5, &new_states5);
+        must_unaltered_memory_apply_term(&prev_states5, &new_states5);
+        must_unaltered_disk_apply_state(&prev_states5, &new_states5);
         let prev_states1 = new_states1;
         let prev_states5 = new_states5;
         // Not deleted
@@ -502,19 +495,11 @@ mod ingest {
         let new_states1 = collect_all_states(&cluster, region1.get_id());
         let new_states5 = collect_all_states(&cluster, region5.get_id());
         // Region 1 is persisted.
-        for i in prev_states1.keys() {
-            let old = prev_states1.get(i).unwrap();
-            let new = new_states1.get(i).unwrap();
-            assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
-            assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
-            assert_ne!(old.in_disk_apply_state, new.in_disk_apply_state);
-        }
+        must_altered_memory_apply_state(&prev_states1, &new_states1);
+        must_unaltered_memory_apply_term(&prev_states1, &new_states1);
+        must_altered_disk_apply_state(&prev_states1, &new_states1);
         // Region 5 not persisted yet.
-        for i in prev_states5.keys() {
-            let old = prev_states5.get(i).unwrap();
-            let new = new_states5.get(i).unwrap();
-            assert_eq!(old.in_disk_apply_state, new.in_disk_apply_state);
-        }
+        must_unaltered_disk_apply_state(&prev_states5, &new_states5);
         // file1 and file11 for region 1 is deleted.
         assert!(!file1.as_path().is_file());
         assert!(!file11.as_path().is_file());
@@ -1145,18 +1130,8 @@ mod persist {
         cluster.must_put(b"k1", b"v1");
         check_key(&cluster, b"k1", b"v1", Some(true), Some(false), None);
         let new_states = collect_all_states(&cluster, region_id);
-        for i in prev_states.keys() {
-            let old = prev_states.get(i).unwrap();
-            let new = new_states.get(i).unwrap();
-            assert_eq!(
-                old.in_memory_apply_state.get_applied_index() + 1,
-                new.in_memory_apply_state.get_applied_index()
-            );
-            assert_eq!(
-                old.in_disk_apply_state.get_applied_index(),
-                new.in_disk_apply_state.get_applied_index()
-            );
-        }
+        must_altered_memory_apply_index(&prev_states, &new_states, 1);
+        must_altered_disk_apply_index(&prev_states, &new_states, 0);
 
         fail::cfg("on_pre_persist_with_finish", "return").unwrap();
         cluster.must_put(b"k2", b"v2");
@@ -1173,15 +1148,7 @@ mod persist {
         // TODO(tiflash) wait `write_apply_state` in raftstore.
         std::thread::sleep(std::time::Duration::from_millis(1000));
         let new_states = collect_all_states(&cluster, region_id);
-        for i in prev_states.keys() {
-            let old = prev_states.get(i).unwrap();
-            let new = new_states.get(i).unwrap();
-            let gap = new.in_memory_apply_state.get_applied_index()
-                - old.in_memory_apply_state.get_applied_index();
-            let gap2 = new.in_disk_apply_state.get_applied_index()
-                - old.in_disk_apply_state.get_applied_index();
-            assert_eq!(gap, gap2);
-        }
+        must_apply_index_advanced_diff(&prev_states, &new_states, 0);
         fail::remove("on_pre_persist_with_finish");
     }
 
@@ -1218,14 +1185,6 @@ mod persist {
         let new_states = collect_all_states(&cluster, r3_new.get_id());
         // index 6 empty command
         // index 7 CommitMerge
-        for i in prev_states.keys() {
-            let old = prev_states.get(i).unwrap();
-            let new = new_states.get(i).unwrap();
-            let _gap = new.in_memory_apply_state.get_applied_index()
-                - old.in_memory_apply_state.get_applied_index();
-            let gap2 = new.in_disk_apply_state.get_applied_index()
-                - old.in_disk_apply_state.get_applied_index();
-            assert_eq!(gap2, 2);
-        }
+        must_altered_disk_apply_index(&prev_states, &new_states, 2);
     }
 }

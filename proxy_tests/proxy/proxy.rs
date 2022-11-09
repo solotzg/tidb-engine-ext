@@ -384,6 +384,21 @@ pub fn must_altered_disk_apply_index(
     compare_states(prev_states, new_states, f);
 }
 
+pub fn must_apply_index_advanced_diff(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    memory_more_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
+        let gap = new.in_memory_apply_state.get_applied_index()
+            - old.in_memory_apply_state.get_applied_index();
+        let gap2 = new.in_disk_apply_state.get_applied_index()
+            - old.in_disk_apply_state.get_applied_index();
+        assert_eq!(gap, gap2 + memory_more_advanced);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
 pub fn must_unaltered_disk_apply_state(
     prev_states: &HashMap<u64, States>,
     new_states: &HashMap<u64, States>,
