@@ -356,6 +356,34 @@ pub fn must_altered_memory_apply_state(
     compare_states(prev_states, new_states, f);
 }
 
+pub fn must_altered_memory_apply_index(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    apply_index_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_memory_apply_state.get_applied_index() + apply_index_advanced,
+            new.in_memory_apply_state.get_applied_index()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_disk_apply_index(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    apply_index_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_disk_apply_state.get_applied_index() + apply_index_advanced,
+            new.in_disk_apply_state.get_applied_index()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
 pub fn must_unaltered_disk_apply_state(
     prev_states: &HashMap<u64, States>,
     new_states: &HashMap<u64, States>,
@@ -372,6 +400,58 @@ pub fn must_altered_disk_apply_state(
 ) {
     let f = |old: &States, new: &States| {
         assert_ne!(old.in_disk_apply_state, new.in_disk_apply_state);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_memory_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(
+            old.in_memory_apply_state.get_truncated_state(),
+            new.in_memory_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_memory_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_memory_apply_state.get_truncated_state(),
+            new.in_memory_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_disk_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(
+            old.in_disk_apply_state.get_truncated_state(),
+            new.in_disk_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_disk_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_disk_apply_state.get_truncated_state(),
+            new.in_disk_apply_state.get_truncated_state()
+        );
     };
     compare_states(prev_states, new_states, f);
 }
