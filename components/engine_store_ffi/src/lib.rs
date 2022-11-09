@@ -1123,6 +1123,30 @@ impl EngineStoreServerHelper {
         }
     }
 
+    pub fn purge_pagestorage(
+        &self,
+    ) {
+        debug_assert!(self.fn_handle_purge_pagestorage.is_some());
+        unsafe {
+            (self.fn_handle_purge_pagestorage.into_inner())(
+                self.inner,
+            )
+        }
+    }
+
+    pub fn seek_ps_key(
+        &self,
+        page_id: BaseBuffView,
+    ) -> CppStrWithView {
+        debug_assert!(self.fn_handle_seek_ps_key.is_some());
+        unsafe {
+            (self.fn_handle_seek_ps_key.into_inner())(
+                self.inner,
+                page_id,
+            )
+        }
+    }
+
     pub fn pre_handle_snapshot(
         &self,
         region: &metapb::Region,

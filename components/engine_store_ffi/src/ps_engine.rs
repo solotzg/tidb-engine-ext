@@ -7,13 +7,8 @@ use std::{fmt, slice};
 
 use std::{
     fmt::{Formatter, Debug},
-    fs,
-    marker::Send,
-    path::Path,
-    ops::Deref,
+    mem,
 };
-
-use tikv_util::info;
 
 use engine_traits::{
     RaftEngine, RaftEngineDebug, RaftEngineReadOnly, RaftLogBatch, RaftLogGCTask, Result,
@@ -24,8 +19,6 @@ use raft::eraftpb::Entry;
 use kvproto::raft_serverpb::RaftLocalState;
 
 use byteorder::{BigEndian, ByteOrder};
-
-use tikv_util::{box_err};
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
 
@@ -60,6 +53,27 @@ pub fn ps_raft_log_key(region_id: u64, log_index: u64) -> [u8; 19] {
     key[10] = PS_KEY_SEP;
     BigEndian::write_u64(&mut key[11..19], log_index + RAFT_LOG_ID_OFFSET);
     key
+}
+
+pub fn ps_raft_log_prefix(region_id: u64) -> [u8; 11] {
+    let mut key = [0; 11];
+    key[..2].copy_from_slice(PS_KEY_PREFIX);
+    BigEndian::write_u64(&mut key[2..10], region_id);
+    key[10] = PS_KEY_SEP;
+    key
+}
+
+pub fn ps_raft_log_index(key: &[u8]) -> u64 {
+    let expect_key_len = PS_KEY_PREFIX.len()
+        + mem::size_of::<u64>()
+        + mem::size_of::<u8>()
+        + mem::size_of::<u64>();
+    if key.len() != expect_key_len {
+        panic!("wrong key format {:?}", key);
+    }
+    BigEndian::read_u64(
+        &key[expect_key_len - mem::size_of::<u64>()..],
+    )
 }
 
 pub struct PSEngineWriteBatch {
@@ -126,10 +140,12 @@ impl RaftLogBatch for PSEngineWriteBatch {
     }
 
     fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
-        for index in from..to {
-            let key = ps_raft_log_key(raft_group_id, index);
-            self.del_page(&key).unwrap();
-        }
+        // This function is used to clean entries that will be overwritten later.
+        // TODO: make sure overlapped entries will be overwritten by newer log.
+        // for index in from..to {
+        //     let key = ps_raft_log_key(raft_group_id, index);
+        //     self.del_page(&key).unwrap();
+        // }
     }
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
@@ -208,6 +224,17 @@ impl PSEngine {
         }
     }
 
+    // Seek the first key >= given key, if not found, return None.
+    fn seek(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        let target_key = helper.seek_ps_key(key.into());
+        if target_key.view.len == 0 {
+            None
+        } else {
+            Some(target_key.view.to_slice().to_vec())
+        }
+    }
+
     /// scan the key between start_key(inclusive) and end_key(exclusive),
     /// the upper bound is omitted if end_key is empty
     fn scan<F>(&self, start_key: &[u8], end_key: &[u8], mut f: F) -> Result<()>
@@ -227,6 +254,30 @@ impl PSEngine {
             }
         }
         Ok(())
+    }
+
+    fn gc_impl(&self, raft_group_id: u64, mut from: u64, to: u64) -> Result<usize> {
+        if from == 0 {
+            let start_key = ps_raft_log_key(raft_group_id, 0);
+            let prefix = ps_raft_log_prefix(raft_group_id);
+            // TODO: make sure the seek can skip other raft related key and to the first log key
+            match self.seek(&start_key) {
+                Some(target_key) if target_key.starts_with(&prefix) => from = ps_raft_log_index(&target_key),
+                // No need to gc.
+                _ => return Ok(0),
+            }
+        }
+        if from >= to {
+            return Ok(0);
+        }
+
+        let mut raft_wb = self.log_batch(0);
+        for idx in from..to {
+            raft_wb.del_page(&ps_raft_log_key(raft_group_id, idx));
+        }
+        // TODO: keep the max size of raft_wb under some threshold
+        self.consume(&mut raft_wb, false);
+        Ok((to - from) as usize)
     }
 }
 
@@ -374,28 +425,20 @@ impl RaftEngine for PSEngine {
     }
 
     fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize> {
-        let mut raft_wb = self.log_batch(0);
-        for idx in from..to {
-            raft_wb.del_page(&ps_raft_log_key(raft_group_id, idx));
-        }
-        self.consume(&mut raft_wb, false);
-        Ok((from - to) as usize)
+        self.gc_impl(raft_group_id, from, to)
     }
 
     fn batch_gc(&self, groups: Vec<RaftLogGCTask>) -> Result<usize> {
         let mut total = 0;
-        let mut raft_wb = self.log_batch(0);
         for task in groups {
-            for idx in task.from..task.to {
-                raft_wb.del_page(&ps_raft_log_key(task.raft_group_id, idx));
-            }
-            total += (task.to - task.from) as usize;
+            total += self.gc(task.raft_group_id, task.from, task.to)?;
         }
-        self.consume(&mut raft_wb, false);
         Ok(total)
     }
 
     fn purge_expired_files(&self) -> Result<Vec<u64>> {
+        // let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        // helper.purge_pagestorage();
         Ok(vec![])
     }
 

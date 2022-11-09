@@ -211,7 +211,9 @@ struct EngineStoreServerHelper {
     PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
     PageWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
     void (*fn_gc_page_with_view_vec)(PageWithView * inner, uint64_t len);
-  void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
+    void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
+    CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *, BaseBuffView);
+    void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
   EngineStoreApplyRes (*fn_handle_ingest_sst)(EngineStoreServerWrap *,

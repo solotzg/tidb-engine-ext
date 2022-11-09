@@ -449,6 +449,17 @@ pub mod root {
                     arg2: u64,
                 ),
             >,
+            pub fn_handle_purge_pagestorage: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                ),
+            >,
+            pub fn_handle_seek_ps_key: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::BaseBuffView,
+                ) -> root::DB::CppStrWithView,
+            >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
