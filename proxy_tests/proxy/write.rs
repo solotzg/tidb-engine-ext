@@ -25,39 +25,23 @@ fn test_interaction() {
         .unwrap();
 
     // Empty result can also be handled by post_exec
-    let mut retry = 0;
-    // Wait advance of apply_index.
-    let new_states = loop {
-        let new_states = collect_all_states(&cluster, region_id);
-        let mut ok = true;
-        for i in prev_states.keys() {
-            let old = prev_states.get(i).unwrap();
-            let new = new_states.get(i).unwrap();
-            if old.in_memory_apply_state == new.in_memory_apply_state
-                && old.in_memory_applied_term == new.in_memory_applied_term
-            {
-                ok = false;
-                break;
-            }
-        }
-        if ok {
-            break new_states;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        retry += 1;
-        if retry >= 30 {
-            panic!("states is not changed")
-        }
-    };
+    let new_states = must_wait_until_cond_states(
+        &cluster,
+        region_id,
+        &prev_states,
+        &|old: &States, new: &States| {
+            // Must wait advance of apply_index.
+            old.in_memory_apply_state != new.in_memory_apply_state
+                || old.in_memory_applied_term != new.in_memory_applied_term
+        },
+    );
 
-    for i in prev_states.keys() {
-        let old = prev_states.get(i).unwrap();
-        let new = new_states.get(i).unwrap();
+    compare_states(&prev_states, &new_states, &|old: &States, new: &States| {
         assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
         assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
         // An empty cmd will not cause persistence.
         assert_eq!(old.in_disk_apply_state, new.in_disk_apply_state);
-    }
+    });
 
     cluster.must_put(b"k2", b"v2");
     // Wait until all nodes have (k2, v2).
@@ -155,12 +139,8 @@ fn test_leadership_change_impl(filter: bool) {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let new_states = collect_all_states(&cluster, region_id);
-    for i in prev_states.keys() {
-        let old = prev_states.get(i).unwrap();
-        let new = new_states.get(i).unwrap();
-        assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
-        assert_ne!(old.in_memory_applied_term, new.in_memory_applied_term);
-    }
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_altered_memory_apply_term(&prev_states, &new_states);
 
     if filter {
         fail::remove("try_flush_data");
@@ -198,11 +178,7 @@ fn test_kv_write_always_persist() {
         std::thread::sleep(std::time::Duration::from_millis(20));
         // However, advanced apply index will always persisted.
         let new_states = collect_all_states(&cluster, region_id);
-        for id in cluster.engines.keys() {
-            let p = &prev_states.get(id).unwrap().in_disk_apply_state;
-            let n = &new_states.get(id).unwrap().in_disk_apply_state;
-            assert_ne!(p, n);
-        }
+        must_altered_disk_apply_state(&prev_states, &new_states);
         prev_states = new_states;
     }
     fail::remove("on_post_exec_normal_end");
@@ -268,16 +244,8 @@ fn test_kv_write() {
     }
 
     let new_states = collect_all_states(&cluster, r1);
-    for id in cluster.engines.keys() {
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_memory_apply_state,
-            &new_states.get(id).unwrap().in_memory_apply_state
-        );
-        assert_eq!(
-            &prev_states.get(id).unwrap().in_disk_apply_state,
-            &new_states.get(id).unwrap().in_disk_apply_state
-        );
-    }
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_unaltered_disk_apply_state(&prev_states, &new_states);
 
     std::thread::sleep(std::time::Duration::from_millis(20));
     fail::remove("try_flush_data");
@@ -324,25 +292,15 @@ fn test_kv_write() {
     }
 
     let new_states = collect_all_states(&cluster, r1);
-
-    // apply_state is changed in memory, and persisted.
-    for id in cluster.engines.keys() {
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_memory_apply_state,
-            &new_states.get(id).unwrap().in_memory_apply_state
-        );
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_disk_apply_state,
-            &new_states.get(id).unwrap().in_disk_apply_state
-        );
-    }
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_altered_disk_apply_state(&prev_states, &new_states);
 
     fail::remove("no_persist_compact_log");
     cluster.shutdown();
 }
 
 #[test]
-fn test_consistency_check() {
+fn test_unsupport_admin_cmd() {
     // ComputeHash and VerifyHash shall be filtered.
     let (mut cluster, _pd_client) = new_mock_cluster(0, 2);
 
@@ -404,18 +362,8 @@ fn test_old_compact_log() {
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     let new_state = collect_all_states(&cluster, region_id);
-    for i in prev_state.keys() {
-        let old = prev_state.get(i).unwrap();
-        let new = new_state.get(i).unwrap();
-        assert_ne!(
-            old.in_memory_apply_state.get_truncated_state(),
-            new.in_memory_apply_state.get_truncated_state()
-        );
-        assert_eq!(
-            old.in_disk_apply_state.get_truncated_state(),
-            new.in_disk_apply_state.get_truncated_state()
-        );
-    }
+    must_altered_memory_apply_state(&prev_state, &new_state);
+    must_unaltered_disk_apply_state(&prev_state, &new_state);
 
     fail::remove("no_persist_compact_log");
     cluster.shutdown();
@@ -553,12 +501,8 @@ fn test_empty_cmd() {
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     let new_states = collect_all_states(&cluster, region_id);
-    for i in prev_states.keys() {
-        let old = prev_states.get(i).unwrap();
-        let new = new_states.get(i).unwrap();
-        assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
-        assert_ne!(old.in_memory_applied_term, new.in_memory_applied_term);
-    }
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_altered_memory_apply_term(&prev_states, &new_states);
 
     std::thread::sleep(std::time::Duration::from_secs(2));
     fail::cfg("on_empty_cmd_normal", "return").unwrap();
@@ -568,14 +512,94 @@ fn test_empty_cmd() {
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     let new_states = collect_all_states(&cluster, region_id);
-    for i in prev_states.keys() {
-        let old = prev_states.get(i).unwrap();
-        let new = new_states.get(i).unwrap();
-        assert_eq!(old.in_memory_apply_state, new.in_memory_apply_state);
-        assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
-    }
+    must_unaltered_memory_apply_state(&prev_states, &new_states);
+    must_unaltered_memory_apply_term(&prev_states, &new_states);
 
     fail::remove("on_empty_cmd_normal");
 
+    cluster.shutdown();
+}
+
+#[test]
+fn test_old_kv_write() {
+    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
+
+    cluster.cfg.proxy_compat = false;
+    // No persist will be triggered by CompactLog
+    fail::cfg("no_persist_compact_log", "return").unwrap();
+    let _ = cluster.run();
+
+    cluster.must_put(b"k0", b"v0");
+    // check_key(&cluster, b"k0", b"v0", Some(false), Some(false), None);
+
+    // We can read initial raft state, since we don't persist meta either.
+    let r1 = cluster.get_region(b"k0").get_id();
+    let prev_states = collect_all_states(&mut cluster, r1);
+
+    for i in 1..10 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+
+    // Since we disable all observers, we can get nothing in either memory and disk.
+    for i in 0..10 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
+    }
+
+    let new_states = collect_all_states(&mut cluster, r1);
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_unaltered_disk_apply_state(&prev_states, &new_states);
+
+    debug!("now CompactLog can persist");
+    fail::remove("no_persist_compact_log");
+
+    let prev_states = collect_all_states(&mut cluster, r1);
+    // Write more after we force persist when CompactLog.
+    for i in 20..30 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+
+    // We can read from mock-store's memory, we are not sure if we can read from
+    // disk, since there may be or may not be a CompactLog.
+    for i in 20..30 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
+    }
+
+    // Force a compact log to persist.
+    let region_r = cluster.get_region("k1".as_bytes());
+    let region_id = region_r.get_id();
+    let compact_log = test_raftstore::new_compact_log_request(100, 10);
+    let req =
+        test_raftstore::new_admin_request(region_id, region_r.get_region_epoch(), compact_log);
+    let res = cluster
+        .call_command_on_leader(req, Duration::from_secs(3))
+        .unwrap();
+    assert!(res.get_header().has_error(), "{:?}", res);
+
+    for i in 20..30 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(
+            &cluster,
+            k.as_bytes(),
+            v.as_bytes(),
+            Some(true),
+            Some(true),
+            None,
+        );
+    }
+
+    let new_states = collect_all_states(&mut cluster, r1);
+    must_altered_memory_apply_state(&prev_states, &new_states);
+    must_altered_disk_apply_state(&prev_states, &new_states);
+
+    fail::remove("no_persist_compact_log");
     cluster.shutdown();
 }

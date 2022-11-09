@@ -7,12 +7,6 @@ use proxy_server::config::{
 };
 use raft::eraftpb::MessageType;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
-use tikv_util::{
-    config::{ReadableDuration, ReadableSize},
-    store::find_peer,
-    time::Duration,
-    HandyRwLock,
-};
 
 use crate::proxy::*;
 
