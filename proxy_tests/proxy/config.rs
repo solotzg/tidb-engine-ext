@@ -1,8 +1,5 @@
-
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use crate::proxy::*;
-
-use tikv_util::sys::SysQuota;
+use clap::{App, Arg};
 use proxy_server::{
     config::{
         address_proxy_config, ensure_no_common_unrecognized_keys, get_last_config,
@@ -10,9 +7,12 @@ use proxy_server::{
         TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR, TIFLASH_DEFAULT_LISTENING_ADDR,
         TIFLASH_DEFAULT_STATUS_ADDR,
     },
-    proxy::gen_tikv_config,
+    proxy::{gen_proxy_config, gen_tikv_config},
+    setup::overwrite_config_with_cmd_args,
 };
-use clap::{App, Arg};
+use tikv_util::sys::SysQuota;
+
+use crate::proxy::*;
 
 /// We test here if we can use proxy's default value without given file.
 /// Normally, we only need to add config tests in
