@@ -34,11 +34,11 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --test proxy normal::store
     cargo test --package proxy_tests --test proxy normal::region
     cargo test --package proxy_tests --test proxy normal::config
-    cargo test --package proxy_tests --test proxy normal::write
     cargo test --package proxy_tests --test proxy normal::ingest
     cargo test --package proxy_tests --test proxy normal::snapshot
     cargo test --package proxy_tests --test proxy normal::restart
     cargo test --package proxy_tests --test proxy normal::persist
+    cargo test --package proxy_tests --test proxy write
     cargo test --package proxy_tests --test proxy config
     cargo test --package proxy_tests --test proxy flashback
     cargo test --package proxy_tests --test proxy server_cluster_test

@@ -12,3 +12,4 @@ mod normal;
 mod proxy;
 mod server_cluster_test;
 mod util;
+mod write;
