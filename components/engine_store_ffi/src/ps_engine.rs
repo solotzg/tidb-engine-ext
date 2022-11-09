@@ -19,6 +19,7 @@ use raft::eraftpb::Entry;
 use kvproto::raft_serverpb::RaftLocalState;
 
 use byteorder::{BigEndian, ByteOrder};
+use tikv_util::info;
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
 
@@ -270,6 +271,7 @@ impl PSEngine {
         if from >= to {
             return Ok(0);
         }
+        info!("gc_impl raft_group_id {} from {} to {}", raft_group_id, from ,to);
 
         let mut raft_wb = self.log_batch(0);
         for idx in from..to {
@@ -397,6 +399,20 @@ impl RaftEngine for PSEngine {
         batch: &mut Self::LogBatch,
     ) -> Result<()> {
         batch.del_page(&ps_raft_state_key(raft_group_id))?;
+        if first_index == 0 {
+            let start_key = ps_raft_log_key(raft_group_id, 0);
+            let prefix = ps_raft_log_prefix(raft_group_id);
+            // TODO: make sure the seek can skip other raft related key and to the first log key
+            match self.seek(&start_key) {
+                Some(target_key) if target_key.starts_with(&prefix) => first_index = ps_raft_log_index(&target_key),
+                // No need to gc.
+                _ => return Ok(()),
+            }
+        }
+        if first_index >= state.last_index {
+            return Ok(());
+        }
+        info!("clean raft_group_id {} from {} to {}", raft_group_id, first_index, state.last_index);
         // TODO: find the first raft log index of this raft group
         if first_index <= state.last_index {
             for index in first_index..=state.last_index {
