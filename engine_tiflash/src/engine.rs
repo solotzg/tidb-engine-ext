@@ -13,10 +13,11 @@ use std::{
 };
 
 use engine_rocks::{RocksDbVector, RocksEngineIterator, RocksSnapshot};
-use engine_traits::{IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable};
+use engine_traits::{
+    Checkpointable, Checkpointer, Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions,
+    Result, SyncMutable,
+};
 use rocksdb::{Writable, DB};
-use engine_traits::{Checkpointer, Checkpointable};
-use engine_traits::Error;
 use tikv_util::box_err;
 
 use crate::{r2e, util::get_cf_handle};
@@ -268,6 +269,8 @@ impl Checkpointer for TiFlashCheckpointer {
         titan_out_dir: Option<&Path>,
         log_size_for_flush: u64,
     ) -> Result<()> {
-        Err(Error::Other("TiFlash don't support Checkpointer::create_at".into()))
+        Err(Error::Other(
+            "TiFlash don't support Checkpointer::create_at".into(),
+        ))
     }
 }
