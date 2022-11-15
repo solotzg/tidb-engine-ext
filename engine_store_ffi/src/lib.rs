@@ -8,6 +8,7 @@ mod lock_cf_reader;
 pub mod observer;
 mod read_index_helper;
 mod utils;
+pub mod ps_engine;
 
 use std::{
     cell::RefCell,
@@ -35,6 +36,7 @@ pub use self::interfaces::root::DB::{
     EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
     KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    CppStrWithView, CppStrWithViewVec, PageWithView, PageWithViewVec,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
@@ -856,6 +858,17 @@ impl Drop for RawCppPtr {
     }
 }
 
+impl Drop for PageWithViewVec {
+    fn drop(&mut self) {
+        if self.inner != std::ptr::null_mut() {
+            let helper = get_engine_store_server_helper();
+            helper.gc_page_with_view_vec(self.inner, self.len);
+            self.inner = std::ptr::null_mut();
+            self.len = 0;
+        }
+    }
+}
+
 static mut ENGINE_STORE_SERVER_HELPER_PTR: isize = 0;
 
 pub fn get_engine_store_server_helper_ptr() -> isize {
@@ -1005,6 +1018,185 @@ impl EngineStoreServerHelper {
                 index,
                 term,
             ) != 0
+        }
+    }
+
+    pub fn create_write_batch(
+        &self,
+    ) -> RawCppPtr {
+        debug_assert!(self.fn_create_write_batch.is_some());
+        unsafe {
+            (self.fn_create_write_batch.into_inner())()
+        }
+    }
+
+    pub fn write_batch_put_page(
+        &self,
+        wb: RawVoidPtr,
+        page_id: BaseBuffView,
+        page: BaseBuffView,
+    ) {
+        debug_assert!(self.fn_write_batch_put_page.is_some());
+        unsafe {
+            (self.fn_write_batch_put_page.into_inner())(
+                wb,
+                page_id,
+                page,
+            )
+        }
+    }
+
+    pub fn write_batch_del_page(
+        &self,
+        wb: RawVoidPtr,
+        page_id: BaseBuffView,
+    ) {
+        debug_assert!(self.fn_write_batch_del_page.is_some());
+        unsafe {
+            (self.fn_write_batch_del_page.into_inner())(
+                wb,
+                page_id,
+            )
+        }
+    }
+
+    pub fn write_batch_size(
+        &self,
+        wb: RawVoidPtr,
+    ) -> u64 {
+        debug_assert!(self.fn_write_batch_size.is_some());
+        unsafe {
+            (self.fn_write_batch_size.into_inner())(
+                wb,
+            )
+        }
+    }
+
+    pub fn write_batch_is_empty(
+        &self,
+        wb: RawVoidPtr,
+    ) -> u8 {
+        debug_assert!(self.fn_write_batch_is_empty.is_some());
+        unsafe {
+            (self.fn_write_batch_is_empty.into_inner())(
+                wb,
+            )
+        }
+    }
+
+    pub fn write_batch_merge(
+        &self,
+        lwb: RawVoidPtr,
+        rwb: RawVoidPtr,
+    ) {
+        debug_assert!(self.fn_write_batch_merge.is_some());
+        unsafe {
+            (self.fn_write_batch_merge.into_inner())(
+                lwb,
+                rwb,
+            )
+        }
+    }
+
+    pub fn write_batch_clear(
+        &self,
+        wb: RawVoidPtr,
+    ) {
+        debug_assert!(self.fn_write_batch_clear.is_some());
+        unsafe {
+            (self.fn_write_batch_clear.into_inner())(
+                wb,
+            )
+        }
+    }
+
+    pub fn consume_write_batch(
+        &self,
+        wb: RawVoidPtr,
+    ) {
+        debug_assert!(self.fn_consume_write_batch.is_some());
+        unsafe {
+            (self.fn_consume_write_batch.into_inner())(
+                self.inner,
+                wb,
+            )
+        }
+    }
+
+    pub fn read_page(
+        &self,
+        page_id: BaseBuffView,
+    ) -> PageWithView {
+        debug_assert!(self.fn_handle_read_page.is_some());
+        unsafe {
+            (self.fn_handle_read_page.into_inner())(
+                self.inner,
+                page_id,
+            )
+        }
+    }
+
+    pub fn scan_page(
+        &self,
+        start_page_id: BaseBuffView,
+        end_page_id: BaseBuffView,
+    ) -> PageWithViewVec {
+        debug_assert!(self.fn_handle_scan_page.is_some());
+        unsafe {
+            (self.fn_handle_scan_page.into_inner())(
+                self.inner,
+                start_page_id,
+                end_page_id,
+            )
+        }
+    }
+
+    pub fn gc_page_with_view_vec(
+        &self,
+        arg1: * mut PageWithView,
+        arg2: u64,
+    ) {
+        debug_assert!(self.fn_gc_page_with_view_vec.is_some());
+        unsafe {
+            (self.fn_gc_page_with_view_vec.into_inner())(
+                arg1,
+                arg2,
+            )
+        }
+    }
+
+    pub fn purge_pagestorage(
+        &self,
+    ) {
+        debug_assert!(self.fn_handle_purge_pagestorage.is_some());
+        unsafe {
+            (self.fn_handle_purge_pagestorage.into_inner())(
+                self.inner,
+            )
+        }
+    }
+
+    pub fn seek_ps_key(
+        &self,
+        page_id: BaseBuffView,
+    ) -> CppStrWithView {
+        debug_assert!(self.fn_handle_seek_ps_key.is_some());
+        unsafe {
+            (self.fn_handle_seek_ps_key.into_inner())(
+                self.inner,
+                page_id,
+            )
+        }
+    }
+
+    pub fn is_ps_empty(
+        &self,
+    ) -> u8 {
+        debug_assert!(self.fn_is_ps_empty.is_some());
+        unsafe {
+            (self.fn_is_ps_empty.into_inner())(
+                self.inner,
+            )
         }
     }
 
