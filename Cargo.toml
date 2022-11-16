@@ -38,7 +38,7 @@ cloud-azure = [
   "encryption_export/cloud-azure",
   "sst_importer/cloud-azure",
 ]
-testexport = ["raftstore/testexport", "api_version/testexport", "engine_tiflash/testexport", "causal_ts/testexport"]
+testexport = ["raftstore/testexport", "api_version/testexport", "causal_ts/testexport"]
 test-engine-kv-rocksdb = [
   "engine_test/test-engine-kv-rocksdb"
 ]
@@ -189,14 +189,6 @@ test_util = { workspace = true }
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "time"] }
 zipf = "6.1.0"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-procinfo = { git = "https://github.com/tikv/procinfo-rs", rev = "6599eb9dca74229b2c1fcc44118bef7eff127128" }
-# When you modify TiKV cooperatively with kvproto, this will be useful to submit the PR to TiKV and the PR to
-# kvproto at the same time.
-# After the PR to kvproto is merged, remember to comment this out and run `cargo update -p kvproto`.
-[patch.'https://github.com/pingcap/kvproto']
-# kvproto = { git = "https://github.com/your_github_id/kvproto", branch="your_branch" }
-
 [patch.crates-io]
 prometheus = { git = "https://github.com/solotzg/rust-prometheus.git", rev = "b4fe98a06a58d29f9b9987a0d7186f6ed5230193" }
 
@@ -297,6 +289,7 @@ members = [
   "components/tipb_helper",
   "components/tracker",
   "components/txn_types",
+  "engine_tiflash",
   "fuzz",
   "fuzz/fuzzer-afl",
   "fuzz/fuzzer-honggfuzz",

@@ -113,7 +113,7 @@ pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> Has
             let server = &ffi.engine_store_server;
             let region = server.kvstore.get(&region_id).unwrap();
             let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
-                Ok(Some(i)) => (i),
+                Ok(Some(i)) => i,
                 _ => unreachable!(),
             };
             prev_state.insert(
