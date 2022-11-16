@@ -5,7 +5,6 @@ use proxy_server::config::{
     address_proxy_config, ensure_no_common_unrecognized_keys, get_last_config,
     setup_default_tikv_config, validate_and_persist_config, TIFLASH_DEFAULT_LISTENING_ADDR,
 };
-use raft::eraftpb::MessageType;
 use tikv::config::{TikvConfig, LAST_CONFIG_FILE};
 
 use crate::proxy::*;
