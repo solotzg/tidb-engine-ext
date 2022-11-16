@@ -1000,7 +1000,7 @@ impl EngineStoreServerHelper {
                     tikv_util::error!("we don't support try_flush_data for now");
                     2
                 } else {
-                    if try_until_succeed as u8 { 1 } else { 0 }
+                    if try_until_succeed.into() { 1 } else { 0 }
                 },
                 index,
                 term,
