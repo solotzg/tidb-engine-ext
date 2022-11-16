@@ -983,6 +983,7 @@ impl EngineStoreServerHelper {
     // of (index,term) before post_exec. DO NOT use it other than CompactLog.
     // Use (0,0) instead.
     #[allow(clippy::collapsible_else_if)]
+    #[allow(clippy::bool_to_int_with_if)]
     pub fn try_flush_data(
         &self,
         region_id: u64,
@@ -1000,7 +1001,7 @@ impl EngineStoreServerHelper {
                     tikv_util::error!("we don't support try_flush_data for now");
                     2
                 } else {
-                    if try_until_succeed.into() { 1 } else { 0 }
+                    if try_until_succeed { 1 } else { 0 }
                 },
                 index,
                 term,
@@ -1231,6 +1232,7 @@ pub extern "C" fn ffi_make_timer_task(millis: u64) -> RawRustPtr {
     }
 }
 
+#[allow(clippy::bool_to_int_with_if)]
 pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoidPtr) -> u8 {
     let task = &mut *(task_ptr as *mut utils::TimerTask);
     let waker = if waker.is_null() {
