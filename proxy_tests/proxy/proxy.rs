@@ -30,7 +30,7 @@ pub use new_mock_engine_store::{
     },
     Cluster, ProxyConfig, Simulator, TestPdClient,
 };
-pub use raft::eraftpb::MessageType;
+pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
 pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
