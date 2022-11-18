@@ -112,6 +112,8 @@ pub struct Cluster<T: Simulator<TiFlashEngine>> {
     pub test_data: TestData,
 }
 
+impl<T: Simulator<TiFlashEngine>> std::panic::UnwindSafe for Cluster<T> {}
+
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn new(
         id: u64,
@@ -294,6 +296,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.ffi_helper_lst.push(ffi_helper_set);
     }
 
+    // If None, use the last in the list, which is added by create_ffi_helper_set.
     pub fn associate_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
             self.ffi_helper_lst.remove(i)

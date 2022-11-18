@@ -32,7 +32,7 @@ pub use new_mock_engine_store::{
 };
 pub use raft::eraftpb::MessageType;
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
-pub use test_raftstore::new_peer;
+pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
     config::{ReadableDuration, ReadableSize},
     store::find_peer,
@@ -113,12 +113,12 @@ pub fn maybe_collect_states(
     let mut prev_state: HashMap<u64, States> = HashMap::default();
     iter_ffi_helpers(
         cluster,
-        None,
+        store_ids,
         &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
             if let Some(region) = server.kvstore.get(&region_id) {
                 let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
-                    Ok(Some(i)) => (i),
+                    Ok(Some(i)) => i,
                     _ => unreachable!(),
                 };
                 prev_state.insert(
