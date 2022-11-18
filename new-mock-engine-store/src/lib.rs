@@ -1016,6 +1016,8 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         "pre handle snaps";
         "peer_id" => peer_id,
         "store_id" => node_id,
+        "index" => index,
+        "term" => term,
         "region" => ?region.region,
         "snap len" => snaps.len,
     );

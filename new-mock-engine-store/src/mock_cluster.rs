@@ -92,7 +92,7 @@ pub struct TestData {
 
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
     // Helper to set ffi_helper_set.
-    ffi_helper_lst: Vec<FFIHelperSet>,
+    pub ffi_helper_lst: Vec<FFIHelperSet>,
     pub ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
 
     pub cfg: Config,
@@ -258,6 +258,12 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         region_id
     }
 
+    pub fn run_conf_change_no_start(&mut self) -> u64 {
+        self.create_engines();
+        let region_id = self.bootstrap_conf_change();
+        region_id
+    }
+
     pub fn create_ffi_helper_set(
         &mut self,
         engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
@@ -328,11 +334,24 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 
     pub fn start(&mut self) -> ServerResult<()> {
+        self.start_with(Default::default())
+    }
+
+    pub fn start_with(&mut self, skip_set: HashSet<usize>) -> ServerResult<()> {
         init_global_ffi_helper_set();
 
         // Try recover from last shutdown.
-        let node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
+        let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
+        node_ids.sort();
+        let mut cnt: usize = 0;
         for node_id in node_ids {
+            if skip_set.contains(&cnt) {
+                tikv_util::info!("skip start at {} is {}", cnt, node_id);
+                cnt += 1;
+                continue;
+            } else {
+                cnt += 1;
+            }
             debug!("recover node"; "node_id" => node_id);
             let _engines = self.engines.get_mut(&node_id).unwrap().clone();
             let _key_mgr = self.key_managers_map[&node_id].clone();
@@ -352,7 +371,13 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         }
 
         // Try start new nodes.
+        // Normally, this branch will not be called, since self.engines are already
+        // added in bootstrap_region o bootstrap_conf_change.
+        cnt = 0;
         for _ in 0..self.count - self.engines.len() {
+            if !skip_set.empty() {
+                panic!("Error when start with skip set");
+            }
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
             self.create_engine(Some(router.clone()));
 
@@ -383,6 +408,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.key_managers_map.insert(node_id, key_manager.clone());
             self.associate_ffi_helper_set(None, node_id);
         }
+        assert_eq!(self.count, self.engines.len());
+        assert_eq!(self.count, self.dbs.len());
         Ok(())
     }
 

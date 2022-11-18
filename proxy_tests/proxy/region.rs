@@ -1,3 +1,7 @@
+use std::iter::FromIterator;
+
+use collections::HashSet;
+
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use crate::proxy::*;
 
@@ -144,7 +148,7 @@ fn test_get_region_local_state() {
 /// If make sure we can add learner peer for a store which is not started
 /// actually.
 #[test]
-fn test_add_learner_peer_before_start_by_simple() {
+fn test_add_invalid_learner_peer_by_simple() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     disable_auto_gen_compact_log(&mut cluster);
     // Disable default max peer count check.
@@ -180,7 +184,7 @@ fn test_add_learner_peer_before_start_by_simple() {
 /// If make sure we can add learner peer for a store which is not started
 /// actually.
 #[test]
-fn test_add_learner_peer_before_start_by_joint() {
+fn test_add_invalid_learner_peer_by_joint() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     disable_auto_gen_compact_log(&mut cluster);
     // Disable default max peer count check.
@@ -219,5 +223,87 @@ fn test_add_learner_peer_before_start_by_joint() {
         );
     }
 
+    cluster.shutdown();
+}
+
+/// This test is very important.
+/// If make sure we can add learner peer for a store which is not started
+/// actually.
+#[test]
+fn test_add_learner_peer_before_start_by_joint() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 5);
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    cluster.cfg.proxy_compat = false;
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable default max peer count check.
+    pd_client.disable_default_operator();
+
+    let _ = cluster.run_conf_change_no_start();
+    let _ = cluster.start_with(HashSet::from_iter(
+        vec![3, 4].into_iter().map(|x| x as usize),
+    ));
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+
+    pd_client.must_joint_confchange(
+        1,
+        vec![
+            (ConfChangeType::AddNode, new_peer(2, 2)),
+            (ConfChangeType::AddNode, new_peer(3, 3)),
+            (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
+            (ConfChangeType::AddLearnerNode, new_learner_peer(5, 5)),
+        ],
+    );
+    assert!(pd_client.is_in_joint(1));
+    pd_client.must_leave_joint(1);
+
+    cluster.must_put(b"k3", b"v3");
+    check_key(
+        &cluster,
+        b"k3",
+        b"v3",
+        Some(true),
+        None,
+        Some(vec![1, 2, 3]),
+    );
+    // let new_states = maybe_collect_states(&cluster, 1, Some(vec![1,2,3]));
+    // assert_eq!(new_states.len(), 3);
+    // for i in new_states.keys() {
+    //     assert_eq!(
+    //         new_states
+    //             .get(i)
+    //             .unwrap()
+    //             .in_disk_region_state
+    //             .get_region()
+    //             .get_peers()
+    //             .len(),
+    //         1 + 2 /* AddPeer */ + 2 // Learner
+    //     );
+    // }
+
+    assert_eq!(cluster.ffi_helper_lst.len(), 2);
+    cluster
+        .start_with(HashSet::from_iter(
+            vec![0, 1, 2].into_iter().map(|x| x as usize),
+        ))
+        .unwrap();
+
+    pd_client.must_joint_confchange(
+        1,
+        vec![
+            (ConfChangeType::AddNode, new_peer(2, 2)),
+            (ConfChangeType::AddNode, new_peer(3, 3)),
+            (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
+            (ConfChangeType::AddLearnerNode, new_learner_peer(5, 5)),
+        ],
+    );
+    // assert!(pd_client.is_in_joint(1));
+    pd_client.must_leave_joint(1);
+
+    cluster.must_put(b"k4", b"v4");
+    // std::thread::sleep(std::time::Duration::from_millis(3000));
+    check_key(&cluster, b"k4", b"v4", Some(true), None, None);
+
+    fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();
 }
