@@ -304,8 +304,9 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.ffi_helper_lst.push(ffi_helper_set);
     }
 
-    // If index is None, use the last in the list, which is added by create_ffi_helper_set.
-    // In most cases, index is `Some(0)`, which means we will use the first.
+    // If index is None, use the last in the list, which is added by
+    // create_ffi_helper_set. In most cases, index is `Some(0)`, which means we
+    // will use the first.
     pub fn associate_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
             self.ffi_helper_lst.remove(i)
@@ -1042,6 +1043,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
     pub fn get_tiflash_engine(&self, node_id: u64) -> &TiFlashEngine {
         &self.engines[&node_id].kv
+    }
+
+    pub fn get_engines(&self, node_id: u64) -> &Engines<TiFlashEngine, engine_rocks::RocksEngine> {
+        &self.engines[&node_id]
     }
 
     pub fn get_raw_engine(&self, node_id: u64) -> Arc<DB> {

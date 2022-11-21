@@ -10,7 +10,7 @@ pub use std::{
 };
 
 pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
-pub use engine_traits::{MiscExt, CF_DEFAULT, CF_LOCK, CF_WRITE};
+pub use engine_traits::{MiscExt, Mutable, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE};
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 pub use engine_traits::{Peekable, CF_RAFT};
 pub use kvproto::{
@@ -34,6 +34,7 @@ pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
 pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
+    box_err, box_try,
     config::{ReadableDuration, ReadableSize},
     store::find_peer,
     time::Duration,

@@ -226,6 +226,29 @@ fn test_add_invalid_learner_peer_by_joint() {
     cluster.shutdown();
 }
 
+use engine_traits::{Engines, KvEngine, RaftEngine};
+use raftstore::store::{write_initial_apply_state, write_initial_raft_state};
+
+pub fn prepare_bootstrap_cluster_with(
+    engines: &Engines<impl KvEngine, impl RaftEngine>,
+    region: &metapb::Region,
+) -> raftstore::Result<()> {
+    let mut state = RegionLocalState::default();
+    state.set_region(region.clone());
+
+    let mut wb = engines.kv.write_batch();
+    box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, region));
+    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region.get_id()), &state));
+    write_initial_apply_state(&mut wb, region.get_id())?;
+    wb.write()?;
+    engines.sync_kv()?;
+
+    let mut raft_wb = engines.raft.log_batch(1024);
+    write_initial_raft_state(&mut raft_wb, region.get_id())?;
+    box_try!(engines.raft.consume(&mut raft_wb, true));
+    Ok(())
+}
+
 /// This test is very important.
 /// If make sure we can add learner peer for a store which is not started
 /// actually.
@@ -266,43 +289,70 @@ fn test_add_learner_peer_before_start_by_joint() {
         None,
         Some(vec![1, 2, 3]),
     );
-    // let new_states = maybe_collect_states(&cluster, 1, Some(vec![1,2,3]));
-    // assert_eq!(new_states.len(), 3);
-    // for i in new_states.keys() {
-    //     assert_eq!(
-    //         new_states
-    //             .get(i)
-    //             .unwrap()
-    //             .in_disk_region_state
-    //             .get_region()
-    //             .get_peers()
-    //             .len(),
-    //         1 + 2 /* AddPeer */ + 2 // Learner
-    //     );
-    // }
 
+    let new_states = maybe_collect_states(&cluster, 1, Some(vec![1, 2, 3]));
+    assert_eq!(new_states.len(), 3);
+    for i in new_states.keys() {
+        assert_eq!(
+            new_states
+                .get(i)
+                .unwrap()
+                .in_disk_region_state
+                .get_region()
+                .get_peers()
+                .len(),
+            1 + 2 /* AddPeer */ + 2 // Learner
+        );
+    }
+
+    let region = new_states
+        .get(&1)
+        .unwrap()
+        .in_disk_region_state
+        .get_region();
     assert_eq!(cluster.ffi_helper_lst.len(), 2);
+
+    for id in vec![4, 5] {
+        let engines = cluster.get_engines(id);
+        assert!(prepare_bootstrap_cluster_with(engines, region).is_ok());
+    }
+
     cluster
         .start_with(HashSet::from_iter(
             vec![0, 1, 2].into_iter().map(|x| x as usize),
         ))
         .unwrap();
 
-    pd_client.must_joint_confchange(
-        1,
-        vec![
-            (ConfChangeType::AddNode, new_peer(2, 2)),
-            (ConfChangeType::AddNode, new_peer(3, 3)),
-            (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
-            (ConfChangeType::AddLearnerNode, new_learner_peer(5, 5)),
-        ],
-    );
-    // assert!(pd_client.is_in_joint(1));
-    pd_client.must_leave_joint(1);
+    // pd_client.must_joint_confchange(
+    //     1,
+    //     vec![
+    //         (ConfChangeType::AddNode, new_peer(2, 2)),
+    //         (ConfChangeType::AddNode, new_peer(3, 3)),
+    //         (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
+    //         (ConfChangeType::AddLearnerNode, new_learner_peer(5, 5)),
+    //     ],
+    // );
+    // // assert!(pd_client.is_in_joint(1));
+    // pd_client.must_leave_joint(1);
 
     cluster.must_put(b"k4", b"v4");
     // std::thread::sleep(std::time::Duration::from_millis(3000));
     check_key(&cluster, b"k4", b"v4", Some(true), None, None);
+
+    let new_states = maybe_collect_states(&cluster, 1, None);
+    assert_eq!(new_states.len(), 5);
+    for i in new_states.keys() {
+        assert_eq!(
+            new_states
+                .get(i)
+                .unwrap()
+                .in_disk_region_state
+                .get_region()
+                .get_peers()
+                .len(),
+            1 + 2 /* AddPeer */ + 2 // Learner
+        );
+    }
 
     fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();
