@@ -264,6 +264,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         region_id
     }
 
+    /// We need to create FFIHelperSet while we create engine.
+    /// And later set its `node_id` when we are allocated one when start.
     pub fn create_ffi_helper_set(
         &mut self,
         engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
@@ -302,7 +304,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.ffi_helper_lst.push(ffi_helper_set);
     }
 
-    // If None, use the last in the list, which is added by create_ffi_helper_set.
+    // If index is None, use the last in the list, which is added by create_ffi_helper_set.
+    // In most cases, index is `Some(0)`, which means we will use the first.
     pub fn associate_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
             self.ffi_helper_lst.remove(i)
@@ -343,14 +346,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         // Try recover from last shutdown.
         let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         node_ids.sort();
-        let mut cnt: usize = 0;
-        for node_id in node_ids {
+        for (cnt, node_id) in node_ids.iter().enumerate() {
+            let node_id = *node_id;
             if skip_set.contains(&cnt) {
                 tikv_util::info!("skip start at {} is {}", cnt, node_id);
-                cnt += 1;
                 continue;
-            } else {
-                cnt += 1;
             }
             debug!("recover node"; "node_id" => node_id);
             let _engines = self.engines.get_mut(&node_id).unwrap().clone();
@@ -372,8 +372,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
         // Try start new nodes.
         // Normally, this branch will not be called, since self.engines are already
-        // added in bootstrap_region o bootstrap_conf_change.
-        cnt = 0;
+        // added in bootstrap_region or bootstrap_conf_change.
         for _ in 0..self.count - self.engines.len() {
             if !skip_set.is_empty() {
                 panic!("Error when start with skip set");
