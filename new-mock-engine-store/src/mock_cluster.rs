@@ -375,7 +375,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         // added in bootstrap_region o bootstrap_conf_change.
         cnt = 0;
         for _ in 0..self.count - self.engines.len() {
-            if !skip_set.empty() {
+            if !skip_set.is_empty() {
                 panic!("Error when start with skip set");
             }
             let (router, system) = create_raft_batch_system(&self.cfg.raft_store);
