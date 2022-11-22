@@ -10,7 +10,9 @@ pub use std::{
 };
 
 pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
-pub use engine_traits::{MiscExt, Mutable, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE};
+pub use engine_traits::{
+    MiscExt, Mutable, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
+};
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 pub use engine_traits::{Peekable, CF_RAFT};
 pub use kvproto::{
@@ -22,13 +24,14 @@ pub use kvproto::{
 };
 pub use new_mock_engine_store::{
     config::Config,
+    make_new_region,
     mock_cluster::{new_put_cmd, new_request, FFIHelperSet},
     must_get_equal, must_get_none,
     node::NodeCluster,
     transport_simulate::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
-    Cluster, ProxyConfig, Simulator, TestPdClient,
+    write_kv_in_mem, Cluster, ProxyConfig, Simulator, TestPdClient,
 };
 pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
@@ -196,6 +199,55 @@ pub fn must_get_mem(
         cf,
         last_res,
     )
+}
+
+pub fn must_put_and_check_key_with_generator<F: Fn(u64) -> (String, String)>(
+    cluster: &mut Cluster<NodeCluster>,
+    gen: F,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    for i in from..to {
+        let (k, v) = gen(i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+    for i in from..to {
+        let (k, v) = gen(i);
+        check_key(
+            &cluster,
+            k.as_bytes(),
+            v.as_bytes(),
+            in_mem,
+            in_disk,
+            engines.clone(),
+        );
+    }
+}
+
+pub fn must_put_and_check_key(
+    cluster: &mut Cluster<NodeCluster>,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    must_put_and_check_key_with_generator(
+        cluster,
+        |i: u64| {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            (k, v)
+        },
+        from,
+        to,
+        in_mem,
+        in_disk,
+        engines.clone(),
+    );
 }
 
 pub fn check_key(

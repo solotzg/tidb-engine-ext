@@ -183,7 +183,7 @@ pub fn make_new_region(
     region
 }
 
-fn write_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8], v: &[u8]) {
+pub fn write_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8], v: &[u8]) {
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];

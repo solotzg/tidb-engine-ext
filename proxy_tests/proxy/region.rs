@@ -249,12 +249,11 @@ pub fn prepare_bootstrap_cluster_with(
     Ok(())
 }
 
-/// This test is very important.
-/// If make sure we can add learner peer for a store which is not started
-/// actually.
-#[test]
-fn test_add_learner_peer_before_start_by_joint() {
+fn new_later_add_learner_cluster<F: Fn(&mut Cluster<NodeCluster>)>(
+    initer: F,
+) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
     let (mut cluster, pd_client) = new_mock_cluster(0, 5);
+    // Make sure we persist before generate snapshot.
     fail::cfg("on_pre_persist_with_finish", "return").unwrap();
     cluster.cfg.proxy_compat = false;
     disable_auto_gen_compact_log(&mut cluster);
@@ -265,8 +264,7 @@ fn test_add_learner_peer_before_start_by_joint() {
     let _ = cluster.start_with(HashSet::from_iter(
         vec![3, 4].into_iter().map(|x| x as usize),
     ));
-    cluster.must_put(b"k1", b"v1");
-    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    initer(&mut cluster);
 
     pd_client.must_joint_confchange(
         1,
@@ -280,16 +278,11 @@ fn test_add_learner_peer_before_start_by_joint() {
     assert!(pd_client.is_in_joint(1));
     pd_client.must_leave_joint(1);
 
-    cluster.must_put(b"k3", b"v3");
-    check_key(
-        &cluster,
-        b"k3",
-        b"v3",
-        Some(true),
-        None,
-        Some(vec![1, 2, 3]),
-    );
+    (cluster, pd_client)
+}
 
+fn later_bootstrap_learner_peer(cluster: &mut Cluster<NodeCluster>) {
+    // Check if the voters has correct learner peer.
     let new_states = maybe_collect_states(&cluster, 1, Some(vec![1, 2, 3]));
     assert_eq!(new_states.len(), 3);
     for i in new_states.keys() {
@@ -305,19 +298,38 @@ fn test_add_learner_peer_before_start_by_joint() {
         );
     }
 
+    let new_states = maybe_collect_states(&cluster, 1, Some(vec![1, 2, 3]));
     let region = new_states
         .get(&1)
         .unwrap()
         .in_disk_region_state
         .get_region();
-    assert_eq!(cluster.ffi_helper_lst.len(), 2);
-
+    // assert_eq!(cluster.ffi_helper_lst.len(), 2);
     // Explicitly set region for store 4 and 5.
     for id in vec![4, 5] {
         let engines = cluster.get_engines(id);
         assert!(prepare_bootstrap_cluster_with(engines, region).is_ok());
     }
+}
 
+#[test]
+fn test_add_delayed_started_learner_by_joint() {
+    let (mut cluster, pd_client) = new_later_add_learner_cluster(|c: &mut Cluster<NodeCluster>| {
+        c.must_put(b"k1", b"v1");
+        check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    });
+
+    cluster.must_put(b"k2", b"v2");
+    check_key(
+        &cluster,
+        b"k2",
+        b"v2",
+        Some(true),
+        None,
+        Some(vec![1, 2, 3]),
+    );
+
+    later_bootstrap_learner_peer(&mut cluster);
     cluster
         .start_with(HashSet::from_iter(
             vec![0, 1, 2].into_iter().map(|x| x as usize),
@@ -327,6 +339,146 @@ fn test_add_learner_peer_before_start_by_joint() {
     cluster.must_put(b"k4", b"v4");
     check_key(&cluster, b"k4", b"v4", Some(true), None, None);
 
+    let new_states = maybe_collect_states(&cluster, 1, None);
+    assert_eq!(new_states.len(), 5);
+    for i in new_states.keys() {
+        assert_eq!(
+            new_states
+                .get(i)
+                .unwrap()
+                .in_disk_region_state
+                .get_region()
+                .get_peers()
+                .len(),
+            1 + 2 /* AddPeer */ + 2 // Learner
+        );
+    }
+
+    fail::remove("on_pre_persist_with_finish");
+    cluster.shutdown();
+}
+
+pub fn copy_meta_from(
+    source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable>,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    source: &Box<new_mock_engine_store::Region>,
+    target: &mut Box<new_mock_engine_store::Region>,
+) -> raftstore::Result<()> {
+    let region_id = source.region.get_id();
+
+    let mut wb = target_engines.kv.write_batch();
+    let mut raft_wb = target_engines.raft.log_batch(1024);
+
+    box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
+
+    // region local state
+    let mut state = RegionLocalState::default();
+    state.set_region(source.region.clone());
+    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
+
+    // apply state
+    wb.put_msg_cf(
+        CF_RAFT,
+        &keys::apply_state_key(region_id),
+        &source.apply_state,
+    )?;
+    target.apply_state = source.apply_state.clone();
+    target.applied_term = source.applied_term;
+
+    wb.write()?;
+    target_engines.sync_kv()?;
+
+    // raft state
+    {
+        let key = keys::raft_state_key(region_id);
+        let raft_state = source_engines
+            .raft
+            .get_msg_cf(CF_DEFAULT, &key)
+            .unwrap()
+            .unwrap();
+        raft_wb.put_raft_state(region_id, &raft_state)?;
+    };
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
+    Ok(())
+}
+
+#[test]
+fn test_add_delayed_started_learner_snapshot() {
+    let (mut cluster, pd_client) = new_later_add_learner_cluster(|c: &mut Cluster<NodeCluster>| {
+        c.must_put(b"k1", b"v1");
+        check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    });
+
+    must_put_and_check_key_with_generator(
+        &mut cluster,
+        |i: u64| (format!("k{}", i), (0..10240).map(|_| "X").collect()),
+        10,
+        20,
+        Some(true),
+        None,
+        Some(vec![1, 2, 3]),
+    );
+
+    // Force a compact log, so the leader have to send snapshot then.
+    let region = cluster.get_region(b"k1");
+    let region_id = region.get_id();
+    let prev_states = maybe_collect_states(&cluster, region_id, Some(vec![1, 2, 3]));
+    {
+        let (compact_index, compact_term) = get_valid_compact_index(&prev_states);
+        assert!(compact_index > 15);
+        let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
+        let req =
+            test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+        let _ = cluster
+            .call_command_on_leader(req, Duration::from_secs(3))
+            .unwrap();
+    }
+
+    later_bootstrap_learner_peer(&mut cluster);
+    // After that, we manually compose data, to avoid snapshot sending.
+    let leader_region_1 = cluster
+        .ffi_helper_set
+        .lock()
+        .unwrap()
+        .get_mut(&1)
+        .unwrap()
+        .engine_store_server
+        .kvstore
+        .get(&1)
+        .unwrap()
+        .clone();
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![4, 5]),
+        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+            let server = &mut ffi.engine_store_server;
+            assert!(server.kvstore.get(&region_id).is_none());
+            let new_region = make_new_region(Some(leader_region_1.region.clone()), Some(id));
+            server
+                .kvstore
+                .insert(leader_region_1.region.get_id(), Box::new(new_region));
+            if let Some(region) = server.kvstore.get_mut(&region_id) {
+                for cf in 0..3 {
+                    for (k, v) in &leader_region_1.data[cf] {
+                        write_kv_in_mem(region, cf, k.as_slice(), v.as_slice());
+                    }
+                }
+            } else {
+                panic!("error");
+            }
+        },
+    );
+
+    cluster
+        .start_with(HashSet::from_iter(
+            vec![0, 1, 2].into_iter().map(|x| x as usize),
+        ))
+        .unwrap();
+
+    cluster.must_put(b"z1", b"v1");
+    check_key(&cluster, b"z1", b"v1", Some(true), None, None);
+
+    // Check if every node has the correct configuation.
     let new_states = maybe_collect_states(&cluster, 1, None);
     assert_eq!(new_states.len(), 5);
     for i in new_states.keys() {
