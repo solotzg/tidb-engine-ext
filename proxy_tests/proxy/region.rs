@@ -148,7 +148,7 @@ fn test_get_region_local_state() {
 /// If make sure we can add learner peer for a store which is not started
 /// actually.
 #[test]
-fn test_add_invalid_learner_peer_by_simple() {
+fn test_add_absent_learner_peer_by_simple() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     disable_auto_gen_compact_log(&mut cluster);
     // Disable default max peer count check.
@@ -184,7 +184,7 @@ fn test_add_invalid_learner_peer_by_simple() {
 /// If make sure we can add learner peer for a store which is not started
 /// actually.
 #[test]
-fn test_add_invalid_learner_peer_by_joint() {
+fn test_add_absent_learner_peer_by_joint() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     disable_auto_gen_compact_log(&mut cluster);
     // Disable default max peer count check.
@@ -312,6 +312,7 @@ fn test_add_learner_peer_before_start_by_joint() {
         .get_region();
     assert_eq!(cluster.ffi_helper_lst.len(), 2);
 
+    // Explicitly set region for store 4 and 5.
     for id in vec![4, 5] {
         let engines = cluster.get_engines(id);
         assert!(prepare_bootstrap_cluster_with(engines, region).is_ok());
@@ -323,20 +324,7 @@ fn test_add_learner_peer_before_start_by_joint() {
         ))
         .unwrap();
 
-    // pd_client.must_joint_confchange(
-    //     1,
-    //     vec![
-    //         (ConfChangeType::AddNode, new_peer(2, 2)),
-    //         (ConfChangeType::AddNode, new_peer(3, 3)),
-    //         (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
-    //         (ConfChangeType::AddLearnerNode, new_learner_peer(5, 5)),
-    //     ],
-    // );
-    // // assert!(pd_client.is_in_joint(1));
-    // pd_client.must_leave_joint(1);
-
     cluster.must_put(b"k4", b"v4");
-    // std::thread::sleep(std::time::Duration::from_millis(3000));
     check_key(&cluster, b"k4", b"v4", Some(true), None, None);
 
     let new_states = maybe_collect_states(&cluster, 1, None);

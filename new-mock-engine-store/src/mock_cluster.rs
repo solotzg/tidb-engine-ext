@@ -260,8 +260,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
     pub fn run_conf_change_no_start(&mut self) -> u64 {
         self.create_engines();
-        let region_id = self.bootstrap_conf_change();
-        region_id
+        self.bootstrap_conf_change()
     }
 
     /// We need to create FFIHelperSet while we create engine.
