@@ -340,8 +340,15 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             Module::Coprocessor,
             Box::new(SplitCheckConfigManager(split_scheduler.clone())),
         );
-
+        if node_id == 5 {
+            debug!("!!!!! read B {:?} {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()),
+            engines.raft.get_msg_cf::<kvproto::raft_serverpb::RaftLocalState>(
+                engine_traits::CF_DEFAULT,
+                &keys::raft_state_key(1),
+            ));
+        }
         node.try_bootstrap_store(engines.clone())?;
+
         node.start(
             engines.clone(),
             simulate_trans.clone(),
@@ -365,7 +372,13 @@ impl Simulator<TiFlashEngine> for NodeCluster {
         );
 
         assert!(node_id == 0 || node_id == node.id());
-
+        if node_id == 5 {
+            debug!("!!!!! read B3 {:?} {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()),
+            engines.raft.get_msg_cf::<kvproto::raft_serverpb::RaftLocalState>(
+                engine_traits::CF_DEFAULT,
+                &keys::raft_state_key(1),
+            ));
+        }
         let node_id = node.id();
         debug!(
             "node_id: {} tmp: {:?}",

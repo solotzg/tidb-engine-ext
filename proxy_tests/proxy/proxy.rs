@@ -20,7 +20,7 @@ pub use kvproto::{
     metapb,
     metapb::RegionEpoch,
     raft_cmdpb::{AdminCmdType, AdminRequest, CmdType, Request},
-    raft_serverpb::{PeerState, RaftApplyState, RegionLocalState, StoreIdent},
+    raft_serverpb::{PeerState, RaftApplyState, RegionLocalState, StoreIdent, RaftLocalState},
 };
 pub use new_mock_engine_store::{
     config::Config,
@@ -43,6 +43,7 @@ pub use tikv_util::{
     time::Duration,
     HandyRwLock,
 };
+pub use engine_traits::RaftEngineDebug;
 
 // TODO Need refactor if moved to raft-engine
 pub fn get_region_local_state(
@@ -67,6 +68,10 @@ pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> Ra
     apply_state
 }
 
+pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(raft_engine: &ER, region_id: u64) -> RaftLocalState {
+    raft_engine.get_raft_state(region_id).unwrap().unwrap()
+}
+
 pub fn new_compute_hash_request() -> AdminRequest {
     let mut req = AdminRequest::default();
     req.set_cmd_type(AdminCmdType::ComputeHash);
@@ -89,6 +94,7 @@ pub struct States {
     pub in_memory_applied_term: u64,
     pub in_disk_apply_state: RaftApplyState,
     pub in_disk_region_state: RegionLocalState,
+    pub in_disk_raft_state: RaftLocalState,
     pub ident: StoreIdent,
 }
 
@@ -120,6 +126,7 @@ pub fn maybe_collect_states(
         store_ids,
         &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
+            let raft_engine = &cluster.get_engines(id).raft;
             if let Some(region) = server.kvstore.get(&region_id) {
                 let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
                     Ok(Some(i)) => i,
@@ -132,6 +139,7 @@ pub fn maybe_collect_states(
                         in_memory_applied_term: region.applied_term,
                         in_disk_apply_state: get_apply_state(&engine, region_id),
                         in_disk_region_state: get_region_local_state(&engine, region_id),
+                        in_disk_raft_state: get_raft_local_state(raft_engine, region_id),
                         ident,
                     },
                 );

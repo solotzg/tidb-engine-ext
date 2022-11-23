@@ -370,7 +370,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 continue;
             }
             debug!("recover node"; "node_id" => node_id);
-            let _engines = self.engines.get_mut(&node_id).unwrap().clone();
+            let engines = self.engines.get_mut(&node_id).unwrap().clone();
+            if node_id == 5 {
+                debug!("!!!!! read A {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()));
+            }
             let _key_mgr = self.key_managers_map[&node_id].clone();
             // Like TiKVServer::init
             self.run_node(node_id)?;
