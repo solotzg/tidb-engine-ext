@@ -11,7 +11,7 @@ pub use std::{
 
 pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 pub use engine_traits::{
-    MiscExt, Mutable, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
+    MiscExt, Mutable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 pub use engine_traits::{Peekable, CF_RAFT};
@@ -20,7 +20,7 @@ pub use kvproto::{
     metapb,
     metapb::RegionEpoch,
     raft_cmdpb::{AdminCmdType, AdminRequest, CmdType, Request},
-    raft_serverpb::{PeerState, RaftApplyState, RegionLocalState, StoreIdent, RaftLocalState},
+    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState, StoreIdent},
 };
 pub use new_mock_engine_store::{
     config::Config,
@@ -43,7 +43,6 @@ pub use tikv_util::{
     time::Duration,
     HandyRwLock,
 };
-pub use engine_traits::RaftEngineDebug;
 
 // TODO Need refactor if moved to raft-engine
 pub fn get_region_local_state(
@@ -68,7 +67,10 @@ pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> Ra
     apply_state
 }
 
-pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(raft_engine: &ER, region_id: u64) -> RaftLocalState {
+pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(
+    raft_engine: &ER,
+    region_id: u64,
+) -> RaftLocalState {
     raft_engine.get_raft_state(region_id).unwrap().unwrap()
 }
 

@@ -3813,10 +3813,6 @@ where
             // witness shouldn't generate snapshot.
             return;
         }
-
-        debug!("!!!!! generate snap";
-            "to_store_id" => snap_task.to_store_id,
-        );
         let applied_index = self.delegate.apply_state.get_applied_index();
         let need_sync = apply_ctx
             .apply_res

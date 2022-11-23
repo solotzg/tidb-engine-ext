@@ -232,11 +232,6 @@ where
             let mut meta = store_meta.lock().unwrap();
             meta.store_id = Some(store_id);
         }
-
-        if store_id == 5 {
-            debug!("!!!!! read B2 {:?} {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()),
-            engines.raft.get_raft_state(1));
-        }
         if let Some(first_region) = self.check_or_prepare_bootstrap_cluster(&engines, store_id)? {
             info!("trying to bootstrap cluster"; "store_id" => store_id, "region" => ?first_region);
             // cluster is not bootstrapped, and we choose first store to bootstrap
@@ -246,10 +241,6 @@ where
             self.bootstrap_cluster(&engines, first_region)?;
         }
 
-        if store_id == 5 {
-            debug!("!!!!! read B22 {:?} {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()),
-            engines.raft.get_raft_state(1));
-        }
         // Put store only if the cluster is bootstrapped.
         info!("put store to PD"; "store" => ?&self.store);
         let status = self.pd_client.put_store(self.store.clone())?;
@@ -436,13 +427,10 @@ where
         store_id: u64,
     ) -> Result<Option<metapb::Region>> {
         if let Some(first_region) = engines.kv.get_msg(keys::PREPARE_BOOTSTRAP_KEY)? {
-            debug!("!!!!! check_or_prepare_bootstrap_cluster sid {}, A", store_id);
             Ok(Some(first_region))
         } else if self.check_cluster_bootstrapped()? {
-            debug!("!!!!! check_or_prepare_bootstrap_cluster sid {}, B", store_id);
             Ok(None)
         } else {
-            debug!("!!!!! check_or_prepare_bootstrap_cluster sid {}, C", store_id);
             self.prepare_bootstrap_cluster(engines, store_id).map(Some)
         }
     }

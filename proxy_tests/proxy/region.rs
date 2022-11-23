@@ -1,8 +1,10 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use crate::proxy::*;
 use std::iter::FromIterator;
-use raft::eraftpb::Entry;
+
 use collections::HashSet;
+use raft::eraftpb::Entry;
+
+use crate::proxy::*;
 
 #[test]
 fn test_handle_destroy() {
@@ -255,7 +257,7 @@ fn new_later_add_learner_cluster<F: Fn(&mut Cluster<NodeCluster>)>(
     let (mut cluster, pd_client) = new_mock_cluster(0, 5);
     // Make sure we persist before generate snapshot.
     fail::cfg("on_pre_persist_with_finish", "return").unwrap();
-    
+
     cluster.cfg.proxy_compat = false;
     disable_auto_gen_compact_log(&mut cluster);
     // Disable default max peer count check.
@@ -271,19 +273,23 @@ fn new_later_add_learner_cluster<F: Fn(&mut Cluster<NodeCluster>)>(
         (ConfChangeType::AddNode, new_peer(2, 2)),
         (ConfChangeType::AddNode, new_peer(3, 3)),
     ];
-    let mut learner_peers: Vec<(ConfChangeType, kvproto::metapb::Peer)> = learner.iter().map(|i| (ConfChangeType::AddLearnerNode, new_learner_peer(*i, *i))).collect();
+    let mut learner_peers: Vec<(ConfChangeType, kvproto::metapb::Peer)> = learner
+        .iter()
+        .map(|i| (ConfChangeType::AddLearnerNode, new_learner_peer(*i, *i)))
+        .collect();
     peers.append(&mut learner_peers);
-    pd_client.must_joint_confchange(
-        1,
-        peers,
-    );
+    pd_client.must_joint_confchange(1, peers);
     assert!(pd_client.is_in_joint(1));
     pd_client.must_leave_joint(1);
 
     (cluster, pd_client)
 }
 
-fn later_bootstrap_learner_peer(cluster: &mut Cluster<NodeCluster>, peers: Vec<u64>, already_learner_count: usize) {
+fn later_bootstrap_learner_peer(
+    cluster: &mut Cluster<NodeCluster>,
+    peers: Vec<u64>,
+    already_learner_count: usize,
+) {
     // Check if the voters has correct learner peer.
     let new_states = maybe_collect_states(&cluster, 1, Some(vec![1, 2, 3]));
     assert_eq!(new_states.len(), 3);
@@ -314,11 +320,12 @@ fn later_bootstrap_learner_peer(cluster: &mut Cluster<NodeCluster>, peers: Vec<u
 
 #[test]
 fn test_add_delayed_started_learner_by_joint() {
-    let (mut cluster, pd_client) = new_later_add_learner_cluster(|c: &mut Cluster<NodeCluster>| {
-        c.must_put(b"k1", b"v1");
-        check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
-    },
-    vec![4, 5]
+    let (mut cluster, pd_client) = new_later_add_learner_cluster(
+        |c: &mut Cluster<NodeCluster>| {
+            c.must_put(b"k1", b"v1");
+            check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
+        },
+        vec![4, 5],
     );
 
     cluster.must_put(b"k2", b"v2");
@@ -361,7 +368,10 @@ fn test_add_delayed_started_learner_by_joint() {
 }
 
 pub fn copy_meta_from(
-    source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable + RaftEngineDebug>,
+    source_engines: &Engines<
+        impl KvEngine,
+        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
+    >,
     target_engines: &Engines<impl KvEngine, impl RaftEngine>,
     source: &Box<new_mock_engine_store::Region>,
     target: &mut Box<new_mock_engine_store::Region>,
@@ -387,23 +397,15 @@ pub fn copy_meta_from(
             .get_msg_cf(CF_RAFT, &key)
             .unwrap()
             .unwrap();
-        wb.put_msg_cf(
-            CF_RAFT,
-            &keys::apply_state_key(region_id),
-            &apply_state,
-        )?;
-        wb.put_cf(
-            CF_RAFT,
-            "!!!ZZZ".as_bytes(),
-            "VVVVV".as_bytes()
-        ).unwrap();
+        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+        wb.put_cf(CF_RAFT, "!!!ZZZ".as_bytes(), "VVVVV".as_bytes())
+            .unwrap();
         target.apply_state = apply_state.clone();
         target.applied_term = source.applied_term;
     }
 
     wb.write()?;
     target_engines.sync_kv()?;
-    debug!("!!!!! read AAA {:?}", target_engines.kv.get_value_cf(CF_RAFT, "!!!ZZZ".as_bytes()));
 
     // raft state
     {
@@ -413,20 +415,19 @@ pub fn copy_meta_from(
             .get_msg_cf(CF_DEFAULT, &key)
             .unwrap()
             .unwrap();
-        debug!("!!!!! raft log state {:?}", raft_state);
         raft_wb.put_raft_state(region_id, &raft_state)?;
     };
-    
+
     // raft log
     let mut entries: Vec<Entry> = Default::default();
-    source_engines.raft.scan_entries(
-        region_id,
-        |e| {
+    source_engines
+        .raft
+        .scan_entries(region_id, |e| {
             debug!("copy raft log"; "e" => ?e);
             entries.push(e.clone());
             Ok(true)
-        },
-    ).unwrap();
+        })
+        .unwrap();
 
     raft_wb.append(region_id, entries)?;
     box_try!(target_engines.raft.consume(&mut raft_wb, true));
@@ -438,10 +439,13 @@ pub fn copy_meta_from(
 fn test_add_delayed_started_learner_snapshot() {
     // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
     // fail::cfg("before_tiflash_do_write", "return").unwrap();
-    let (mut cluster, pd_client) = new_later_add_learner_cluster(|c: &mut Cluster<NodeCluster>| {
-        c.must_put(b"k1", b"v1");
-        check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
-    },vec![4]);
+    let (mut cluster, pd_client) = new_later_add_learner_cluster(
+        |c: &mut Cluster<NodeCluster>| {
+            c.must_put(b"k1", b"v1");
+            check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
+        },
+        vec![4],
+    );
 
     // Start Leader store 4.
     cluster
@@ -449,7 +453,7 @@ fn test_add_delayed_started_learner_snapshot() {
             vec![0, 1, 2, 4].into_iter().map(|x| x as usize),
         ))
         .unwrap();
-    
+
     must_put_and_check_key_with_generator(
         &mut cluster,
         |i: u64| (format!("k{}", i), (0..10240).map(|_| "X").collect()),
@@ -476,7 +480,7 @@ fn test_add_delayed_started_learner_snapshot() {
     }
 
     cluster.must_transfer_leader(1, new_peer(1, 1));
-    
+
     // Simulate 4 is lost, recover its data to node 5.
     cluster.stop_node(4);
     later_bootstrap_learner_peer(&mut cluster, vec![5], 1);
@@ -514,7 +518,14 @@ fn test_add_delayed_started_learner_snapshot() {
                 }
                 let source_engines = cluster.get_engines(4);
                 let target_engines = cluster.get_engines(5);
-                copy_meta_from(source_engines, target_engines, &source_region_1, region, new_region_meta.clone()).unwrap();
+                copy_meta_from(
+                    source_engines,
+                    target_engines,
+                    &source_region_1,
+                    region,
+                    new_region_meta.clone(),
+                )
+                .unwrap();
             } else {
                 panic!("error");
             }
@@ -522,8 +533,10 @@ fn test_add_delayed_started_learner_snapshot() {
     );
     {
         let prev_states = maybe_collect_states(&cluster, region_id, None);
-        assert_eq!(prev_states.get(&4).unwrap().in_disk_apply_state, prev_states.get(&5).unwrap().in_disk_apply_state);
-        debug!("!!!!! ssssss {} {:?}", cluster.id(), prev_states.get(&5).unwrap());
+        assert_eq!(
+            prev_states.get(&4).unwrap().in_disk_apply_state,
+            prev_states.get(&5).unwrap().in_disk_apply_state
+        );
     }
 
     // Add node 5 to cluster.
@@ -531,23 +544,25 @@ fn test_add_delayed_started_learner_snapshot() {
     fail::cfg("apply_on_handle_snapshot_finish_1_1", "panic").unwrap();
     // Start store 5.
 
-    debug!("!!!!! read AA {:?}", cluster.get_engines(5).kv.get_value_cf(CF_RAFT, "!!!ZZZ".as_bytes()));
     cluster
         .start_with(HashSet::from_iter(
             vec![0, 1, 2, 3].into_iter().map(|x| x as usize),
         ))
         .unwrap();
 
-    {
-        let prev_states = maybe_collect_states(&cluster, region_id, None);
-        debug!("!!!!! ssssss222 {:?}", prev_states.get(&5).unwrap());
-    }
-    
+
     cluster.must_put(b"z1", b"v1");
-    check_key(&cluster, b"z1", b"v1", Some(true), None, Some(vec![1,2,3,5]));
+    check_key(
+        &cluster,
+        b"z1",
+        b"v1",
+        Some(true),
+        None,
+        Some(vec![1, 2, 3, 5]),
+    );
 
     // Check if every node has the correct configuation.
-    let new_states = maybe_collect_states(&cluster, 1, Some(vec![1,2,3,5]));
+    let new_states = maybe_collect_states(&cluster, 1, Some(vec![1, 2, 3, 5]));
     assert_eq!(new_states.len(), 4);
     for i in new_states.keys() {
         assert_eq!(

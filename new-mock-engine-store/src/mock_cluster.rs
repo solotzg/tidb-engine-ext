@@ -370,11 +370,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 continue;
             }
             debug!("recover node"; "node_id" => node_id);
-            let engines = self.engines.get_mut(&node_id).unwrap().clone();
-            if node_id == 5 {
-                debug!("!!!!! read A {:?}", engines.kv.get_value_cf(engine_traits::CF_RAFT, "!!!ZZZ".as_bytes()));
-            }
-            let _key_mgr = self.key_managers_map[&node_id].clone();
             // Like TiKVServer::init
             self.run_node(node_id)?;
             // Since we use None to create_ffi_helper_set, we must init again.
@@ -1011,7 +1006,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         reqs: Vec<Request>,
     ) -> result::Result<RaftCmdResponse, PbError> {
         let resp = self.request(region_key, reqs, false, Duration::from_secs(5), true);
-        debug!("!!!!! batch_put {:?}", resp);
         if resp.get_header().has_error() {
             Err(resp.get_header().get_error().clone())
         } else {

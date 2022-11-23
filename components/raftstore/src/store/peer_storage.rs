@@ -174,26 +174,16 @@ fn init_raft_state<EK: KvEngine, ER: RaftEngine>(
     region: &Region,
 ) -> Result<RaftLocalState> {
     if let Some(state) = engines.raft.get_raft_state(region.get_id())? {
-        debug!(
-            "init_raft_state 111";
-        );
         return Ok(state);
     }
 
     let mut raft_state = RaftLocalState::default();
     if util::is_region_initialized(region) {
-        debug!(
-            "init_raft_state 222";
-        );
         // new split region
         raft_state.last_index = RAFT_INIT_LOG_INDEX;
         raft_state.mut_hard_state().set_term(RAFT_INIT_LOG_TERM);
         raft_state.mut_hard_state().set_commit(RAFT_INIT_LOG_INDEX);
         engines.raft.put_raft_state(region.get_id(), &raft_state)?;
-    } else {
-        debug!(
-            "init_raft_state 333";
-        );
     }
     Ok(raft_state)
 }
@@ -309,17 +299,14 @@ where
         peer_id: u64,
         tag: String,
     ) -> Result<PeerStorage<EK, ER>> {
-        let raft_state = init_raft_state(&engines, region)?;
-        let apply_state = init_apply_state(&engines, region)?;
-
         debug!(
             "creating storage on specified path";
             "region_id" => region.get_id(),
             "peer_id" => peer_id,
             "path" => ?engines.kv.path(),
-            "raft_state" => ?raft_state,
-            "apply_state" => ?apply_state,
         );
+        let raft_state = init_raft_state(&engines, region)?;
+        let apply_state = init_apply_state(&engines, region)?;
 
         let entry_storage = EntryStorage::new(
             peer_id,
@@ -536,7 +523,6 @@ where
             "peer_id" => self.peer_id,
             "request_index" => request_index,
             "request_peer" => to,
-            "bt" => ?std::backtrace::Backtrace::capture(),
         );
 
         let (sender, receiver) = mpsc::sync_channel(1);

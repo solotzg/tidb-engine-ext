@@ -940,19 +940,15 @@ impl<EK: KvEngine, ER: RaftEngine> EntryStorage<EK, ER> {
 
     pub fn term(&self, idx: u64) -> raft::Result<u64> {
         if idx == self.truncated_index() {
-            debug!("!!!!! entry_storage A idx {}", idx);
             return Ok(self.truncated_term());
         }
         self.check_range(idx, idx + 1)?;
         if self.truncated_term() == self.last_term || idx == self.last_index() {
-            debug!("!!!!! entry_storage B {} idx {} self.last_term {} self.last_index() {} state {:?}", self.peer_id, idx, self.last_term, self.last_index(), self.raft_state);
             return Ok(self.last_term);
         }
         if let Some(e) = self.cache.entry(idx) {
-            debug!("!!!!! entry_storage C idx {}", idx);
             Ok(e.get_term())
         } else {
-            debug!("!!!!! entry_storage D idx {}", idx);
             Ok(self
                 .raft_engine
                 .get_entry(self.region_id, idx)
@@ -969,7 +965,6 @@ impl<EK: KvEngine, ER: RaftEngine> EntryStorage<EK, ER> {
 
     #[inline]
     pub fn last_index(&self) -> u64 {
-        debug!("!!!!! entry_storage B {} last_index state {:?}", self.peer_id, self.raft_state);
         last_index(&self.raft_state)
     }
 
