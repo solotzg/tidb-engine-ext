@@ -375,7 +375,7 @@ pub fn copy_meta_from(
     target_engines: &Engines<impl KvEngine, impl RaftEngine>,
     source: &Box<new_mock_engine_store::Region>,
     target: &mut Box<new_mock_engine_store::Region>,
-    region: kvproto::metapb::Region,
+    new_region_meta: kvproto::metapb::Region,
 ) -> raftstore::Result<()> {
     let region_id = source.region.get_id();
 
@@ -386,7 +386,7 @@ pub fn copy_meta_from(
 
     // region local state
     let mut state = RegionLocalState::default();
-    state.set_region(region);
+    state.set_region(new_region_meta);
     box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
 
     // apply state
@@ -435,6 +435,64 @@ pub fn copy_meta_from(
     Ok(())
 }
 
+fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
+    let source_region_1 = cluster
+        .ffi_helper_set
+        .lock()
+        .unwrap()
+        .get_mut(&from)
+        .unwrap()
+        .engine_store_server
+        .kvstore
+        .get(&region_id)
+        .unwrap()
+        .clone();
+
+    let mut new_region_meta = source_region_1.region.clone();
+    new_region_meta.mut_peers().push(new_learner_peer(to, to));
+
+    // Copy all node `from`'s data to node `to`
+    iter_ffi_helpers(
+        cluster,
+        Some(vec![to]),
+        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+            let server = &mut ffi.engine_store_server;
+            assert!(server.kvstore.get(&region_id).is_none());
+
+            let new_region = make_new_region(Some(source_region_1.region.clone()), Some(id));
+            server
+                .kvstore
+                .insert(source_region_1.region.get_id(), Box::new(new_region));
+            if let Some(region) = server.kvstore.get_mut(&region_id) {
+                for cf in 0..3 {
+                    for (k, v) in &source_region_1.data[cf] {
+                        write_kv_in_mem(region, cf, k.as_slice(), v.as_slice());
+                    }
+                }
+                let source_engines = cluster.get_engines(from);
+                let target_engines = cluster.get_engines(to);
+                copy_meta_from(
+                    source_engines,
+                    target_engines,
+                    &source_region_1,
+                    region,
+                    new_region_meta.clone(),
+                )
+                .unwrap();
+            } else {
+                panic!("error");
+            }
+        },
+    );
+    {
+        let prev_states = maybe_collect_states(cluster, region_id, None);
+        assert_eq!(
+            prev_states.get(&from).unwrap().in_disk_apply_state,
+            prev_states.get(&to).unwrap().in_disk_apply_state
+        );
+    }
+}
+
 #[test]
 fn test_add_delayed_started_learner_snapshot() {
     // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
@@ -464,7 +522,8 @@ fn test_add_delayed_started_learner_snapshot() {
         Some(vec![1, 2, 3, 4]),
     );
 
-    // Force a compact log, so the leader have to send snapshot then.
+    // Force a compact log, so the leader have to send snapshot if peer 5 not catch
+    // up.
     let region = cluster.get_region(b"k1");
     let region_id = region.get_id();
     let prev_states = maybe_collect_states(&cluster, region_id, Some(vec![1, 2, 3]));
@@ -483,61 +542,11 @@ fn test_add_delayed_started_learner_snapshot() {
 
     // Simulate 4 is lost, recover its data to node 5.
     cluster.stop_node(4);
+
     later_bootstrap_learner_peer(&mut cluster, vec![5], 1);
     // After that, we manually compose data, to avoid snapshot sending.
-    let source_region_1 = cluster
-        .ffi_helper_set
-        .lock()
-        .unwrap()
-        .get_mut(&4)
-        .unwrap()
-        .engine_store_server
-        .kvstore
-        .get(&1)
-        .unwrap()
-        .clone();
-    let mut new_region_meta = source_region_1.region.clone();
-    new_region_meta.mut_peers().push(new_learner_peer(5, 5));
 
-    // Copy all node 4's data to node 5
-    iter_ffi_helpers(
-        &cluster,
-        Some(vec![5]),
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
-            let server = &mut ffi.engine_store_server;
-            assert!(server.kvstore.get(&region_id).is_none());
-            let new_region = make_new_region(Some(source_region_1.region.clone()), Some(id));
-            server
-                .kvstore
-                .insert(source_region_1.region.get_id(), Box::new(new_region));
-            if let Some(region) = server.kvstore.get_mut(&region_id) {
-                for cf in 0..3 {
-                    for (k, v) in &source_region_1.data[cf] {
-                        write_kv_in_mem(region, cf, k.as_slice(), v.as_slice());
-                    }
-                }
-                let source_engines = cluster.get_engines(4);
-                let target_engines = cluster.get_engines(5);
-                copy_meta_from(
-                    source_engines,
-                    target_engines,
-                    &source_region_1,
-                    region,
-                    new_region_meta.clone(),
-                )
-                .unwrap();
-            } else {
-                panic!("error");
-            }
-        },
-    );
-    {
-        let prev_states = maybe_collect_states(&cluster, region_id, None);
-        assert_eq!(
-            prev_states.get(&4).unwrap().in_disk_apply_state,
-            prev_states.get(&5).unwrap().in_disk_apply_state
-        );
-    }
+    recover_from_peer(&cluster, 4, 5, 1);
 
     // Add node 5 to cluster.
     pd_client.must_add_peer(1, new_learner_peer(5, 5));
@@ -549,7 +558,6 @@ fn test_add_delayed_started_learner_snapshot() {
             vec![0, 1, 2, 3].into_iter().map(|x| x as usize),
         ))
         .unwrap();
-
 
     cluster.must_put(b"z1", b"v1");
     check_key(
