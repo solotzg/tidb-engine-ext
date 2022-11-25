@@ -3,9 +3,13 @@
 #![feature(slice_take)]
 
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, HashMap, HashSet},
     pin::Pin,
-    sync::{atomic::Ordering, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     time::Duration,
 };
 
@@ -69,12 +73,18 @@ impl Region {
     }
 }
 
+#[derive(Default)]
+pub struct RegionStats {
+    pub pre_handle_count: AtomicU64,
+}
+
 pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
     pub kvstore: HashMap<RegionId, Box<Region>>,
     pub proxy_compat: bool,
     pub mock_cfg: MockConfig,
+    pub region_states: RefCell<HashMap<RegionId, RegionStats>>,
 }
 
 impl EngineStoreServer {
@@ -88,7 +98,18 @@ impl EngineStoreServer {
             kvstore: Default::default(),
             proxy_compat: false,
             mock_cfg: MockConfig::default(),
+            region_states: RefCell::new(Default::default()),
         }
+    }
+
+    pub fn mutate_region_states<F: Fn(&mut RegionStats)>(&self, region_id: RegionId, f: F) {
+        let has = self.region_states.borrow().contains_key(&region_id);
+        if !has {
+            self.region_states
+                .borrow_mut()
+                .insert(region_id, Default::default());
+        }
+        f(self.region_states.borrow_mut().get_mut(&region_id).unwrap())
     }
 
     pub fn get_mem(
@@ -1021,6 +1042,14 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         "region" => ?region.region,
         "snap len" => snaps.len,
     );
+
+    (*store.engine_store_server).mutate_region_states(
+        region.region.get_id(),
+        |e: &mut RegionStats| {
+            e.pre_handle_count.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+
     for i in 0..snaps.len {
         let snapshot = snaps.views.add(i as usize);
         let view = &*(snapshot as *mut ffi_interfaces::SSTView);

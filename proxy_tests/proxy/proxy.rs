@@ -1,14 +1,17 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use std::ops::RangeBounds;
 pub use std::{
     collections::HashMap,
     io::Write,
+    iter::FromIterator,
     ops::DerefMut,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{atomic::Ordering, mpsc, Arc, RwLock},
 };
 
+pub use collections::HashSet;
 pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
 pub use engine_traits::{
     MiscExt, Mutable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
@@ -31,7 +34,7 @@ pub use new_mock_engine_store::{
     transport_simulate::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
-    write_kv_in_mem, Cluster, ProxyConfig, Simulator, TestPdClient,
+    write_kv_in_mem, Cluster, ProxyConfig, RegionStats, Simulator, TestPdClient,
 };
 pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
@@ -358,8 +361,24 @@ pub fn check_apply_state(
 }
 
 pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
+    get_valid_compact_index_by(states, None)
+}
+
+pub fn get_valid_compact_index_by(
+    states: &HashMap<u64, States>,
+    use_nodes: Option<Vec<u64>>,
+) -> (u64, u64) {
+    let set = use_nodes.map_or(None, |nodes| {
+        Some(HashSet::from_iter(nodes.clone().into_iter()))
+    });
     states
         .iter()
+        .filter(|(k, _)| {
+            if let Some(ref s) = set {
+                return s.contains(k);
+            }
+            true
+        })
         .map(|(_, s)| {
             (
                 s.in_memory_apply_state.get_applied_index(),

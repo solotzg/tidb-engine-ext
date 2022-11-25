@@ -33,7 +33,7 @@ fn cf_to_name(batch: &crate::RocksWriteBatchVec, cf: u32) -> &'static str {
 fn check_double_write(batch: &crate::RocksWriteBatchVec) {
     // It will fire if we write by both observer(compat_old_proxy is not enabled)
     // and TiKV's WriteBatch.
-    fail::fail_point!("before_tiflash_check_double_write", |_| { return });
+    fail::fail_point!("before_tiflash_check_double_write", |_| {});
     tikv_util::debug!("check if double write happens");
     for wb in batch.wbs.iter() {
         for (_, cf, k, _) in wb.iter() {
