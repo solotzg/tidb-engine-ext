@@ -1559,7 +1559,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 engine_store_ffi::gen_engine_store_server_helper(
                     self.engine_store_server_helper_ptr,
                 ),
-                self.config.server.status_thread_pool_size,
+                self.proxy_config.server.status_thread_pool_size,
                 self.cfg_controller.take().unwrap(),
                 Arc::new(self.config.security.clone()),
                 self.router.clone(),
