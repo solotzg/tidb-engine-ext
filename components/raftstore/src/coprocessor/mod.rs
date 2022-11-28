@@ -11,7 +11,7 @@ use std::{
 
 use engine_traits::{CfName, SstMetaInfo};
 use kvproto::{
-    metapb::Region,
+    metapb::{Peer, Region},
     pdpb::CheckPolicy,
     raft_cmdpb::{AdminRequest, AdminResponse, RaftCmdRequest, RaftCmdResponse, Request},
     raft_serverpb::RaftApplyState,
@@ -328,6 +328,8 @@ pub trait RegionChangeObserver: Coprocessor {
     fn pre_write_apply_state(&self, _: &mut ObserverContext<'_>) -> bool {
         true
     }
+
+    fn pre_replicate_peer(&self, _: u64, _: u64, _: &Peer) {}
 }
 
 #[derive(Clone, Debug, Default)]

@@ -9,6 +9,7 @@ use collections::{HashMap, HashSet};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::DataKeyManager;
 use engine_rocks::RocksSnapshot;
+use engine_store_ffi::observer::DebugStruct;
 use engine_traits::{Engines, MiscExt, Peekable};
 use kvproto::{
     metapb,
@@ -164,6 +165,7 @@ impl Transport for ChannelTransport {
 type SimulateChannelTransport = SimulateTransport<ChannelTransport>;
 
 pub struct NodeCluster {
+    debug_struct: Option<Arc<dyn DebugStruct + Send + Sync>>,
     trans: ChannelTransport,
     pd_client: Arc<TestPdClient>,
     nodes: HashMap<u64, Node<TestPdClient, TiFlashEngine, engine_rocks::RocksEngine>>,
@@ -179,8 +181,27 @@ pub struct NodeCluster {
 impl std::panic::UnwindSafe for NodeCluster {}
 
 impl NodeCluster {
+    pub fn new_with_debug(
+        pd_client: Arc<TestPdClient>,
+        debug_struct: Option<Arc<dyn DebugStruct + Send + Sync>>,
+    ) -> NodeCluster {
+        NodeCluster {
+            debug_struct,
+            trans: ChannelTransport::new(),
+            pd_client,
+            nodes: HashMap::default(),
+            snap_mgrs: HashMap::default(),
+            cfg_controller: None,
+            simulate_trans: HashMap::default(),
+            concurrency_managers: HashMap::default(),
+            post_create_coprocessor_host: None,
+            importer: None,
+        }
+    }
+
     pub fn new(pd_client: Arc<TestPdClient>) -> NodeCluster {
         NodeCluster {
+            debug_struct: None,
             trans: ChannelTransport::new(),
             pd_client,
             nodes: HashMap::default(),
@@ -314,11 +335,12 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             f(node_id, &mut coprocessor_host);
         }
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new_with_debug(
             node_id,
             engines.kv.clone(),
             importer.clone(),
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            self.debug_struct.clone(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

@@ -5,7 +5,7 @@ use std::{marker::PhantomData, mem, ops::Deref};
 
 use engine_traits::{CfName, KvEngine};
 use kvproto::{
-    metapb::Region,
+    metapb::{Peer, Region},
     pdpb::CheckPolicy,
     raft_cmdpb::{ComputeHashRequest, RaftCmdRequest},
 };
@@ -667,6 +667,13 @@ impl<E: KvEngine> CoprocessorHost<E> {
             }
         }
         true
+    }
+
+    pub fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {
+        for observer in &self.registry.region_change_observers {
+            let observer = observer.observer.inner();
+            observer.pre_replicate_peer(store_id, region_id, peer);
+        }
     }
 
     pub fn on_flush_applied_cmd_batch(

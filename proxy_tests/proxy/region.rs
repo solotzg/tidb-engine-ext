@@ -433,8 +433,15 @@ pub fn copy_meta_from(
     Ok(())
 }
 
-fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
-    let source_region_1 = cluster
+fn fork_from_peer(
+    cluster: &Cluster<NodeCluster>,
+    new_peer: &metapb::Peer,
+    from: u64,
+    to: u64,
+    region_id: u64,
+) {
+    debug!("fork_from_peer"; "from" => from, "to" => to, "region_id" => region_id);
+    let source_region = cluster
         .ffi_helper_set
         .lock()
         .unwrap()
@@ -446,8 +453,8 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
         .unwrap()
         .clone();
 
-    let mut new_region_meta = source_region_1.region.clone();
-    new_region_meta.mut_peers().push(new_learner_peer(to, to));
+    let mut new_region_meta = source_region.region.clone();
+    new_region_meta.mut_peers().push(new_peer.clone());
 
     // Copy all node `from`'s data to node `to`
     iter_ffi_helpers(
@@ -457,13 +464,13 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
             let server = &mut ffi.engine_store_server;
             assert!(server.kvstore.get(&region_id).is_none());
 
-            let new_region = make_new_region(Some(source_region_1.region.clone()), Some(id));
+            let new_region = make_new_region(Some(source_region.region.clone()), Some(id));
             server
                 .kvstore
-                .insert(source_region_1.region.get_id(), Box::new(new_region));
+                .insert(source_region.region.get_id(), Box::new(new_region));
             if let Some(region) = server.kvstore.get_mut(&region_id) {
                 for cf in 0..3 {
-                    for (k, v) in &source_region_1.data[cf] {
+                    for (k, v) in &source_region.data[cf] {
                         write_kv_in_mem(region, cf, k.as_slice(), v.as_slice());
                     }
                 }
@@ -472,7 +479,7 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
                 copy_meta_from(
                     source_engines,
                     target_engines,
-                    &source_region_1,
+                    &source_region,
                     region,
                     new_region_meta.clone(),
                 )
@@ -482,6 +489,10 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
             }
         },
     );
+}
+
+fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
+    fork_from_peer(cluster, &new_learner_peer(to, to), from, to, region_id);
     {
         let prev_states = maybe_collect_states(cluster, region_id, None);
         assert_eq!(
@@ -694,9 +705,36 @@ fn test_add_delayed_started_learner_snapshot() {
     cluster.shutdown();
 }
 
+use std::cell::Cell;
+struct NodeDebugStruct {
+    pub cluster_ptr: Cell<usize>,
+}
+
+impl NodeDebugStruct {}
+
+unsafe impl Send for NodeDebugStruct {}
+unsafe impl Sync for NodeDebugStruct {}
+
+impl engine_store_ffi::observer::DebugStruct for NodeDebugStruct {
+    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &metapb::Peer) {
+        let cluster = unsafe {
+            let cluster = self.cluster_ptr.get() as *const Cluster<NodeCluster>;
+            &*cluster
+        };
+        if store_id == 5 {
+            fork_from_peer(&cluster, peer, 4, 5, 1);
+        }
+    }
+}
+
 #[test]
 fn test_fast_add_peer() {
-    let (mut cluster, pd_client) = new_mock_cluster(0, 5);
+    let debug = Arc::from(NodeDebugStruct {
+        cluster_ptr: Cell::new(0),
+    });
+    let (mut cluster, pd_client) = new_mock_cluster_debug(0, 5, debug.clone());
+    debug.cluster_ptr.set(&cluster as *const _ as usize);
+
     fail::cfg("on_pre_persist_with_finish", "return").unwrap();
     fail::cfg("try_flush_data", "return(1)").unwrap();
     disable_auto_gen_compact_log(&mut cluster);
@@ -734,21 +772,12 @@ fn test_fast_add_peer() {
         new.in_disk_apply_state.get_applied_index() == new.in_memory_apply_state.get_applied_index()
     });
 
-    // filter heartbeat and append message for peer 4
-    cluster.add_send_filter(CloneFilterFactory(
-        RegionPacketFilter::new(1, 4)
-            .direction(Direction::Recv)
-            .msg_type(MessageType::MsgHeartbeat),
-    ));
-
     pd_client.add_peer(1, new_learner_peer(5, 5));
 
     // recover_from_peer(&cluster, 4, 5, 1);
 
-    cluster.clear_send_filters();
     cluster.must_put(b"z1", b"v1");
 
-    std::thread::sleep(std::time::Duration::from_millis(5000));
     check_key(
         &cluster,
         b"z1",

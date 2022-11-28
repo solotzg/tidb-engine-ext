@@ -2,6 +2,7 @@
 
 use std::ops::RangeBounds;
 pub use std::{
+    cell::RefCell,
     collections::HashMap,
     io::Write,
     iter::FromIterator,
@@ -12,7 +13,7 @@ pub use std::{
 };
 
 pub use collections::HashSet;
-pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
+pub use engine_store_ffi::{observer::DebugStruct, KVGetStatus, RaftStoreProxyFFI};
 pub use engine_traits::{
     MiscExt, Mutable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
@@ -160,6 +161,23 @@ pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> Has
     prev_state
 }
 
+pub fn new_mock_cluster_debug(
+    id: u64,
+    count: usize,
+    debug_struct: Arc<dyn DebugStruct + Sync + Send>,
+) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
+    let pd_client = Arc::new(TestPdClient::new(0, false));
+    let sim = Arc::new(RwLock::new(NodeCluster::new_with_debug(
+        pd_client.clone(),
+        Some(debug_struct),
+    )));
+    let mut cluster = Cluster::new(id, count, sim, pd_client.clone(), ProxyConfig::default());
+    // Compat new proxy
+    cluster.cfg.proxy_compat = true;
+
+    (cluster, pd_client)
+}
+
 pub fn new_mock_cluster(id: u64, count: usize) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
@@ -182,8 +200,10 @@ pub fn new_mock_cluster_snap(id: u64, count: usize) -> (Cluster<NodeCluster>, Ar
     (cluster, pd_client)
 }
 
+/// We send in cluster rather than server here, to avoid long held mutex.
 pub fn must_get_mem(
-    engine_store_server: &Box<new_mock_engine_store::EngineStoreServer>,
+    cluster: &Cluster<NodeCluster>,
+    node_id: u64,
     region_id: u64,
     key: &[u8],
     value: Option<&[u8]>,
@@ -191,7 +211,9 @@ pub fn must_get_mem(
     let last_res: Option<&Vec<u8>> = None;
     let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
-        let res = engine_store_server.get_mem(region_id, cf, &key.to_vec());
+        let lock = cluster.ffi_helper_set.lock().unwrap();
+        let server = &lock.get(&node_id).unwrap().engine_store_server;
+        let res = server.get_mem(region_id, cf, &key.to_vec());
 
         if let (Some(value), Some(last_res)) = (value, res) {
             assert_eq!(value, &last_res[..]);
@@ -208,7 +230,7 @@ pub fn must_get_mem(
         value.map(tikv_util::escape),
         log_wrappers::hex_encode_upper(key),
         s,
-        engine_store_server.id,
+        node_id,
         cf,
         last_res,
     )
@@ -293,12 +315,10 @@ pub fn check_key(
         };
         match in_mem {
             Some(b) => {
-                let lock = cluster.ffi_helper_set.lock().unwrap();
-                let server = &lock.get(&id).unwrap().engine_store_server;
                 if b {
-                    must_get_mem(server, region_id, k, Some(v));
+                    must_get_mem(cluster, id, region_id, k, Some(v));
                 } else {
-                    must_get_mem(server, region_id, k, None);
+                    must_get_mem(cluster, id, region_id, k, None);
                 }
             }
             None => (),

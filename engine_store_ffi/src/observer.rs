@@ -11,7 +11,7 @@ use collections::HashMap;
 use engine_tiflash::FsStatsExt;
 use engine_traits::SstMetaInfo;
 use kvproto::{
-    metapb::Region,
+    metapb::{Peer, Region},
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
     raft_serverpb::RaftApplyState,
 };
@@ -90,6 +90,10 @@ impl PrehandleTask {
 unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
+pub trait DebugStruct {
+    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {}
+}
+
 pub struct TiFlashObserver {
     pub peer_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
@@ -99,6 +103,7 @@ pub struct TiFlashObserver {
     pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
+    pub debug_struct: Option<Arc<dyn DebugStruct + Send + Sync>>,
 }
 
 impl Clone for TiFlashObserver {
@@ -112,6 +117,7 @@ impl Clone for TiFlashObserver {
             snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
             pending_delete_ssts: self.pending_delete_ssts.clone(),
+            debug_struct: self.debug_struct.clone(),
         }
     }
 }
@@ -121,11 +127,12 @@ impl Clone for TiFlashObserver {
 const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
 
 impl TiFlashObserver {
-    pub fn new(
+    pub fn new_with_debug(
         peer_id: u64,
         engine: engine_tiflash::RocksEngine,
         sst_importer: Arc<SstImporter>,
         snap_handle_pool_size: usize,
+        debug_struct: Option<Arc<dyn DebugStruct + Send + Sync>>,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
@@ -142,7 +149,17 @@ impl TiFlashObserver {
             snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
+            debug_struct,
         }
+    }
+
+    pub fn new(
+        peer_id: u64,
+        engine: engine_tiflash::RocksEngine,
+        sst_importer: Arc<SstImporter>,
+        snap_handle_pool_size: usize,
+    ) -> Self {
+        Self::new_with_debug(peer_id, engine, sst_importer, snap_handle_pool_size, None)
     }
 
     pub fn register_to<E: engine_traits::KvEngine>(
@@ -652,6 +669,16 @@ impl RegionChangeObserver for TiFlashObserver {
     fn pre_write_apply_state(&self, _ob_ctx: &mut ObserverContext<'_>) -> bool {
         fail::fail_point!("on_pre_persist_with_finish", |_| { true });
         false
+    }
+
+    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            self.debug_struct
+                .as_ref()
+                .unwrap()
+                .pre_replicate_peer(store_id, region_id, peer);
+        }
     }
 }
 

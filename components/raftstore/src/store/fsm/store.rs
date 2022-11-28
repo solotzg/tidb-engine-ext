@@ -2216,6 +2216,10 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
                 .unwrap();
         }
 
+        self.ctx
+            .coprocessor_host
+            .pre_replicate_peer(self.ctx.store_id(), region_id, &target);
+
         // New created peers should know it's learner or not.
         let (tx, mut peer) = PeerFsm::replicate(
             self.ctx.store_id(),
