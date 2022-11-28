@@ -676,6 +676,13 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         }
     }
 
+    pub fn clear_send_filters(&mut self) {
+        let mut sim = self.sim.wl();
+        for node_id in sim.get_node_ids() {
+            sim.clear_send_filters(node_id);
+        }
+    }
+
     pub fn transfer_leader(&mut self, region_id: u64, leader: metapb::Peer) {
         let epoch = self.get_region_epoch(region_id);
         let transfer_leader = new_admin_request(region_id, &epoch, new_transfer_leader_cmd(leader));

@@ -693,3 +693,72 @@ fn test_add_delayed_started_learner_snapshot() {
     fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();
 }
+
+#[test]
+fn test_fast_add_peer() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 5);
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    fail::cfg("try_flush_data", "return(1)").unwrap();
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable default max peer count check.
+    pd_client.disable_default_operator();
+
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+
+    pd_client.must_joint_confchange(
+        1,
+        vec![
+            (ConfChangeType::AddNode, new_peer(2, 2)),
+            (ConfChangeType::AddNode, new_peer(3, 3)),
+            (ConfChangeType::AddLearnerNode, new_learner_peer(4, 4)),
+        ],
+    );
+    pd_client.must_leave_joint(1);
+
+    must_put_and_check_key(
+        &mut cluster,
+        2,
+        10,
+        Some(true),
+        None,
+        Some(vec![1, 2, 3, 4]),
+    );
+
+    assert!(force_compact_log(&mut cluster, b"k1", Some(vec![1, 2, 3, 4])) > 15);
+
+    // Ensure node 4 has persisted.
+    must_wait_until_cond_node(&cluster, 1, Some(vec![4]), &|new: &States| {
+        new.in_disk_apply_state.get_applied_index() == new.in_memory_apply_state.get_applied_index()
+    });
+
+    // filter heartbeat and append message for peer 4
+    cluster.add_send_filter(CloneFilterFactory(
+        RegionPacketFilter::new(1, 4)
+            .direction(Direction::Recv)
+            .msg_type(MessageType::MsgHeartbeat),
+    ));
+
+    pd_client.add_peer(1, new_learner_peer(5, 5));
+
+    // recover_from_peer(&cluster, 4, 5, 1);
+
+    cluster.clear_send_filters();
+    cluster.must_put(b"z1", b"v1");
+
+    std::thread::sleep(std::time::Duration::from_millis(5000));
+    check_key(
+        &cluster,
+        b"z1",
+        b"v1",
+        Some(true),
+        None,
+        Some(vec![1, 2, 3, 4, 5]),
+    );
+
+    fail::remove("try_flush_data");
+    fail::remove("on_pre_persist_with_finish");
+    cluster.shutdown();
+}

@@ -39,7 +39,7 @@ pub mod server;
 pub mod transport_simulate;
 
 type RegionId = u64;
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Region {
     pub region: kvproto::metapb::Region,
     // Which peer is me?
