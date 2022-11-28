@@ -6,6 +6,79 @@ use raft::eraftpb::Entry;
 
 use crate::proxy::*;
 
+pub fn copy_meta_from_base(
+    source_engines: &Engines<
+        impl KvEngine,
+        impl RaftEngine + engine_traits::Peekable + engine_traits::RaftEngineDebug,
+    >,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    new_region_meta: kvproto::metapb::Region,
+) -> raftstore::Result<()> {
+    let region_id = new_region_meta.get_id();
+
+    let mut wb = target_engines.kv.write_batch();
+    let mut raft_wb = target_engines.raft.log_batch(1024);
+
+    // Can't not set this key, otherwise will cause a bootstrap of cluster.
+    // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
+
+    // region local state
+    let mut state = RegionLocalState::default();
+    state.set_region(new_region_meta);
+    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
+
+    // apply state
+    {
+        let apply_state: RaftApplyState =
+            get_apply_state(&source_engines.kv, new_region_meta.get_id());
+        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+    }
+
+    wb.write()?;
+    target_engines.sync_kv()?;
+
+    // raft state
+    {
+        let raft_state: RaftLocalState =
+            get_apply_state(&source_engines.raft, new_region_meta.get_id());
+        raft_wb.put_raft_state(region_id, &raft_state)?;
+    };
+
+    // raft log
+    let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
+    source_engines
+        .raft
+        .scan_entries(region_id, |e| {
+            debug!("copy raft log"; "e" => ?e);
+            entries.push(e.clone());
+            Ok(true)
+        })
+        .unwrap();
+
+    raft_wb.append(region_id, entries)?;
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
+
+    Ok(())
+}
+
+pub fn copy_meta_from(
+    source_engines: &Engines<
+        impl KvEngine,
+        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
+    >,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    source: &Box<new_mock_engine_store::Region>,
+    target: &mut Box<new_mock_engine_store::Region>,
+    new_region_meta: kvproto::metapb::Region,
+) -> raftstore::Result<()> {
+    copy_meta_from_base(source_engines, target_engines, new_region_meta.clone());
+
+    let apply_state: RaftApplyState = get_apply_state(source_engines.kv, new_region_meta.get_id());
+    target.apply_state = apply_state.clone();
+    target.applied_term = source.applied_term;
+    Ok(())
+}
+
 #[test]
 fn test_handle_destroy() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
@@ -365,72 +438,6 @@ fn test_add_delayed_started_learner_by_joint() {
 
     fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();
-}
-
-pub fn copy_meta_from(
-    source_engines: &Engines<
-        impl KvEngine,
-        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
-    >,
-    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
-    source: &Box<new_mock_engine_store::Region>,
-    target: &mut Box<new_mock_engine_store::Region>,
-    new_region_meta: kvproto::metapb::Region,
-) -> raftstore::Result<()> {
-    let region_id = source.region.get_id();
-
-    let mut wb = target_engines.kv.write_batch();
-    let mut raft_wb = target_engines.raft.log_batch(1024);
-
-    // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
-
-    // region local state
-    let mut state = RegionLocalState::default();
-    state.set_region(new_region_meta);
-    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
-
-    // apply state
-    {
-        let key = keys::apply_state_key(region_id);
-        let apply_state: RaftApplyState = source_engines
-            .kv
-            .get_msg_cf(CF_RAFT, &key)
-            .unwrap()
-            .unwrap();
-        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
-        target.apply_state = apply_state.clone();
-        target.applied_term = source.applied_term;
-    }
-
-    wb.write()?;
-    target_engines.sync_kv()?;
-
-    // raft state
-    {
-        let key = keys::raft_state_key(region_id);
-        let raft_state = source_engines
-            .raft
-            .get_msg_cf(CF_DEFAULT, &key)
-            .unwrap()
-            .unwrap();
-        raft_wb.put_raft_state(region_id, &raft_state)?;
-    };
-
-    // raft log
-    let mut entries: Vec<Entry> = Default::default();
-    source_engines
-        .raft
-        .scan_entries(region_id, |e| {
-            debug!("copy raft log"; "e" => ?e);
-            entries.push(e.clone());
-            Ok(true)
-        })
-        .unwrap();
-
-    raft_wb.append(region_id, entries)?;
-    box_try!(target_engines.raft.consume(&mut raft_wb, true));
-
-    Ok(())
 }
 
 fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
