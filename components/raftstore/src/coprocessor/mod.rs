@@ -329,7 +329,9 @@ pub trait RegionChangeObserver: Coprocessor {
         true
     }
 
-    fn pre_replicate_peer(&self, _: u64, _: u64, _: &Peer) {}
+    fn pre_replicate_peer(&self, _: u64, _: u64, _: &Peer) -> Option<Region> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, Default)]

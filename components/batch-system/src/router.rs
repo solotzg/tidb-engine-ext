@@ -247,9 +247,11 @@ where
                     CHANNEL_FULL_COUNTER_VEC
                         .with_label_values(&["normal"])
                         .inc();
+                    debug!("!!!!! try_send full");
                     Some(r)
                 }
                 Err(TrySendError::Disconnected(m)) => {
+                    debug!("!!!!! try_send dis");
                     msg = Some(m);
                     None
                 }
@@ -258,7 +260,10 @@ where
         match res {
             CheckDoResult::Valid(r) => Either::Left(r),
             CheckDoResult::Invalid => Either::Left(Err(TrySendError::Disconnected(msg.unwrap()))),
-            CheckDoResult::NotExist => Either::Right(msg.unwrap()),
+            CheckDoResult::NotExist => {
+                debug!("!!!!! try_send NotExist");
+                Either::Right(msg.unwrap())
+            }
         }
     }
 

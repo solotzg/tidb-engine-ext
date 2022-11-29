@@ -439,7 +439,7 @@ fn fork_from_peer(
     from: u64,
     to: u64,
     region_id: u64,
-) {
+) -> metapb::Region {
     debug!("fork_from_peer"; "from" => from, "to" => to, "region_id" => region_id);
     let source_region = cluster
         .ffi_helper_set
@@ -454,7 +454,11 @@ fn fork_from_peer(
         .clone();
 
     let mut new_region_meta = source_region.region.clone();
-    new_region_meta.mut_peers().push(new_peer.clone());
+    if !new_region_meta.get_peers().contains(new_peer) {
+        new_region_meta.mut_peers().push(new_peer.clone());
+    }
+
+    debug!("fork_from_peer result"; "from" => from, "to" => to, "region_id" => region_id, "new_region_meta" => ?new_region_meta);
 
     // Copy all node `from`'s data to node `to`
     iter_ffi_helpers(
@@ -471,6 +475,7 @@ fn fork_from_peer(
             if let Some(region) = server.kvstore.get_mut(&region_id) {
                 for cf in 0..3 {
                     for (k, v) in &source_region.data[cf] {
+                        debug!("copy data"; "cf" => cf, "k" => ?k, "v" => ?v, "region_id" => region_id, "to_peer_id" => to);
                         write_kv_in_mem(region, cf, k.as_slice(), v.as_slice());
                     }
                 }
@@ -489,6 +494,7 @@ fn fork_from_peer(
             }
         },
     );
+    new_region_meta
 }
 
 fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
@@ -716,19 +722,39 @@ unsafe impl Send for NodeDebugStruct {}
 unsafe impl Sync for NodeDebugStruct {}
 
 impl engine_store_ffi::observer::DebugStruct for NodeDebugStruct {
-    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &metapb::Peer) {
+    fn pre_replicate_peer(
+        &self,
+        store_id: u64,
+        region_id: u64,
+        peer: &metapb::Peer,
+    ) -> Option<kvproto::metapb::Region> {
         let cluster = unsafe {
             let cluster = self.cluster_ptr.get() as *const Cluster<NodeCluster>;
             &*cluster
         };
         if store_id == 5 {
-            fork_from_peer(&cluster, peer, 4, 5, 1);
+            return Some(fork_from_peer(&cluster, peer, 4, 5, 1));
         }
+        None
     }
 }
 
 #[test]
-fn test_fast_add_peer() {
+fn test_fast_add_peer2() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    disable_auto_gen_compact_log(&mut cluster);
+    let _ = cluster.run_conf_change();
+    pd_client.add_peer(1, new_peer(2, 2));
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, None);
+
+    fail::remove("on_pre_persist_with_finish");
+    cluster.shutdown();
+}
+
+#[test]
+fn test_fast_add_peer1() {
     let debug = Arc::from(NodeDebugStruct {
         cluster_ptr: Cell::new(0),
     });
@@ -772,12 +798,16 @@ fn test_fast_add_peer() {
         new.in_disk_apply_state.get_applied_index() == new.in_memory_apply_state.get_applied_index()
     });
 
+    // fail::cfg("apply_on_handle_snapshot_finish_1_1", "panic").unwrap();
     pd_client.add_peer(1, new_learner_peer(5, 5));
 
-    // recover_from_peer(&cluster, 4, 5, 1);
+    // Check and wait if node 5 has key.
+    check_key(&cluster, b"k9", b"v9", Some(true), None, Some(vec![5]));
 
+    // Will added by "Sending from 1 to 5, msg: msg_type: MsgAppend to: 5".
     cluster.must_put(b"z1", b"v1");
 
+    std::thread::sleep(std::time::Duration::from_micros(2000));
     check_key(
         &cluster,
         b"z1",
@@ -789,5 +819,6 @@ fn test_fast_add_peer() {
 
     fail::remove("try_flush_data");
     fail::remove("on_pre_persist_with_finish");
+    fail::remove("apply_on_handle_snapshot_finish_1_1");
     cluster.shutdown();
 }

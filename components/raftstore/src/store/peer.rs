@@ -3003,6 +3003,7 @@ where
             );
             let commit_term = self.get_store().term(commit_index).unwrap();
 
+            debug!("!!!!! start commit {} {}", self.peer_id(), commit_index);
             let mut apply = Apply::new(
                 self.peer_id(),
                 self.region_id,

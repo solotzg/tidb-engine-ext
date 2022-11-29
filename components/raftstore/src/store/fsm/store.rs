@@ -2216,11 +2216,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
                 .unwrap();
         }
 
-        self.ctx
-            .coprocessor_host
-            .pre_replicate_peer(self.ctx.store_id(), region_id, &target);
-
         // New created peers should know it's learner or not.
+        let mut activate = false;
         let (tx, mut peer) = PeerFsm::replicate(
             self.ctx.store_id(),
             &self.ctx.cfg,
@@ -2229,6 +2226,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             self.ctx.engines.clone(),
             region_id,
             target.clone(),
+            &self.ctx.coprocessor_host,
+            &mut activate,
         )?;
 
         // WARNING: The checking code must be above this line.
@@ -2247,12 +2246,17 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         meta.region_read_progress
             .insert(region_id, peer.peer.read_progress.clone());
 
+        if activate {
+            peer.peer.activate(&self.ctx);
+        }
+
         let mailbox = BasicMailbox::new(tx, peer, self.ctx.router.state_cnt().clone());
         self.ctx.router.register(region_id, mailbox);
         self.ctx
             .router
             .force_send(region_id, PeerMsg::Start)
             .unwrap();
+
         Ok(true)
     }
 

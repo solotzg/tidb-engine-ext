@@ -301,7 +301,7 @@ pub fn check_key(
         }
     };
     for id in engine_keys {
-        let engine = &cluster.get_engine(id);
+        let engine = cluster.get_engine(id);
 
         match in_disk {
             Some(b) => {

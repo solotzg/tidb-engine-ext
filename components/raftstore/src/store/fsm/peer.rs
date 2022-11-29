@@ -307,6 +307,8 @@ where
         engines: Engines<EK, ER>,
         region_id: u64,
         peer: metapb::Peer,
+        coprocessor_host: &crate::coprocessor::CoprocessorHost<EK>,
+        activate: &mut bool,
     ) -> Result<SenderFsmPair<EK, ER>> {
         // We will remove tombstone key when apply snapshot
         info!(
@@ -317,6 +319,13 @@ where
 
         let mut region = metapb::Region::default();
         region.set_id(region_id);
+
+        if let Some(r) = coprocessor_host.pre_replicate_peer(store_id, region_id, &peer) {
+            region = r;
+            *activate = true;
+        }
+
+        debug!("!!!!! replicate use {} {:?}", store_id, region);
 
         HIBERNATED_PEER_STATE_GAUGE.awaken.inc();
         let (tx, rx) = mpsc::loose_bounded(cfg.notify_capacity);

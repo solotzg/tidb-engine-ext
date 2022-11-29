@@ -540,7 +540,7 @@ impl EngineStoreServerWrap {
                 // Currently in tests, we don't handle commands like BatchSplit,
                 // and sometimes we don't bootstrap region 1,
                 // so it is normal if we find no region.
-                warn!("region {} not found, create for {}", region_id, node_id);
+                warn!("region {} not found when admin in {}", region_id, node_id);
                 let new_region = v.insert(Default::default());
                 assert!((*self.engine_store_server).kvstore.contains_key(&region_id));
                 do_handle_admin_raft_cmd(new_region, &mut (*self.engine_store_server))
@@ -635,7 +635,7 @@ impl EngineStoreServerWrap {
                 do_handle_write_raft_cmd(o.get_mut())
             }
             std::collections::hash_map::Entry::Vacant(v) => {
-                warn!("region {} not found", region_id);
+                warn!("region {} not found when write in {}", region_id, node_id);
                 do_handle_write_raft_cmd(v.insert(Default::default()))
             }
         }

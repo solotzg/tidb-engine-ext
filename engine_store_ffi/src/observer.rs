@@ -91,7 +91,7 @@ unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
 pub trait DebugStruct {
-    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {}
+    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) -> Option<Region>;
 }
 
 pub struct TiFlashObserver {
@@ -456,6 +456,13 @@ impl QueryObserver for TiFlashObserver {
         region_state: &RegionState,
         apply_ctx_info: &mut ApplyCtxInfo<'_>,
     ) -> bool {
+        info!(
+            "!!!!! post_exec_query {}", region_state.peer_id;
+            "region_id" => ob_ctx.region().get_id(),
+            "peer_id" => region_state.peer_id,
+            "term" => cmd.term,
+            "index" => cmd.index,
+        );
         fail::fail_point!("on_post_exec_normal", |e| {
             e.unwrap().parse::<bool>().unwrap()
         });
@@ -671,13 +678,16 @@ impl RegionChangeObserver for TiFlashObserver {
         false
     }
 
-    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {
+    fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) -> Option<Region> {
+        #[cfg(not(any(test, feature = "testexport")))]
+        {}
         #[cfg(any(test, feature = "testexport"))]
         {
-            self.debug_struct
-                .as_ref()
-                .unwrap()
-                .pre_replicate_peer(store_id, region_id, peer);
+            if let Some(s) = &self.debug_struct {
+                s.pre_replicate_peer(store_id, region_id, peer)
+            } else {
+                None
+            }
         }
     }
 }

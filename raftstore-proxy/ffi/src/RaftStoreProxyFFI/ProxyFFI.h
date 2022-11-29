@@ -143,6 +143,27 @@ enum class KVGetStatus : uint32_t {
   NotFound,
 };
 
+struct PageWithView {
+  RawCppPtr inner;
+  BaseBuffView view;
+};
+
+struct PageWithViewVec {
+    PageWithView * inner;
+    const uint64_t len;
+};
+
+PageWithViewVec (*fn_remote_read_raft_entries) (EngineStoreServerWrap *, uint64_t region_id)
+enum MessageType {
+    RegionLocalState = 1,
+    RaftApplyState,
+    RaftLocalState,
+    SnapshotRaftState,
+    StoreIdent,
+    PrepareBootstrap,
+};
+PageWithView (*fn_remote_read_msg) (EngineStoreServerWrap *, uint64_t region_id, uint64_t engine, uint64_t cf, uint64_t message_type)
+
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);

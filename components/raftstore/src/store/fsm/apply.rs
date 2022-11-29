@@ -449,6 +449,8 @@ where
     ) -> ApplyContext<EK> {
         let kv_wb = engine.write_batch_with_cap(DEFAULT_APPLY_WB_SIZE);
 
+        debug!("!!!!!! ApplyContext {}", store_id);
+
         ApplyContext {
             tag,
             timer: None,
@@ -671,6 +673,9 @@ where
     /// Flush all pending writes to engines.
     /// If it returns true, all pending writes are persisted in engines.
     pub fn flush(&mut self) -> bool {
+        if self.store_id == 5 {
+            debug!("!!!!! flush {:?}", std::backtrace::Backtrace::capture());
+        }
         // TODO: this check is too hacky, need to be more verbose and less buggy.
         let t = match self.timer.take() {
             Some(t) => t,
@@ -1011,6 +1016,12 @@ where
     EK: KvEngine,
 {
     fn from_registration(reg: Registration) -> ApplyDelegate<EK> {
+        debug!(
+            "!!!! ApplyDelegate new {} {} {:?}",
+            reg.region.get_id(),
+            reg.id,
+            reg.apply_state
+        );
         ApplyDelegate {
             tag: format!("[region {}] {}", reg.region.get_id(), reg.id),
             peer: find_peer_by_id(&reg.region, reg.id).unwrap().clone(),
@@ -4360,11 +4371,18 @@ where
         let reg = match self.try_send(region_id, msg) {
             Either::Left(Ok(())) => return,
             Either::Left(Err(TrySendError::Disconnected(msg))) | Either::Right(msg) => match msg {
-                Msg::Registration(reg) => reg,
+                Msg::Registration(reg) => {
+                    info!(
+                        "!!!! rrrg";
+                        "region_id" => region_id,
+                    );
+                    reg
+                }
                 Msg::Apply { mut apply, .. } => {
                     info!(
                         "target region is not found, drop proposals";
-                        "region_id" => region_id
+                        "region_id" => region_id,
+                        "!!! peer_id" => apply.peer_id,
                     );
                     // Invoking callback can release txn latch, if it's still leader, following
                     // command may not read the writes of previous commands and break ACID. If

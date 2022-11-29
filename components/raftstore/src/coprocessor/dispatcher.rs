@@ -669,11 +669,14 @@ impl<E: KvEngine> CoprocessorHost<E> {
         true
     }
 
-    pub fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) {
+    pub fn pre_replicate_peer(&self, store_id: u64, region_id: u64, peer: &Peer) -> Option<Region> {
         for observer in &self.registry.region_change_observers {
             let observer = observer.observer.inner();
-            observer.pre_replicate_peer(store_id, region_id, peer);
+            if let Some(r) = observer.pre_replicate_peer(store_id, region_id, peer) {
+                return Some(r);
+            }
         }
+        None
     }
 
     pub fn on_flush_applied_cmd_batch(

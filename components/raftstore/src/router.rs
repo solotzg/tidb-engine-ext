@@ -259,6 +259,7 @@ impl<EK: KvEngine, ER: RaftEngine> LocalReadRouter<EK> for ServerRaftStoreRouter
 
 #[inline]
 pub fn handle_send_error<T>(region_id: u64, e: TrySendError<T>) -> RaftStoreError {
+    tikv_util::debug!("!!!! handle_send_error {:?}", e);
     match e {
         TrySendError::Full(_) => RaftStoreError::Transport(DiscardReason::Full),
         TrySendError::Disconnected(_) => RaftStoreError::RegionNotFound(region_id),
