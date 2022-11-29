@@ -393,6 +393,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
 
     config.server.background_thread_count = proxy_config.server.background_thread_count;
     config.import.num_threads = proxy_config.import.num_threads;
+    config.server.status_thread_pool_size = proxy_config.server.status_thread_pool_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
