@@ -693,3 +693,19 @@ fn test_add_delayed_started_learner_snapshot() {
     fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();
 }
+
+#[test]
+fn test_fast_add_peer2() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    disable_auto_gen_compact_log(&mut cluster);
+    let _ = cluster.run_conf_change();
+    pd_client.add_peer(1, new_peer(2, 2));
+
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, None);
+
+    fail::remove("on_pre_persist_with_finish");
+    cluster.shutdown();
+}

@@ -90,6 +90,10 @@ impl PrehandleTask {
 unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
+const CACHED_REGION_INFO_SLOT_COUNT: usize = 128;
+
+pub struct CachedRegionInfo {}
+
 pub struct TiFlashObserver {
     pub peer_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
@@ -99,6 +103,7 @@ pub struct TiFlashObserver {
     pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
+    pub cached_mem_info: Arc<Vec<RwLock<HashMap<u64, CachedRegionInfo>>>>,
 }
 
 impl Clone for TiFlashObserver {
@@ -112,6 +117,7 @@ impl Clone for TiFlashObserver {
             snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
             pending_delete_ssts: self.pending_delete_ssts.clone(),
+            cached_mem_info: self.cached_mem_info.clone(),
         }
     }
 }
@@ -120,7 +126,29 @@ impl Clone for TiFlashObserver {
 // avoid being bypassed.
 const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
 
+// Credit: [splitmix64 algorithm](https://xorshift.di.unimi.it/splitmix64.c)
+#[inline]
+fn hash_u64(mut i: u64) -> u64 {
+    i = (i ^ (i >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    i = (i ^ (i >> 27)).wrapping_mul(0x94d049bb133111eb);
+    i ^ (i >> 31)
+}
+
+#[allow(dead_code)]
+#[inline]
+fn unhash_u64(mut i: u64) -> u64 {
+    i = (i ^ (i >> 31) ^ (i >> 62)).wrapping_mul(0x319642b2d24d8ec3);
+    i = (i ^ (i >> 27) ^ (i >> 54)).wrapping_mul(0x96de1b173f119089);
+    i ^ (i >> 30) ^ (i >> 60)
+}
+
 impl TiFlashObserver {
+    #[inline]
+    fn slot_index(id: u64) -> usize {
+        debug_assert!(CACHED_REGION_INFO_SLOT_COUNT.is_power_of_two());
+        hash_u64(id) as usize & (CACHED_REGION_INFO_SLOT_COUNT - 1)
+    }
+
     pub fn new(
         peer_id: u64,
         engine: engine_tiflash::RocksEngine,
@@ -133,6 +161,10 @@ impl TiFlashObserver {
         let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
             .max_thread_count(snap_handle_pool_size)
             .build_future_pool();
+        let mut mem_infos = Vec::with_capacity(CACHED_REGION_INFO_SLOT_COUNT);
+        for _ in 0..CACHED_REGION_INFO_SLOT_COUNT {
+            mem_infos.push(RwLock::new(HashMap::default()));
+        }
         TiFlashObserver {
             peer_id,
             engine_store_server_helper,
@@ -142,6 +174,7 @@ impl TiFlashObserver {
             snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
+            cached_mem_info: Arc::new(mem_infos),
         }
     }
 

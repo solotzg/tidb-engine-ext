@@ -2439,12 +2439,23 @@ where
             "to_peer_id" => msg.get_to_peer().get_id(),
         );
 
+        tikv_util::debug!("!!!!! on_raft_message after check 0";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id(),
+            "self.fsm.stopped" => self.fsm.stopped,
+            "msg" => ?msg,
+            "commit" => msg.get_message().get_commit(),
+        );
         if self.fsm.peer.pending_remove || self.fsm.stopped {
             return Ok(());
         }
 
         self.handle_reported_disk_usage(&msg);
 
+        tikv_util::debug!("!!!!! on_raft_message after check 0.1";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         let msg_type = msg.get_message().get_msg_type();
         if matches!(self.ctx.self_disk_usage, DiskUsage::AlreadyFull)
             && MessageType::MsgTimeoutNow == msg_type
@@ -2457,10 +2468,18 @@ where
             return Ok(());
         }
 
+        tikv_util::debug!("!!!!! on_raft_message after check 0.2";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         if !self.validate_raft_msg(&msg) {
             return Ok(());
         }
 
+        tikv_util::debug!("!!!!! on_raft_message after check 1";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         if msg.get_is_tombstone() {
             // we receive a message tells us to remove ourself.
             self.handle_gc_peer_msg(&msg);
@@ -2478,6 +2497,11 @@ where
         if self.check_msg(&msg) {
             return Ok(());
         }
+
+        tikv_util::debug!("!!!!! on_raft_message after check 2";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
 
         if msg.has_extra_msg() {
             self.on_extra_message(msg);
