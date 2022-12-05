@@ -699,8 +699,15 @@ fn test_fast_add_peer2() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
     fail::cfg("on_pre_persist_with_finish", "return").unwrap();
     disable_auto_gen_compact_log(&mut cluster);
+    // Siable auto generate peer.
+    pd_client.disable_default_operator();
     let _ = cluster.run_conf_change();
-    pd_client.add_peer(1, new_peer(2, 2));
+
+    // If we don't write here, we will have the first MsgAppend with (6,6), which
+    // will cause "fast-forwarded commit to snapshot".
+    cluster.must_put(b"k0", b"v0");
+
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
 
     std::thread::sleep(std::time::Duration::from_millis(1000));
     cluster.must_put(b"k1", b"v1");

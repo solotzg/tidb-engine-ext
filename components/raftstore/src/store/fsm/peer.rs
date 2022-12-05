@@ -610,6 +610,10 @@ where
         for m in msgs.drain(..) {
             match m {
                 PeerMsg::RaftMessage(msg) => {
+                    if self.ctx.coprocessor_host.should_skip_raft_message(&msg.msg) {
+                        debug!("!!!! peer skip message");
+                        continue;
+                    }
                     if let Err(e) = self.on_raft_message(msg) {
                         error!(%e;
                             "handle raft message err";
@@ -2443,7 +2447,6 @@ where
             "region_id" => self.region_id(),
             "peer_id" => self.fsm.peer_id(),
             "self.fsm.stopped" => self.fsm.stopped,
-            "msg" => ?msg,
             "commit" => msg.get_message().get_commit(),
         );
         if self.fsm.peer.pending_remove || self.fsm.stopped {
@@ -2468,15 +2471,11 @@ where
             return Ok(());
         }
 
-        tikv_util::debug!("!!!!! on_raft_message after check 0.2";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         if !self.validate_raft_msg(&msg) {
             return Ok(());
         }
 
-        tikv_util::debug!("!!!!! on_raft_message after check 1";
+        tikv_util::debug!("!!!!! on_raft_message after check 0.2";
             "region_id" => self.region_id(),
             "peer_id" => self.fsm.peer_id()
         );
@@ -2494,6 +2493,10 @@ where
             return Ok(());
         }
 
+        tikv_util::debug!("!!!!! on_raft_message after check 0.3";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         if self.check_msg(&msg) {
             return Ok(());
         }
@@ -2502,7 +2505,6 @@ where
             "region_id" => self.region_id(),
             "peer_id" => self.fsm.peer_id()
         );
-
         if msg.has_extra_msg() {
             self.on_extra_message(msg);
             return Ok(());
@@ -2510,9 +2512,17 @@ where
 
         let is_snapshot = msg.get_message().has_snapshot();
 
+        tikv_util::debug!("!!!!! on_raft_message after check 3";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         // TODO: spin off the I/O code (delete_snapshot)
         let regions_to_destroy = match self.check_snapshot(&msg)? {
             Either::Left(key) => {
+                tikv_util::debug!("!!!!! on_raft_message after check 3.1";
+                    "region_id" => self.region_id(),
+                    "peer_id" => self.fsm.peer_id()
+                );
                 if let Some(key) = key {
                     // If the snapshot file is not used again, then it's OK to
                     // delete them here. If the snapshot file will be reused when
@@ -2523,9 +2533,19 @@ where
                 }
                 return Ok(());
             }
-            Either::Right(v) => v,
+            Either::Right(v) => {
+                tikv_util::debug!("!!!!! on_raft_message after check 3.2";
+                    "region_id" => self.region_id(),
+                    "peer_id" => self.fsm.peer_id()
+                );
+                v
+            }
         };
 
+        tikv_util::debug!("!!!!! on_raft_message after check 4";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id()
+        );
         if util::is_vote_msg(msg.get_message()) || msg_type == MessageType::MsgTimeoutNow {
             if self.fsm.hibernate_state.group_state() != GroupState::Chaos {
                 self.fsm.reset_hibernate_state(GroupState::Chaos);
@@ -2552,14 +2572,28 @@ where
                 self.ctx.raft_metrics.message_dropped.stale_msg.inc();
                 return Ok(());
             }
-            self.fsm.peer.step(self.ctx, msg.take_message())
+            let res = self.fsm.peer.step(self.ctx, msg.take_message());
+            tikv_util::debug!("!!!!! on_raft_message after check 4.1";
+                "region_id" => self.region_id(),
+                "peer_id" => self.fsm.peer_id()
+            );
+            res
         };
 
         stepped.set(result.is_ok());
 
+        tikv_util::debug!("!!!!! on_raft_message after check 5";
+            "region_id" => self.region_id(),
+            "peer_id" => self.fsm.peer_id(),
+            "result" => ?result
+        );
         if is_snapshot {
             if !self.fsm.peer.has_pending_snapshot() {
                 // This snapshot is rejected by raft-rs.
+                tikv_util::debug!("!!!!! on_raft_message after check 5.1";
+                    "region_id" => self.region_id(),
+                    "peer_id" => self.fsm.peer_id()
+                );
                 let mut meta = self.ctx.store_meta.lock().unwrap();
                 meta.pending_snapshot_regions
                     .retain(|r| self.fsm.region_id() != r.get_id());
@@ -2570,6 +2604,10 @@ where
                 // region after applying that snapshot.
                 // But if `regions_to_destroy` is not empty, the pending snapshot must be this
                 // msg's snapshot because this kind of snapshot is exclusive.
+                tikv_util::debug!("!!!!! on_raft_message after check 5.2";
+                    "region_id" => self.region_id(),
+                    "peer_id" => self.fsm.peer_id()
+                );
                 self.destroy_regions_for_snapshot(regions_to_destroy);
             }
         }

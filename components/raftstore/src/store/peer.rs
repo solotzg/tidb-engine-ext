@@ -1769,6 +1769,11 @@ where
         for msg in msgs {
             let msg_type = msg.get_message().get_msg_type();
             if msg_type == MessageType::MsgSnapshot {
+                let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
+                snap_data
+                    .merge_from_bytes(msg.get_message().get_snapshot().get_data())
+                    .unwrap();
+                debug!("!!!! send snapshot {:?} XXXXXXX {:?}", msg, snap_data);
                 let snap_index = msg.get_message().get_snapshot().get_metadata().get_index();
                 if snap_index > self.last_sent_snapshot_idx {
                     self.last_sent_snapshot_idx = snap_index;

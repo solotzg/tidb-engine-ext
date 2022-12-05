@@ -409,14 +409,6 @@ impl ServerCluster {
             Arc::clone(&importer),
         );
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
-            node_id,
-            engines.kv.clone(),
-            importer.clone(),
-            2,
-        );
-        tiflash_ob.register_to(&mut coprocessor_host);
-
         let check_leader_runner =
             CheckLeaderRunner::new(store_meta.clone(), coprocessor_host.clone());
         let check_leader_scheduler = bg_worker.start("check-leader", check_leader_runner);
@@ -562,6 +554,15 @@ impl ServerCluster {
         let simulate_trans = SimulateTransport::new(trans);
         let max_grpc_thread_count = cfg.server.grpc_concurrency;
         let server_cfg = Arc::new(VersionTrack::new(cfg.server.clone()));
+
+        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+            node_id,
+            engines.kv.clone(),
+            importer.clone(),
+            cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            simulate_trans.clone(),
+        );
+        tiflash_ob.register_to(&mut coprocessor_host);
 
         // Register the role change observer of the lock manager.
         lock_mgr.register_detector_role_change_observer(&mut coprocessor_host);

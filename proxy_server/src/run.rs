@@ -1173,14 +1173,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         }
         let importer = Arc::new(importer);
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
-            node.id(),
-            self.engines.as_ref().unwrap().engines.kv.clone(),
-            importer.clone(),
-            self.proxy_config.raft_store.snap_handle_pool_size,
-        );
-        tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-
         let check_leader_runner = CheckLeaderRunner::new(
             engines.store_meta.clone(),
             self.coprocessor_host.clone().unwrap(),
@@ -1215,6 +1207,16 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             health_service,
         )
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
+
+        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+            node.id(),
+            self.engines.as_ref().unwrap().engines.kv.clone(),
+            importer.clone(),
+            self.proxy_config.raft_store.snap_handle_pool_size,
+            server.transport().clone(),
+        );
+        tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
+
         cfg_controller.register(
             tikv::config::Module::Server,
             Box::new(ServerConfigManager::new(

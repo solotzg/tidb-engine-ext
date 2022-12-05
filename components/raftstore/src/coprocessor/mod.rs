@@ -14,7 +14,7 @@ use kvproto::{
     metapb::Region,
     pdpb::CheckPolicy,
     raft_cmdpb::{AdminRequest, AdminResponse, RaftCmdRequest, RaftCmdResponse, Request},
-    raft_serverpb::RaftApplyState,
+    raft_serverpb::{RaftApplyState, RaftMessage},
 };
 use raft::{eraftpb, StateRole};
 
@@ -327,6 +327,10 @@ pub trait RegionChangeObserver: Coprocessor {
     /// this write.
     fn pre_write_apply_state(&self, _: &mut ObserverContext<'_>) -> bool {
         true
+    }
+
+    fn should_skip_raft_message(&self, _: &RaftMessage) -> bool {
+        false
     }
 }
 

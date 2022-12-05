@@ -1,6 +1,6 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-
 use std::{
+    collections::hash_map::Entry as MapEntry,
     ops::DerefMut,
     path::PathBuf,
     str::FromStr,
@@ -13,9 +13,10 @@ use engine_traits::SstMetaInfo;
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
-    raft_serverpb::RaftApplyState,
+    raft_serverpb::{RaftApplyState, RaftMessage},
 };
-use raft::StateRole;
+use protobuf::Message;
+use raft::{eraftpb, eraftpb::MessageType, StateRole};
 use raftstore::{
     coprocessor::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
@@ -25,10 +26,10 @@ use raftstore::{
         StoreSizeInfo, UpdateSafeTsObserver,
     },
     store,
-    store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey},
+    store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey, Transport},
 };
 use sst_importer::SstImporter;
-use tikv_util::{debug, error, info, warn};
+use tikv_util::{box_err, debug, error, info, warn};
 use yatp::{
     pool::{Builder, ThreadPool},
     task::future::TaskCell,
@@ -92,10 +93,15 @@ unsafe impl Sync for PrehandleTask {}
 
 const CACHED_REGION_INFO_SLOT_COUNT: usize = 128;
 
-pub struct CachedRegionInfo {}
+#[derive(Debug, Default)]
+pub struct CachedRegionInfo {
+    pub inited: bool,
+}
 
-pub struct TiFlashObserver {
-    pub peer_id: u64,
+pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;
+
+pub struct TiFlashObserver<T: Transport> {
+    pub store_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
     pub engine: TiFlashEngine,
     pub sst_importer: Arc<SstImporter>,
@@ -103,13 +109,15 @@ pub struct TiFlashObserver {
     pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
-    pub cached_mem_info: Arc<Vec<RwLock<HashMap<u64, CachedRegionInfo>>>>,
+    pub cached_region_info: Arc<Vec<RwLock<CachedRegionInfoMap>>>,
+    // TODO should we use a Mutex here?
+    pub trans: Arc<Mutex<T>>,
 }
 
-impl Clone for TiFlashObserver {
+impl<T: Transport + 'static> Clone for TiFlashObserver<T> {
     fn clone(&self) -> Self {
         TiFlashObserver {
-            peer_id: self.peer_id,
+            store_id: self.store_id,
             engine_store_server_helper: self.engine_store_server_helper,
             engine: self.engine.clone(),
             sst_importer: self.sst_importer.clone(),
@@ -117,7 +125,8 @@ impl Clone for TiFlashObserver {
             snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
             pending_delete_ssts: self.pending_delete_ssts.clone(),
-            cached_mem_info: self.cached_mem_info.clone(),
+            cached_region_info: self.cached_region_info.clone(),
+            trans: self.trans.clone(),
         }
     }
 }
@@ -142,18 +151,137 @@ fn unhash_u64(mut i: u64) -> u64 {
     i ^ (i >> 30) ^ (i >> 60)
 }
 
-impl TiFlashObserver {
+impl<T: Transport + 'static> TiFlashObserver<T> {
     #[inline]
     fn slot_index(id: u64) -> usize {
         debug_assert!(CACHED_REGION_INFO_SLOT_COUNT.is_power_of_two());
         hash_u64(id) as usize & (CACHED_REGION_INFO_SLOT_COUNT - 1)
     }
 
+    pub fn access_cached_region_info_mut<F: FnMut(MapEntry<u64, Arc<CachedRegionInfo>>)>(
+        &self,
+        region_id: u64,
+        mut f: F,
+    ) -> Result<(), String> {
+        let slot_id = Self::slot_index(region_id);
+        let guard = self.cached_region_info.get(slot_id).unwrap().write();
+        let mut guard = guard.unwrap();
+        f(guard.entry(region_id));
+        Ok(())
+    }
+
+    pub fn is_first_msg_append(&self, msg: &RaftMessage) -> bool {
+        // return false;
+        // TODO Need to recover all region infomation from restart.
+        let inner_msg = msg.get_message();
+        if inner_msg.get_msg_type() != MessageType::MsgAppend {
+            return false;
+        }
+        let region_id = msg.get_region_id();
+        let mut is_first = false;
+        // Can use immutable version.
+        self.access_cached_region_info_mut(
+            region_id,
+            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                MapEntry::Occupied(o) => {
+                    is_first = !o.get().inited;
+                    if is_first {
+                        info!("fast path: ongoing {}:{}, skip MsgAppend", self.store_id, region_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                            "inner_msg" => ?inner_msg,
+                        );
+                    }
+                }
+                MapEntry::Vacant(v) => {
+                    info!("fast path: first MsgAppend of {}:{}, skip", self.store_id, region_id;
+                        "to_peer_id" => msg.get_to_peer().get_id(),
+                        "from_peer_id" => msg.get_from_peer().get_id(),
+                        "inner_msg" => ?inner_msg,
+                    );
+                    v.insert(Arc::new(CachedRegionInfo::default()));
+                    is_first = true;
+                }
+            },
+        )
+        .unwrap();
+        let mut response = RaftMessage::default();
+        use kvproto::metapb::RegionEpoch;
+        let mut epoch = RegionEpoch::default();
+        epoch.set_conf_ver(2);
+        epoch.set_version(1);
+        response.set_region_epoch(epoch.clone());
+        response.set_region_id(1);
+        response.set_from_peer(msg.get_from_peer().clone());
+        response.set_to_peer(msg.get_to_peer().clone());
+        response
+            .mut_message()
+            .set_msg_type(MessageType::MsgSnapshot);
+        response.mut_message().set_term(inner_msg.get_term());
+        let snapshot: &mut eraftpb::Snapshot = response.mut_message().mut_snapshot();
+        let metadata: &mut eraftpb::SnapshotMetadata = snapshot.mut_metadata();
+
+        // TODO The rest is test, please remove it after we can fetch the real data.
+        metadata
+            .mut_conf_state()
+            .mut_voters()
+            .push(msg.get_from_peer().get_id());
+        metadata
+            .mut_conf_state()
+            .mut_learners()
+            .push(msg.get_to_peer().get_id());
+
+        metadata.set_index(inner_msg.get_index());
+        metadata.set_term(inner_msg.get_term());
+
+        let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
+        let mut region = kvproto::metapb::Region::default();
+        region.set_id(1);
+        region.set_region_epoch(epoch);
+        use kvproto::metapb::{Peer, PeerRole::Learner};
+
+        {
+            let mut peer = Peer::default();
+            peer.set_id(1);
+            peer.set_store_id(1);
+            region.mut_peers().push(peer);
+            let mut peer = Peer::default();
+            peer.set_id(2);
+            peer.set_store_id(2);
+            peer.set_role(Learner);
+            region.mut_peers().push(peer);
+            snap_data.set_region(region);
+            snap_data.set_file_size(0);
+            snap_data.set_version(2);
+        }
+
+        // snap_data.mut_meta().set_for_witness(true);
+
+        for cf in raftstore::store::snap::SNAPSHOT_CFS {
+            let mut cf_file = kvproto::raft_serverpb::SnapshotCfFile::default();
+            let path = format!("/tmp/loop_{}.sst", cf);
+            let mut file = std::fs::File::create(path.as_str()).unwrap();
+            cf_file.set_cf(cf.to_string());
+            cf_file.set_size(0);
+            cf_file.set_checksum(0);
+            snap_data.mut_meta().mut_cf_files().push(cf_file);
+        }
+
+        snapshot.set_data(snap_data.write_to_bytes().unwrap().into());
+        debug!("!!!!! send response {:?} data {:?}", response, snap_data);
+        self.trans.lock().unwrap().send(response).unwrap();
+        debug!("!!!!! send response FINISH");
+        is_first
+    }
+}
+
+impl<T: Transport + 'static> TiFlashObserver<T> {
     pub fn new(
-        peer_id: u64,
+        store_id: u64,
         engine: engine_tiflash::RocksEngine,
         sst_importer: Arc<SstImporter>,
         snap_handle_pool_size: usize,
+        trans: T,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
@@ -161,12 +289,12 @@ impl TiFlashObserver {
         let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
             .max_thread_count(snap_handle_pool_size)
             .build_future_pool();
-        let mut mem_infos = Vec::with_capacity(CACHED_REGION_INFO_SLOT_COUNT);
+        let mut cached_region_info = Vec::with_capacity(CACHED_REGION_INFO_SLOT_COUNT);
         for _ in 0..CACHED_REGION_INFO_SLOT_COUNT {
-            mem_infos.push(RwLock::new(HashMap::default()));
+            cached_region_info.push(RwLock::new(HashMap::default()));
         }
         TiFlashObserver {
-            peer_id,
+            store_id,
             engine_store_server_helper,
             engine,
             sst_importer,
@@ -174,7 +302,8 @@ impl TiFlashObserver {
             snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
-            cached_mem_info: Arc::new(mem_infos),
+            cached_region_info: Arc::new(cached_region_info),
+            trans: Arc::new(Mutex::new(trans)),
         }
     }
 
@@ -278,14 +407,14 @@ impl TiFlashObserver {
     }
 }
 
-impl Coprocessor for TiFlashObserver {
+impl<T: Transport + 'static> Coprocessor for TiFlashObserver<T> {
     fn stop(&self) {
-        info!("shutdown tiflash observer"; "peer_id" => self.peer_id);
+        info!("shutdown tiflash observer"; "store_id" => self.store_id);
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
 
-impl AdminObserver for TiFlashObserver {
+impl<T: Transport + 'static> AdminObserver for TiFlashObserver<T> {
     fn pre_exec_admin(
         &self,
         ob_ctx: &mut ObserverContext<'_>,
@@ -448,7 +577,7 @@ impl AdminObserver for TiFlashObserver {
     }
 }
 
-impl QueryObserver for TiFlashObserver {
+impl<T: Transport + 'static> QueryObserver for TiFlashObserver<T> {
     fn on_empty_cmd(&self, ob_ctx: &mut ObserverContext<'_>, index: u64, term: u64) {
         fail::fail_point!("on_empty_cmd_normal", |_| {});
         debug!("encounter empty cmd, maybe due to leadership change";
@@ -616,7 +745,7 @@ impl QueryObserver for TiFlashObserver {
     }
 }
 
-impl UpdateSafeTsObserver for TiFlashObserver {
+impl<T: Transport + 'static> UpdateSafeTsObserver for TiFlashObserver<T> {
     fn on_update_safe_ts(&self, region_id: u64, self_safe_ts: u64, leader_safe_ts: u64) {
         self.engine_store_server_helper.handle_safe_ts_update(
             region_id,
@@ -626,7 +755,7 @@ impl UpdateSafeTsObserver for TiFlashObserver {
     }
 }
 
-impl RegionChangeObserver for TiFlashObserver {
+impl<T: Transport + 'static> RegionChangeObserver for TiFlashObserver<T> {
     fn on_region_changed(
         &self,
         ob_ctx: &mut ObserverContext<'_>,
@@ -637,7 +766,7 @@ impl RegionChangeObserver for TiFlashObserver {
             info!(
                 "observe destroy";
                 "region_id" => ob_ctx.region().get_id(),
-                "peer_id" => self.peer_id,
+                "store_id" => self.store_id,
             );
             self.engine_store_server_helper
                 .handle_destroy(ob_ctx.region().get_id());
@@ -669,13 +798,13 @@ impl RegionChangeObserver for TiFlashObserver {
             debug!(
             "observe pre_persist, persist";
             "region_id" => ob_ctx.region().get_id(),
-            "peer_id" => self.peer_id,
+            "store_id" => self.store_id,
             );
         } else {
             debug!(
             "observe pre_persist";
             "region_id" => ob_ctx.region().get_id(),
-            "peer_id" => self.peer_id,
+            "store_id" => self.store_id,
             "is_finished" => is_finished,
             );
         };
@@ -686,9 +815,18 @@ impl RegionChangeObserver for TiFlashObserver {
         fail::fail_point!("on_pre_persist_with_finish", |_| { true });
         false
     }
+
+    fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
+        let inner_msg = msg.get_message();
+        if inner_msg.get_commit() == 0 && inner_msg.get_msg_type() == MessageType::MsgHeartbeat {
+        } else if inner_msg.get_msg_type() == MessageType::MsgAppend {
+            return self.is_first_msg_append(&msg);
+        }
+        false
+    }
 }
 
-impl PdTaskObserver for TiFlashObserver {
+impl<T: Transport + 'static> PdTaskObserver for TiFlashObserver<T> {
     fn on_compute_engine_size(&self, store_size: &mut Option<StoreSizeInfo>) {
         let stats = self.engine_store_server_helper.handle_compute_store_stats();
         let _ = store_size.insert(StoreSizeInfo {
@@ -759,7 +897,7 @@ fn pre_handle_snapshot_impl(
     PtrWrapper(ptr)
 }
 
-impl ApplySnapshotObserver for TiFlashObserver {
+impl<T: Transport + 'static> ApplySnapshotObserver for TiFlashObserver<T> {
     #[allow(clippy::single_match)]
     fn pre_apply_snapshot(
         &self,

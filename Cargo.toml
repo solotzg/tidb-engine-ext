@@ -193,8 +193,11 @@ zipf = "6.1.0"
 prometheus = { git = "https://github.com/solotzg/rust-prometheus.git", rev = "b4fe98a06a58d29f9b9987a0d7186f6ed5230193" }
 
 # TODO: remove this when new raft-rs is published.
-raft = { git = "https://github.com/tikv/raft-rs", branch = "master" }
-raft-proto = { git = "https://github.com/tikv/raft-rs", branch = "master" }
+#raft = { git = "https://github.com/tikv/raft-rs", branch = "master" }
+raft = { path = "/Users/calvin/tiflash/raft-rs" }
+# raft-proto = { git = "https://github.com/tikv/raft-rs", branch = "master" }
+raft-proto = { path = "/Users/calvin/tiflash/raft-rs/proto" }
+
 protobuf = { git = "https://github.com/pingcap/rust-protobuf", branch = "v2.8" }
 protobuf-codegen = { git = "https://github.com/pingcap/rust-protobuf", branch = "v2.8" }
 

@@ -135,6 +135,7 @@ impl Transport for ChannelTransport {
 
         match core.routers.get(&to_store) {
             Some(h) => {
+                debug!("!!!!! ChannelTransport send {} msg {:?}", to_store, msg);
                 h.send_raft_msg(msg)?;
                 if is_snapshot {
                     // should report snapshot finish.
@@ -319,6 +320,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             engines.kv.clone(),
             importer.clone(),
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            simulate_trans.clone(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

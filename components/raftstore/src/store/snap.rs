@@ -186,6 +186,7 @@ where
 // A helper function to copy snapshot.
 // Only used in tests.
 pub fn copy_snapshot(mut from: Box<Snapshot>, mut to: Box<Snapshot>) -> io::Result<()> {
+    debug!("!!!!! copy_snapshot {}", to.exists());
     if !to.exists() {
         io::copy(&mut from, &mut to)?;
         to.save()?;
