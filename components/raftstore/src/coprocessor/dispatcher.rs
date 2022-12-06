@@ -680,6 +680,13 @@ impl<E: KvEngine> CoprocessorHost<E> {
         false
     }
 
+    pub fn on_peer_created(&self, region_id: u64) {
+        for observer in &self.registry.region_change_observers {
+            let observer = observer.observer.inner();
+            observer.on_peer_created(region_id)
+        }
+    }
+
     pub fn on_flush_applied_cmd_batch(
         &self,
         max_level: ObserveLevel,

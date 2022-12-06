@@ -206,6 +206,10 @@ fn init_apply_state<EK: KvEngine, ER: RaftEngine>(
                     state.set_index(RAFT_INIT_LOG_INDEX);
                     state.set_term(RAFT_INIT_LOG_TERM);
                 }
+                debug!(
+                    "!!!!! init_raft_state {}",
+                    util::is_region_initialized(region)
+                );
                 apply_state
             }
         },

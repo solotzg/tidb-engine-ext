@@ -1211,9 +1211,11 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node.id(),
             self.engines.as_ref().unwrap().engines.kv.clone(),
+            self.engines.as_ref().unwrap().engines.raft.clone(),
             importer.clone(),
             self.proxy_config.raft_store.snap_handle_pool_size,
             server.transport().clone(),
+            snap_mgr.clone(),
         );
         tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 

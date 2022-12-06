@@ -27,7 +27,7 @@ pub use kvproto::{
 };
 pub use new_mock_engine_store::{
     config::Config,
-    make_new_region,
+    get_apply_state, get_raft_local_state, get_region_local_state, make_new_region,
     mock_cluster::{new_put_cmd, new_request, FFIHelperSet},
     must_get_equal, must_get_none,
     node::NodeCluster,
@@ -46,36 +46,6 @@ pub use tikv_util::{
     time::Duration,
     HandyRwLock,
 };
-
-// TODO Need refactor if moved to raft-engine
-pub fn get_region_local_state(
-    engine: &engine_rocks::RocksEngine,
-    region_id: u64,
-) -> RegionLocalState {
-    let region_state_key = keys::region_state_key(region_id);
-    let region_state = match engine.get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    region_state
-}
-
-// TODO Need refactor if moved to raft-engine
-pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> RaftApplyState {
-    let apply_state_key = keys::apply_state_key(region_id);
-    let apply_state = match engine.get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    apply_state
-}
-
-pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(
-    raft_engine: &ER,
-    region_id: u64,
-) -> RaftLocalState {
-    raft_engine.get_raft_state(region_id).unwrap().unwrap()
-}
 
 pub fn new_compute_hash_request() -> AdminRequest {
     let mut req = AdminRequest::default();

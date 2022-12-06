@@ -1158,6 +1158,11 @@ impl EngineStoreServerHelper {
             )
         }
     }
+
+    pub fn debug_func(&self, debug_type: u64, ptr: RawVoidPtr) -> RawVoidPtr {
+        debug_assert!(self.fn_debug_func.is_some());
+        unsafe { (self.fn_debug_func.into_inner())(self.inner, debug_type, ptr) }
+    }
 }
 
 #[allow(clippy::clone_on_copy)]
@@ -1245,4 +1250,10 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
     } else {
         0
     }
+}
+
+pub const USE_LEADER_FOR_REGION: u64 = 10;
+
+pub struct DebugStruct_UseLeaderForRegion {
+    pub region_id: u64,
 }

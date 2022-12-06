@@ -1,15 +1,19 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use std::{
+    cell::Cell,
     collections::hash_map::Entry as MapEntry,
     ops::DerefMut,
     path::PathBuf,
     str::FromStr,
-    sync::{atomic::Ordering, mpsc, Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex, RwLock,
+    },
 };
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use engine_traits::SstMetaInfo;
+use engine_traits::{RaftEngine, SstMetaInfo};
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
@@ -25,8 +29,9 @@ use raftstore::{
         PdTaskObserver, QueryObserver, RegionChangeEvent, RegionChangeObserver, RegionState,
         StoreSizeInfo, UpdateSafeTsObserver,
     },
-    store,
-    store::{check_sst_for_ingestion, snap::plain_file_used, SnapKey, Transport},
+    store::{
+        self, check_sst_for_ingestion, snap::plain_file_used, SnapKey, SnapManager, Transport,
+    },
 };
 use sst_importer::SstImporter;
 use tikv_util::{box_err, debug, error, info, warn};
@@ -91,19 +96,21 @@ impl PrehandleTask {
 unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
-const CACHED_REGION_INFO_SLOT_COUNT: usize = 128;
+const CACHED_REGION_INFO_SLOT_COUNT: usize = 256;
 
 #[derive(Debug, Default)]
 pub struct CachedRegionInfo {
-    pub inited: bool,
+    pub replicated_or_created: AtomicBool,
+    pub inited: AtomicBool,
 }
 
 pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;
 
-pub struct TiFlashObserver<T: Transport> {
+pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub store_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
     pub engine: TiFlashEngine,
+    pub raft_engine: ER,
     pub sst_importer: Arc<SstImporter>,
     pub pre_handle_snapshot_ctx: Arc<Mutex<PrehandleContext>>,
     pub snap_handle_pool_size: usize,
@@ -112,14 +119,16 @@ pub struct TiFlashObserver<T: Transport> {
     pub cached_region_info: Arc<Vec<RwLock<CachedRegionInfoMap>>>,
     // TODO should we use a Mutex here?
     pub trans: Arc<Mutex<T>>,
+    pub snap_mgr: Arc<SnapManager>,
 }
 
-impl<T: Transport + 'static> Clone for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
     fn clone(&self) -> Self {
         TiFlashObserver {
             store_id: self.store_id,
             engine_store_server_helper: self.engine_store_server_helper,
             engine: self.engine.clone(),
+            raft_engine: self.raft_engine.clone(),
             sst_importer: self.sst_importer.clone(),
             pre_handle_snapshot_ctx: self.pre_handle_snapshot_ctx.clone(),
             snap_handle_pool_size: self.snap_handle_pool_size,
@@ -127,6 +136,7 @@ impl<T: Transport + 'static> Clone for TiFlashObserver<T> {
             pending_delete_ssts: self.pending_delete_ssts.clone(),
             cached_region_info: self.cached_region_info.clone(),
             trans: self.trans.clone(),
+            snap_mgr: self.snap_mgr.clone(),
         }
     }
 }
@@ -151,7 +161,7 @@ fn unhash_u64(mut i: u64) -> u64 {
     i ^ (i >> 30) ^ (i >> 60)
 }
 
-impl<T: Transport + 'static> TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     #[inline]
     fn slot_index(id: u64) -> usize {
         debug_assert!(CACHED_REGION_INFO_SLOT_COUNT.is_power_of_two());
@@ -179,17 +189,20 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
         }
         let region_id = msg.get_region_id();
         let mut is_first = false;
-        // Can use immutable version.
-        self.access_cached_region_info_mut(
-            region_id,
-            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(o) => {
-                    is_first = !o.get().inited;
+        let mut is_replicated = false;
+        let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
+            match info {
+                MapEntry::Occupied(mut o) => {
+                    is_first = !o.get().inited.load(Ordering::SeqCst);
+                    // TODO include create
+                    is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                     if is_first {
+                        // TODO Maybe too much printing
                         info!("fast path: ongoing {}:{}, skip MsgAppend", self.store_id, region_id;
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
                             "inner_msg" => ?inner_msg,
+                            "is_replicated" => is_replicated,
                         );
                     }
                 }
@@ -202,24 +215,131 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
                     v.insert(Arc::new(CachedRegionInfo::default()));
                     is_first = true;
                 }
-            },
-        )
-        .unwrap();
-        let mut response = RaftMessage::default();
-        use kvproto::metapb::RegionEpoch;
-        let mut epoch = RegionEpoch::default();
-        epoch.set_conf_ver(2);
-        epoch.set_version(1);
-        response.set_region_epoch(epoch.clone());
-        response.set_region_id(1);
-        response.set_from_peer(msg.get_from_peer().clone());
-        response.set_to_peer(msg.get_to_peer().clone());
-        response
-            .mut_message()
-            .set_msg_type(MessageType::MsgSnapshot);
-        response.mut_message().set_term(inner_msg.get_term());
-        let snapshot: &mut eraftpb::Snapshot = response.mut_message().mut_snapshot();
+            }
+        };
+        // Can use immutable version.
+        self.access_cached_region_info_mut(region_id, f).unwrap();
+
+        if is_first {
+            info!("fast path: normal MsgAppend of {}:{}", self.store_id, region_id;
+            );
+            return false;
+        }
+
+        use std::io::Write;
+
+        use engine_traits::{Peekable, CF_RAFT};
+        use into_other::into_other;
+        use kvproto::raft_serverpb::{RaftApplyState, RegionLocalState};
+        use raftstore::store::snap::SnapEntry;
+        use tikv_util::defer;
+        {
+            if !is_replicated {
+                info!("fast path: ongoing {}:{}, wait replicating peer", self.store_id, region_id;
+                    "to_peer_id" => msg.get_to_peer().get_id(),
+                    "from_peer_id" => msg.get_from_peer().get_id(),
+                    "inner_msg" => ?inner_msg,
+                );
+                return true;
+            }
+        }
+
+        info!("fast path: ongoing {}:{}, start load", self.store_id, region_id;
+            "to_peer_id" => msg.get_to_peer().get_id(),
+            "from_peer_id" => msg.get_from_peer().get_id(),
+        );
+        // Feed data
+        // #[cfg(any(test, feature = "testexport"))]
+        {
+            let mut s = crate::DebugStruct_UseLeaderForRegion { region_id };
+            self.engine_store_server_helper.debug_func(
+                crate::USE_LEADER_FOR_REGION,
+                &s as *const crate::DebugStruct_UseLeaderForRegion as crate::RawVoidPtr,
+            );
+        }
+
+        // Build snapshot by get_snapshot_for_building
+        let (mut snap, key, apply_state, region_state) = {
+            let apply_state: RaftApplyState = self
+                .engine
+                .get_msg_cf(CF_RAFT, &keys::apply_state_key(region_id))
+                .unwrap()
+                .unwrap();
+            let region_state: RegionLocalState = self
+                .engine
+                .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))
+                .unwrap()
+                .unwrap();
+            let key = SnapKey::new(
+                region_id,
+                apply_state.get_commit_term(), // TODO apply index term
+                apply_state.get_applied_index(),
+            );
+            self.snap_mgr.register(key.clone(), SnapEntry::Generating);
+            defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
+            let snapshot = self.snap_mgr.get_empty_snapshot_for_building(&key).unwrap();
+
+            // let base = &self.snap_mgr.core.base;
+            // let f = Snapshot::new_for_building(base, key, &self.snap_mgr.core).unwrap();
+            (snapshot, key.clone(), apply_state, region_state)
+        };
+
+        debug!(
+            "!!!!! snap 1 {:?} {:?} {}",
+            snap,
+            snap.meta_file,
+            snap.cf_files.len()
+        );
+        // Build snapshot by do_snapshot
+        let mut snapshot: eraftpb::Snapshot = Default::default();
         let metadata: &mut eraftpb::SnapshotMetadata = snapshot.mut_metadata();
+        let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
+        {
+            // Data
+            for (cf_enum, cf) in raftstore::store::snap::SNAPSHOT_CFS_ENUM_PAIR {
+                let cf_index = snap.cf_files.iter().position(|x| &x.cf == cf).unwrap();
+                let cf_file = &mut snap.cf_files[cf_index];
+                let mut path = cf_file.path.clone();
+                path.push(cf_file.file_prefix.clone());
+                path.set_extension("sst");
+                debug!("!!!! snap g {:?}", path);
+                let mut file = std::fs::File::create(path.as_path()).unwrap();
+                // let mut file = std::fs::create_dir();
+            }
+            // Meta
+            snap.meta_file.meta =
+                Some(raftstore::store::snap::gen_snapshot_meta(&snap.cf_files[..], true).unwrap());
+            {
+                let v = snap
+                    .meta_file
+                    .meta
+                    .as_ref()
+                    .unwrap()
+                    .write_to_bytes()
+                    .unwrap();
+                let mut f = std::fs::File::create(snap.meta_file.path.as_path()).unwrap();
+                f.write_all(&v[..]).unwrap();
+                f.flush().unwrap();
+                f.sync_all().unwrap();
+            }
+
+            debug!(
+                "!!!!! snap 2 {:?} {:?} {}",
+                snap.meta_file.meta,
+                snap.meta_file.file,
+                snap.cf_files.len()
+            );
+
+            // snap.save_meta_file().unwrap();
+            // let mut file = std::fs::File::create(path.as_path()).unwrap();
+            snap_data.set_region(region_state.get_region().clone());
+
+            snap_data.set_file_size(0);
+            let SNAPSHOT_VERSION = 2;
+            snap_data.set_version(SNAPSHOT_VERSION);
+            snap_data.set_meta(snap.meta_file.meta.as_ref().unwrap().clone());
+        }
+        // Compose snapshot
 
         // TODO The rest is test, please remove it after we can fetch the real data.
         metadata
@@ -234,54 +354,49 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
         metadata.set_index(inner_msg.get_index());
         metadata.set_term(inner_msg.get_term());
 
-        let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
-        let mut region = kvproto::metapb::Region::default();
-        region.set_id(1);
-        region.set_region_epoch(epoch);
-        use kvproto::metapb::{Peer, PeerRole::Learner};
-
-        {
-            let mut peer = Peer::default();
-            peer.set_id(1);
-            peer.set_store_id(1);
-            region.mut_peers().push(peer);
-            let mut peer = Peer::default();
-            peer.set_id(2);
-            peer.set_store_id(2);
-            peer.set_role(Learner);
-            region.mut_peers().push(peer);
-            snap_data.set_region(region);
-            snap_data.set_file_size(0);
-            snap_data.set_version(2);
-        }
-
         // snap_data.mut_meta().set_for_witness(true);
 
-        for cf in raftstore::store::snap::SNAPSHOT_CFS {
-            let mut cf_file = kvproto::raft_serverpb::SnapshotCfFile::default();
-            let path = format!("/tmp/loop_{}.sst", cf);
-            let mut file = std::fs::File::create(path.as_str()).unwrap();
-            cf_file.set_cf(cf.to_string());
-            cf_file.set_size(0);
-            cf_file.set_checksum(0);
-            snap_data.mut_meta().mut_cf_files().push(cf_file);
-        }
+        // for cf in raftstore::store::snap::SNAPSHOT_CFS {
+        //     let mut cf_file = kvproto::raft_serverpb::SnapshotCfFile::default();
+        //     let path = format!("/tmp/loop_{}.sst", cf);
+        //     let mut file = std::fs::File::create(path.as_str()).unwrap();
+        //     cf_file.set_cf(cf.to_string());
+        //     cf_file.set_size(0);
+        //     cf_file.set_checksum(0);
+        //     snap_data.mut_meta().mut_cf_files().push(cf_file);
+        // }
 
         snapshot.set_data(snap_data.write_to_bytes().unwrap().into());
+
+        // Send reponse
+        let mut response = RaftMessage::default();
+        use kvproto::metapb::RegionEpoch;
+        let mut epoch = region_state.get_region().get_region_epoch();
+        response.set_region_epoch(epoch.clone());
+        response.set_region_id(region_id);
+        response.set_from_peer(msg.get_from_peer().clone());
+        response.set_to_peer(msg.get_to_peer().clone());
+        response
+            .mut_message()
+            .set_msg_type(MessageType::MsgSnapshot);
+        response.mut_message().set_term(inner_msg.get_term());
+        response.mut_message().set_snapshot(snapshot);
         debug!("!!!!! send response {:?} data {:?}", response, snap_data);
-        self.trans.lock().unwrap().send(response).unwrap();
-        debug!("!!!!! send response FINISH");
+        let res = self.trans.lock().unwrap().send(response);
+        debug!("!!!!! send response FINISH {:?}", res);
         is_first
     }
 }
 
-impl<T: Transport + 'static> TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     pub fn new(
         store_id: u64,
         engine: engine_tiflash::RocksEngine,
+        raft_engine: ER,
         sst_importer: Arc<SstImporter>,
         snap_handle_pool_size: usize,
         trans: T,
+        snap_mgr: SnapManager,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
@@ -297,6 +412,7 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
             store_id,
             engine_store_server_helper,
             engine,
+            raft_engine,
             sst_importer,
             pre_handle_snapshot_ctx: Arc::new(Mutex::new(PrehandleContext::default())),
             snap_handle_pool_size,
@@ -304,6 +420,7 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
             cached_region_info: Arc::new(cached_region_info),
             trans: Arc::new(Mutex::new(trans)),
+            snap_mgr: Arc::new(snap_mgr),
         }
     }
 
@@ -407,14 +524,14 @@ impl<T: Transport + 'static> TiFlashObserver<T> {
     }
 }
 
-impl<T: Transport + 'static> Coprocessor for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> Coprocessor for TiFlashObserver<T, ER> {
     fn stop(&self) {
         info!("shutdown tiflash observer"; "store_id" => self.store_id);
         self.apply_snap_pool.as_ref().unwrap().shutdown();
     }
 }
 
-impl<T: Transport + 'static> AdminObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T, ER> {
     fn pre_exec_admin(
         &self,
         ob_ctx: &mut ObserverContext<'_>,
@@ -577,7 +694,7 @@ impl<T: Transport + 'static> AdminObserver for TiFlashObserver<T> {
     }
 }
 
-impl<T: Transport + 'static> QueryObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T, ER> {
     fn on_empty_cmd(&self, ob_ctx: &mut ObserverContext<'_>, index: u64, term: u64) {
         fail::fail_point!("on_empty_cmd_normal", |_| {});
         debug!("encounter empty cmd, maybe due to leadership change";
@@ -745,7 +862,7 @@ impl<T: Transport + 'static> QueryObserver for TiFlashObserver<T> {
     }
 }
 
-impl<T: Transport + 'static> UpdateSafeTsObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> UpdateSafeTsObserver for TiFlashObserver<T, ER> {
     fn on_update_safe_ts(&self, region_id: u64, self_safe_ts: u64, leader_safe_ts: u64) {
         self.engine_store_server_helper.handle_safe_ts_update(
             region_id,
@@ -755,7 +872,7 @@ impl<T: Transport + 'static> UpdateSafeTsObserver for TiFlashObserver<T> {
     }
 }
 
-impl<T: Transport + 'static> RegionChangeObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObserver<T, ER> {
     fn on_region_changed(
         &self,
         ob_ctx: &mut ObserverContext<'_>,
@@ -824,9 +941,28 @@ impl<T: Transport + 'static> RegionChangeObserver for TiFlashObserver<T> {
         }
         false
     }
+
+    fn on_peer_created(&self, region_id: u64) {
+        let mut f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
+            debug!("!!!! on_peer_created");
+            match info {
+                MapEntry::Occupied(mut o) => {
+                    o.get_mut()
+                        .replicated_or_created
+                        .store(true, Ordering::SeqCst);
+                }
+                MapEntry::Vacant(v) => {
+                    let mut c = CachedRegionInfo::default();
+                    c.replicated_or_created.store(true, Ordering::SeqCst);
+                    v.insert(Arc::new(c));
+                }
+            }
+        };
+        self.access_cached_region_info_mut(region_id, f).unwrap();
+    }
 }
 
-impl<T: Transport + 'static> PdTaskObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> PdTaskObserver for TiFlashObserver<T, ER> {
     fn on_compute_engine_size(&self, store_size: &mut Option<StoreSizeInfo>) {
         let stats = self.engine_store_server_helper.handle_compute_store_stats();
         let _ = store_size.insert(StoreSizeInfo {
@@ -897,7 +1033,7 @@ fn pre_handle_snapshot_impl(
     PtrWrapper(ptr)
 }
 
-impl<T: Transport + 'static> ApplySnapshotObserver for TiFlashObserver<T> {
+impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashObserver<T, ER> {
     #[allow(clippy::single_match)]
     fn pre_apply_snapshot(
         &self,
@@ -987,6 +1123,29 @@ impl<T: Transport + 'static> ApplySnapshotObserver for TiFlashObserver<T> {
             "snap_key" => ?snap_key,
             "region" => ?ob_ctx.region(),
         );
+        let region_id = ob_ctx.region().get_id();
+        let mut should_skip = false;
+        self.access_cached_region_info_mut(
+            region_id,
+            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                MapEntry::Occupied(mut o) => {
+                    if !o.get().inited.load(Ordering::SeqCst) {
+                        info!("fast path: first snapshot applied {}:{}, recover MsgAppend", self.store_id, region_id;
+                            "snap_key" => ?snap_key,
+                        );
+                    }
+                    should_skip = o.get().inited.load(Ordering::SeqCst);
+                    o.get_mut().inited.store(true, Ordering::SeqCst);
+                }
+                MapEntry::Vacant(v) => {
+                    panic!("unknown snapshot!");
+                }
+            },
+        )
+        .unwrap();
+        if should_skip {
+            return;
+        }
         let snap = match snap {
             None => return,
             Some(s) => s,
@@ -1056,10 +1215,11 @@ impl<T: Transport + 'static> ApplySnapshotObserver for TiFlashObserver<T> {
             self.engine_store_server_helper
                 .apply_pre_handled_snapshot(ptr.0);
             info!("apply snapshot finished";
-                "peer_id" => ?snap_key,
+                "snap_key" => ?snap_key,
                 "region" => ?ob_ctx.region(),
                 "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
             );
+            let region_id = ob_ctx.region().get_id();
         }
     }
 

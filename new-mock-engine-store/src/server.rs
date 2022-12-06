@@ -558,9 +558,11 @@ impl ServerCluster {
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node_id,
             engines.kv.clone(),
+            engines.raft.clone(),
             importer.clone(),
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
             simulate_trans.clone(),
+            snap_mgr.clone(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

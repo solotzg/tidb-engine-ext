@@ -332,6 +332,8 @@ pub trait RegionChangeObserver: Coprocessor {
     fn should_skip_raft_message(&self, _: &RaftMessage) -> bool {
         false
     }
+
+    fn on_peer_created(&self, _: u64) {}
 }
 
 #[derive(Clone, Debug, Default)]

@@ -739,12 +739,8 @@ impl PdCluster {
 
         let operator = operator?;
         debug!(
-            "[region {}] schedule {:?} to {:?}, region: {:?} {:?}",
-            region_id,
-            operator,
-            leader,
-            region,
-            std::backtrace::Backtrace::capture(),
+            "[region {}] schedule {:?} to {:?}, region: {:?}",
+            region_id, operator, leader, region,
         );
 
         let mut resp = operator.make_region_heartbeat_response(region.get_id(), self);

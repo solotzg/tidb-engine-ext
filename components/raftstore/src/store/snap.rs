@@ -206,7 +206,7 @@ fn retry_delete_snapshot(mgr: &SnapManagerCore, key: &SnapKey, snap: &Snapshot) 
     false
 }
 
-fn gen_snapshot_meta(cf_files: &[CfFile], for_balance: bool) -> RaftStoreResult<SnapshotMeta> {
+pub fn gen_snapshot_meta(cf_files: &[CfFile], for_balance: bool) -> RaftStoreResult<SnapshotMeta> {
     let mut meta = Vec::with_capacity(cf_files.len());
     for cf_file in cf_files {
         if !SNAPSHOT_CFS.iter().any(|cf| cf_file.cf == *cf) {
@@ -418,8 +418,8 @@ impl CfFile {
     }
 }
 
-#[derive(Default)]
-struct MetaFile {
+#[derive(Default, Debug)]
+pub struct MetaFile {
     pub meta: Option<SnapshotMeta>,
     pub path: PathBuf,
     pub file: Option<File>,
@@ -432,10 +432,10 @@ pub struct Snapshot {
     key: SnapKey,
     display_path: String,
     dir_path: PathBuf,
-    cf_files: Vec<CfFile>,
+    pub cf_files: Vec<CfFile>,
     cf_index: usize,
     cf_file_index: usize,
-    meta_file: MetaFile,
+    pub meta_file: MetaFile,
     hold_tmp_files: bool,
 
     mgr: SnapManagerCore,
@@ -644,6 +644,7 @@ impl Snapshot {
     // new file at the temporary meta file path, so that all other try will fail.
     fn init_for_building(&mut self) -> RaftStoreResult<()> {
         if self.exists() {
+            debug!("!!!!! init_for_building exists");
             return Ok(());
         }
         let file = OpenOptions::new()
@@ -812,7 +813,7 @@ impl Snapshot {
     }
 
     // Only called in `do_build`.
-    fn save_meta_file(&mut self) -> RaftStoreResult<()> {
+    pub fn save_meta_file(&mut self) -> RaftStoreResult<()> {
         let v = box_try!(self.meta_file.meta.as_ref().unwrap().write_to_bytes());
         if let Some(mut f) = self.meta_file.file.take() {
             // `meta_file` could be None for this case: in `init_for_building` the snapshot
@@ -873,6 +874,10 @@ impl Snapshot {
         for (cf_enum, cf) in SNAPSHOT_CFS_ENUM_PAIR {
             self.switch_to_cf_file(cf)?;
             let cf_file = &mut self.cf_files[self.cf_index];
+            info!(
+                "!!!!! buuild {:?} {} {} {:?}",
+                cf_file.path, cf_file.file_prefix, cf_file.file_suffix, cf_file.file_names
+            );
             let cf_stat = if plain_file_used(cf_file.cf) {
                 let key_mgr = self.mgr.encryption_key_manager.as_ref();
                 snap_io::build_plain_cf_file::<EK>(cf_file, key_mgr, kv_snap, &begin_key, &end_key)?
@@ -1112,6 +1117,12 @@ impl Snapshot {
 
     pub fn exists(&self) -> bool {
         self.cf_files.iter().all(|cf_file| {
+            debug!(
+                "!!!!! copy_snapshot exists cf_file.size {:?} cf_file.file_paths() {:?} meta {:?}",
+                cf_file.size,
+                cf_file.file_paths(),
+                self.meta_file.path
+            );
             cf_file.size.is_empty()
                 || (cf_file
                     .file_paths()
@@ -1531,6 +1542,12 @@ impl SnapManager {
             };
         }
 
+        let base = &self.core.base;
+        let f = Snapshot::new_for_building(base, key, &self.core)?;
+        Ok(Box::new(f))
+    }
+
+    pub fn get_empty_snapshot_for_building(&self, key: &SnapKey) -> RaftStoreResult<Box<Snapshot>> {
         let base = &self.core.base;
         let f = Snapshot::new_for_building(base, key, &self.core)?;
         Ok(Box::new(f))

@@ -30,7 +30,7 @@ pub use mock_cluster::{
 use protobuf::Message;
 use tikv_util::{debug, error, info, warn};
 
-use crate::{config::MockConfig, server::ServerCluster};
+use crate::{config::MockConfig, node::NodeCluster, server::ServerCluster};
 
 pub mod config;
 pub mod mock_cluster;
@@ -593,6 +593,7 @@ impl EngineStoreServerWrap {
                 "node_id"=>node_id,
                 );
                 panic!("observe obsolete write index");
+                // TODO this can happen since we recover from another peer
                 // return ffi_interfaces::EngineStoreApplyRes::None;
             }
             for i in 0..cmds.len {
@@ -689,6 +690,7 @@ pub fn gen_engine_store_server_helper(
         fn_set_store: None,
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
+        fn_debug_func: Some(ffi_debug_func),
     }
 }
 
@@ -1220,4 +1222,174 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
         engine_bytes_read: 0,
         engine_keys_read: 0,
     }
+}
+
+use engine_store_ffi::{DebugStruct_UseLeaderForRegion, USE_LEADER_FOR_REGION};
+
+unsafe extern "C" fn ffi_debug_func(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    debug_type: u64,
+    ptr: ffi_interfaces::RawVoidPtr,
+) -> ffi_interfaces::RawVoidPtr {
+    let store = into_engine_store_server_wrap(arg1);
+    if debug_type == USE_LEADER_FOR_REGION {
+        let s = &*(ptr as *const DebugStruct_UseLeaderForRegion);
+        let region_id = s.region_id;
+        let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
+        let lock = cluster.ffi_helper_set.lock().unwrap();
+        let source_server = &lock.get(&1).unwrap().engine_store_server;
+        let source_engines = &source_server.engines.clone().unwrap();
+        let source_region = source_server.kvstore.get(&region_id).unwrap();
+        let new_region_meta = get_region_local_state(&source_engines.kv.rocks, region_id)
+            .get_region()
+            .clone();
+        let new_region = make_new_region(
+            Some(new_region_meta.clone()),
+            Some((*store.engine_store_server).id),
+        );
+        (*store.engine_store_server)
+            .kvstore
+            .insert(region_id, Box::new(new_region));
+        let target_engines = (*store.engine_store_server).engines.clone().unwrap();
+        let target_region = (*store.engine_store_server)
+            .kvstore
+            .get_mut(&region_id)
+            .unwrap();
+        debug!("recover from leader"; "region_id" => region_id, "region" => ?new_region_meta);
+        copy_data_from(
+            source_engines,
+            &target_engines,
+            &source_region,
+            target_region,
+        )
+        .unwrap();
+        copy_meta_from(
+            source_engines,
+            &target_engines,
+            &source_region,
+            target_region,
+            new_region_meta,
+        )
+        .unwrap();
+    }
+    std::ptr::null_mut()
+}
+
+use engine_store_ffi::RawVoidPtr;
+use engine_traits::{KvEngine, Mutable, RaftEngine, RaftEngineDebug, RaftLogBatch, WriteBatch};
+use kvproto::raft_serverpb::RaftLocalState;
+use tikv_util::box_try;
+
+// TODO Need refactor if moved to raft-engine
+pub fn get_region_local_state(
+    engine: &engine_rocks::RocksEngine,
+    region_id: u64,
+) -> RegionLocalState {
+    let region_state_key = keys::region_state_key(region_id);
+    let region_state = match engine.get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key) {
+        Ok(Some(s)) => s,
+        _ => unreachable!(),
+    };
+    region_state
+}
+
+// TODO Need refactor if moved to raft-engine
+pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> RaftApplyState {
+    let apply_state_key = keys::apply_state_key(region_id);
+    let apply_state = match engine.get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key) {
+        Ok(Some(s)) => s,
+        _ => unreachable!(),
+    };
+    apply_state
+}
+
+pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(
+    raft_engine: &ER,
+    region_id: u64,
+) -> RaftLocalState {
+    raft_engine.get_raft_state(region_id).unwrap().unwrap()
+}
+
+pub fn copy_meta_from(
+    source_engines: &Engines<
+        impl KvEngine,
+        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
+    >,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    source: &Box<Region>,
+    target: &mut Box<Region>,
+    new_region_meta: kvproto::metapb::Region,
+) -> raftstore::Result<()> {
+    let region_id = source.region.get_id();
+
+    let mut wb = target_engines.kv.write_batch();
+    let mut raft_wb = target_engines.raft.log_batch(1024);
+
+    // Can't copy this key, otherwise will cause a bootstrap.
+    // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
+
+    // region local state
+    let mut state = RegionLocalState::default();
+    state.set_region(new_region_meta);
+    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
+
+    // apply state
+    {
+        let key = keys::apply_state_key(region_id);
+        let apply_state: RaftApplyState = source_engines
+            .kv
+            .get_msg_cf(CF_RAFT, &key)
+            .unwrap()
+            .unwrap();
+        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+        target.apply_state = apply_state.clone();
+        target.applied_term = source.applied_term;
+    }
+
+    wb.write()?;
+    target_engines.sync_kv()?;
+
+    // raft state
+    {
+        let key = keys::raft_state_key(region_id);
+        let raft_state = source_engines
+            .raft
+            .get_msg_cf(CF_DEFAULT, &key)
+            .unwrap()
+            .unwrap();
+        raft_wb.put_raft_state(region_id, &raft_state)?;
+    };
+
+    // raft log
+    let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
+    source_engines
+        .raft
+        .scan_entries(region_id, |e| {
+            debug!("copy raft log"; "e" => ?e);
+            entries.push(e.clone());
+            Ok(true)
+        })
+        .unwrap();
+
+    raft_wb.append(region_id, entries)?;
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
+
+    Ok(())
+}
+
+pub fn copy_data_from(
+    source_engines: &Engines<
+        impl KvEngine,
+        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
+    >,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    source: &Box<Region>,
+    target: &mut Box<Region>,
+) -> raftstore::Result<()> {
+    for cf in 0..3 {
+        for (k, v) in &source.data[cf] {
+            write_kv_in_mem(target, cf, k.as_slice(), v.as_slice());
+        }
+    }
+    Ok(())
 }

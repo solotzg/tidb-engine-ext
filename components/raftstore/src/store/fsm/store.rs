@@ -1813,6 +1813,7 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         if local_state.get_state() != PeerState::Tombstone {
             // Maybe split, but not registered yet.
             if !util::is_first_message(msg.get_message()) {
+                debug!("!!!!! find RegionNotRegistered {:?}", msg);
                 self.ctx
                     .raft_metrics
                     .message_dropped
@@ -2231,6 +2232,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             region_id,
             target.clone(),
         )?;
+
+        self.ctx.coprocessor_host.on_peer_created(region_id);
 
         // WARNING: The checking code must be above this line.
         // Now all checking passed

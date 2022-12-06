@@ -451,8 +451,15 @@ pub mod root {
                     leader_safe_ts: u64,
                 ),
             >,
+            pub fn_debug_func: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    type_: u64,
+                    arg2: root::DB::RawVoidPtr,
+                ) -> root::DB::RawVoidPtr,
+            >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 15776819379826780689;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 4624446451501389788;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

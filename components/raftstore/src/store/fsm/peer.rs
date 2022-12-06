@@ -2443,7 +2443,7 @@ where
             "to_peer_id" => msg.get_to_peer().get_id(),
         );
 
-        tikv_util::debug!("!!!!! on_raft_message after check 0";
+        tikv_util::debug!("!!!!! on_raft_message after check 0 {:?}", msg.get_message().get_msg_type();
             "region_id" => self.region_id(),
             "peer_id" => self.fsm.peer_id(),
             "self.fsm.stopped" => self.fsm.stopped,
