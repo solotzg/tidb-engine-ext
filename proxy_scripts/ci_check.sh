@@ -50,4 +50,8 @@ elif [[ $M == "debug" ]]; then
 elif [[ $M == "release" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     make release
+elif [[ $M == "install" ]]; then
+    wget https://github.com/protocolbuffers/protobuf/releases/download/v3.8.0/protoc-3.8.0-linux-x86_64.zip
+    unzip protoc-3.8.0-linux-x86_64.zip
+    export PROTOC=${pwd}/protoc-3.8.0-linux-x86_64/bin
 fi

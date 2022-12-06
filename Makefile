@@ -217,6 +217,7 @@ ci_fmt_check:
 	M="fmt" ./proxy_scripts/ci_check.sh
 
 ci_test:
+	M="install" ./proxy_scripts/ci_check.sh
 	M="testold" ./proxy_scripts/ci_check.sh
 	M="testnew" ./proxy_scripts/ci_check.sh
 	make debug
