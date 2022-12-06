@@ -4,6 +4,7 @@ if [[ $M == "fmt" ]]; then
     GIT_STATUS=$(git status -s) && if [[ ${GIT_STATUS} ]]; then echo "Error: found illegal git status"; echo ${GIT_STATUS}; [[ -z ${GIT_STATUS} ]]; fi
     cargo fmt -- --check >/dev/null
 elif [[ $M == "testold" ]]; then
+    echo "PROTOC", $PROTOC
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
@@ -27,6 +28,7 @@ elif [[ $M == "testold" ]]; then
     # cargo test --package tests --test failpoints cases::test_snap
     cargo test --package tests --test failpoints cases::test_import_service
 elif [[ $M == "testnew" ]]; then
+    echo "PROTOC", $PROTOC
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
@@ -50,8 +52,4 @@ elif [[ $M == "debug" ]]; then
 elif [[ $M == "release" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     make release
-elif [[ $M == "install" ]]; then
-    wget https://github.com/protocolbuffers/protobuf/releases/download/v3.8.0/protoc-3.8.0-linux-x86_64.zip
-    unzip protoc-3.8.0-linux-x86_64.zip
-    export PROTOC=`pwd`/protoc-3.8.0-linux-x86_64/bin
 fi
