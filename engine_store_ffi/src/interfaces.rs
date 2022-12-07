@@ -230,6 +230,15 @@ pub mod root {
             Error = 1,
             NotFound = 2,
         }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum FastAddPeerRes {
+            Ok = 0,
+            OtherError = 1,
+            NoSuitable = 2,
+            BadData = 3,
+            FailedInject = 4,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct RaftStoreProxyFFIHelper {
@@ -458,8 +467,14 @@ pub mod root {
                     arg2: root::DB::RawVoidPtr,
                 ) -> root::DB::RawVoidPtr,
             >,
+            pub fn_fast_add_peer: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    region_id: u64,
+                ) -> root::DB::FastAddPeerRes,
+            >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 4624446451501389788;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 13418513559228271669;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

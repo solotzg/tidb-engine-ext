@@ -563,6 +563,7 @@ impl ServerCluster {
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
             simulate_trans.clone(),
             snap_mgr.clone(),
+            cfg.proxy_cfg.engine_store.clone(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

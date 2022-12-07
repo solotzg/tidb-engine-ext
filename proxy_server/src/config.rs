@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, iter::FromIterator, path::Path};
 
+use engine_store_ffi::EngineStoreConfig;
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use itertools::Itertools;
 use online_config::OnlineConfig;
@@ -254,6 +255,9 @@ pub struct ProxyConfig {
 
     #[online_config(skip)]
     pub import: ImportConfig,
+
+    #[online_config(skip)]
+    pub engine_store: EngineStoreConfig,
 }
 
 /// We use custom default, in case of later non-ordinary config items.
@@ -269,6 +273,7 @@ impl Default for ProxyConfig {
             enable_io_snoop: false,
             readpool: ReadPoolConfig::default(),
             import: ImportConfig::default(),
+            engine_store: EngineStoreConfig::default(),
         }
     }
 }

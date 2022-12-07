@@ -1216,6 +1216,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             self.proxy_config.raft_store.snap_handle_pool_size,
             server.transport().clone(),
             snap_mgr.clone(),
+            self.proxy_config.engine_store.clone(),
         );
         tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 

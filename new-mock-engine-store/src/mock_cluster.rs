@@ -1069,6 +1069,13 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         &self.get_tiflash_engine(node_id).rocks
     }
 
+    pub fn clear_send_filters(&mut self) {
+        let mut sim = self.sim.wl();
+        for node_id in sim.get_node_ids() {
+            sim.clear_send_filters(node_id);
+        }
+    }
+
     pub fn must_transfer_leader(&mut self, region_id: u64, leader: metapb::Peer) {
         let timer = Instant::now();
         loop {

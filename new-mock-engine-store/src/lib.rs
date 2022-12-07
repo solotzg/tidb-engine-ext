@@ -691,6 +691,7 @@ pub fn gen_engine_store_server_helper(
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
         fn_debug_func: Some(ffi_debug_func),
+        fn_fast_add_peer: Some(ffi_fast_add_peer),
     }
 }
 
@@ -1224,98 +1225,154 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
     }
 }
 
-use engine_store_ffi::{DebugStruct_UseLeaderForRegion, USE_LEADER_FOR_REGION};
-
 unsafe extern "C" fn ffi_debug_func(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     debug_type: u64,
     ptr: ffi_interfaces::RawVoidPtr,
 ) -> ffi_interfaces::RawVoidPtr {
-    let store = into_engine_store_server_wrap(arg1);
-    if debug_type == USE_LEADER_FOR_REGION {
-        let s = &*(ptr as *const DebugStruct_UseLeaderForRegion);
-        let region_id = s.region_id;
-        let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
-        let lock = cluster.ffi_helper_set.lock().unwrap();
-        let source_server = &lock.get(&1).unwrap().engine_store_server;
-        let source_engines = &source_server.engines.clone().unwrap();
-        let source_region = source_server.kvstore.get(&region_id).unwrap();
-        let new_region_meta = get_region_local_state(&source_engines.kv.rocks, region_id)
-            .get_region()
-            .clone();
-        let new_region = make_new_region(
-            Some(new_region_meta.clone()),
-            Some((*store.engine_store_server).id),
-        );
-        (*store.engine_store_server)
-            .kvstore
-            .insert(region_id, Box::new(new_region));
-        let target_engines = (*store.engine_store_server).engines.clone().unwrap();
-        let target_region = (*store.engine_store_server)
-            .kvstore
-            .get_mut(&region_id)
-            .unwrap();
-        debug!("recover from leader"; "region_id" => region_id, "region" => ?new_region_meta);
-        copy_data_from(
-            source_engines,
-            &target_engines,
-            &source_region,
-            target_region,
-        )
-        .unwrap();
-        copy_meta_from(
-            source_engines,
-            &target_engines,
-            &source_region,
-            target_region,
-            new_region_meta,
-        )
-        .unwrap();
-    }
     std::ptr::null_mut()
+}
+
+unsafe extern "C" fn ffi_fast_add_peer(
+    arg1: *mut ffi_interfaces::EngineStoreServerWrap,
+    region_id: u64,
+) -> ffi_interfaces::FastAddPeerRes {
+    let store = into_engine_store_server_wrap(arg1);
+    let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
+    let lock = cluster.ffi_helper_set.lock();
+    let guard = match lock {
+        Ok(e) => e,
+        Err(e) => {
+            error!("ffi_debug_func failed to lock");
+            return ffi_interfaces::FastAddPeerRes::OtherError;
+        }
+    };
+    let from_store = (|| {
+        fail::fail_point!("ffi_fast_add_peer_from_id", |t| {
+            let t = t.unwrap().parse::<u64>().unwrap();
+            t
+        });
+        1
+    })();
+    debug!("ffi_fast_add_peer from {}", from_store);
+    let source_server = match guard.get(&from_store) {
+        Some(s) => &s.engine_store_server,
+        None => return ffi_interfaces::FastAddPeerRes::NoSuitable,
+    };
+    let source_engines = match source_server.engines.clone() {
+        Some(s) => s,
+        None => return ffi_interfaces::FastAddPeerRes::BadData,
+    };
+    let source_region = match source_server.kvstore.get(&region_id) {
+        Some(s) => s,
+        None => return ffi_interfaces::FastAddPeerRes::BadData,
+    };
+    let new_region_meta = match get_region_local_state(&source_engines.kv.rocks, region_id) {
+        Some(s) => s.get_region().clone(),
+        None => return ffi_interfaces::FastAddPeerRes::BadData,
+    };
+    let new_region = make_new_region(
+        Some(new_region_meta.clone()),
+        Some((*store.engine_store_server).id),
+    );
+    (*store.engine_store_server)
+        .kvstore
+        .insert(region_id, Box::new(new_region));
+    let target_engines = match (*store.engine_store_server).engines.clone() {
+        Some(s) => s,
+        None => return ffi_interfaces::FastAddPeerRes::OtherError,
+    };
+    let target_region = match (*store.engine_store_server).kvstore.get_mut(&region_id) {
+        Some(s) => s,
+        None => return ffi_interfaces::FastAddPeerRes::BadData,
+    };
+    debug!("recover from other peer"; "region_id" => region_id);
+    if let Err(_) = copy_data_from(
+        &source_engines,
+        &target_engines,
+        &source_region,
+        target_region,
+    ) {
+        return ffi_interfaces::FastAddPeerRes::FailedInject;
+    }
+    debug!("recover meta from other peer"; "region_id" => region_id);
+    if let Err(_) = copy_meta_from(
+        &source_engines,
+        &target_engines,
+        &source_region,
+        target_region,
+        new_region_meta,
+    ) {
+        return ffi_interfaces::FastAddPeerRes::FailedInject;
+    }
+    debug!("recover from other peer ok"; "region_id" => region_id);
+    ffi_interfaces::FastAddPeerRes::Ok
 }
 
 use engine_store_ffi::RawVoidPtr;
 use engine_traits::{KvEngine, Mutable, RaftEngine, RaftEngineDebug, RaftLogBatch, WriteBatch};
 use kvproto::raft_serverpb::RaftLocalState;
-use tikv_util::box_try;
+use tikv_util::{box_err, box_try};
 
 // TODO Need refactor if moved to raft-engine
-pub fn get_region_local_state(
-    engine: &engine_rocks::RocksEngine,
+pub fn general_get_region_local_state<EK: engine_traits::KvEngine>(
+    engine: &EK,
     region_id: u64,
-) -> RegionLocalState {
+) -> Option<RegionLocalState> {
     let region_state_key = keys::region_state_key(region_id);
-    let region_state = match engine.get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    region_state
+    engine
+        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+        .unwrap_or(None)
 }
 
 // TODO Need refactor if moved to raft-engine
-pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> RaftApplyState {
+pub fn general_get_apply_state<EK: engine_traits::KvEngine>(
+    engine: &EK,
+    region_id: u64,
+) -> Option<RaftApplyState> {
     let apply_state_key = keys::apply_state_key(region_id);
-    let apply_state = match engine.get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    apply_state
+    engine
+        .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
+        .unwrap_or(None)
+}
+
+pub fn get_region_local_state(
+    engine: &engine_rocks::RocksEngine,
+    region_id: u64,
+) -> Option<RegionLocalState> {
+    let region_state_key = keys::region_state_key(region_id);
+    engine
+        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+        .unwrap_or(None)
+}
+
+// TODO Need refactor if moved to raft-engine
+pub fn get_apply_state(
+    engine: &engine_rocks::RocksEngine,
+    region_id: u64,
+) -> Option<RaftApplyState> {
+    let apply_state_key = keys::apply_state_key(region_id);
+    engine
+        .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
+        .unwrap_or(None)
 }
 
 pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(
     raft_engine: &ER,
     region_id: u64,
-) -> RaftLocalState {
-    raft_engine.get_raft_state(region_id).unwrap().unwrap()
+) -> Option<RaftLocalState> {
+    match raft_engine.get_raft_state(region_id) {
+        Ok(Some(x)) => Some(x),
+        _ => None,
+    }
 }
 
-pub fn copy_meta_from(
-    source_engines: &Engines<
-        impl KvEngine,
-        impl RaftEngine + engine_traits::Peekable + RaftEngineDebug,
-    >,
-    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+pub fn copy_meta_from<
+    EK: engine_traits::KvEngine,
+    ER: RaftEngine + engine_traits::Peekable + RaftEngineDebug,
+>(
+    source_engines: &Engines<EK, ER>,
+    target_engines: &Engines<EK, ER>,
     source: &Box<Region>,
     target: &mut Box<Region>,
     new_region_meta: kvproto::metapb::Region,
@@ -1335,12 +1392,11 @@ pub fn copy_meta_from(
 
     // apply state
     {
-        let key = keys::apply_state_key(region_id);
-        let apply_state: RaftApplyState = source_engines
-            .kv
-            .get_msg_cf(CF_RAFT, &key)
-            .unwrap()
-            .unwrap();
+        let apply_state: RaftApplyState =
+            match general_get_apply_state(&source_engines.kv, region_id) {
+                Some(x) => x,
+                None => return Err(box_err!("bad RaftApplyState")),
+            };
         wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
         target.apply_state = apply_state.clone();
         target.applied_term = source.applied_term;
@@ -1351,25 +1407,20 @@ pub fn copy_meta_from(
 
     // raft state
     {
-        let key = keys::raft_state_key(region_id);
-        let raft_state = source_engines
-            .raft
-            .get_msg_cf(CF_DEFAULT, &key)
-            .unwrap()
-            .unwrap();
+        let raft_state = match get_raft_local_state(&source_engines.raft, region_id) {
+            Some(x) => x,
+            None => return Err(box_err!("bad RaftLocalState")),
+        };
         raft_wb.put_raft_state(region_id, &raft_state)?;
     };
 
     // raft log
     let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
-    source_engines
-        .raft
-        .scan_entries(region_id, |e| {
-            debug!("copy raft log"; "e" => ?e);
-            entries.push(e.clone());
-            Ok(true)
-        })
-        .unwrap();
+    source_engines.raft.scan_entries(region_id, |e| {
+        debug!("copy raft log"; "e" => ?e);
+        entries.push(e.clone());
+        Ok(true)
+    })?;
 
     raft_wb.append(region_id, entries)?;
     box_try!(target_engines.raft.consume(&mut raft_wb, true));

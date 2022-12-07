@@ -143,6 +143,14 @@ enum class KVGetStatus : uint32_t {
   NotFound,
 };
 
+enum class FastAddPeerRes : uint32_t {
+  Ok = 0,
+  OtherError,
+  NoSuitable,
+  BadData,
+  FailedInject,
+};
+
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
   RaftProxyStatus (*fn_handle_get_proxy_status)(RaftStoreProxyPtr);
@@ -217,5 +225,7 @@ struct EngineStoreServerHelper {
                                    uint64_t leader_safe_ts);
   RawVoidPtr (*fn_debug_func)(EngineStoreServerWrap *, uint64_t type,
                               RawVoidPtr);
+  FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
+                                     uint64_t region_id);
 };
 }  // namespace DB

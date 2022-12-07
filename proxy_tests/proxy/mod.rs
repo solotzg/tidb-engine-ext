@@ -8,6 +8,7 @@
 extern crate slog_global;
 
 mod config;
+mod fast_add_peer;
 mod flashback;
 mod normal;
 mod proxy;

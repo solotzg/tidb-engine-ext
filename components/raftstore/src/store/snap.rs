@@ -1791,6 +1791,11 @@ impl SnapManagerCore {
             );
             return false;
         }
+        debug!(
+            "!!!!! deletee snapshot {:?} {:?}",
+            key,
+            std::backtrace::Backtrace::capture()
+        );
         snap.delete();
         true
     }

@@ -423,24 +423,6 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     }
 }
 
-fn force_compact_log(
-    cluster: &mut Cluster<NodeCluster>,
-    key: &[u8],
-    use_nodes: Option<Vec<u64>>,
-) -> u64 {
-    let region = cluster.get_region(key);
-    let region_id = region.get_id();
-    let prev_states = maybe_collect_states(&cluster, region_id, None);
-
-    let (compact_index, compact_term) = get_valid_compact_index_by(&prev_states, use_nodes);
-    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
-    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
-    let _ = cluster
-        .call_command_on_leader(req, Duration::from_secs(3))
-        .unwrap();
-    return compact_index;
-}
-
 #[test]
 fn test_add_delayed_started_learner_no_snapshot() {
     // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
@@ -621,29 +603,6 @@ fn test_add_delayed_started_learner_snapshot() {
             });
         },
     );
-
-    fail::remove("on_pre_persist_with_finish");
-    cluster.shutdown();
-}
-
-#[test]
-fn test_fast_add_peer2() {
-    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
-    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
-    disable_auto_gen_compact_log(&mut cluster);
-    // Siable auto generate peer.
-    pd_client.disable_default_operator();
-    let _ = cluster.run_conf_change();
-
-    // If we don't write here, we will have the first MsgAppend with (6,6), which
-    // will cause "fast-forwarded commit to snapshot".
-    cluster.must_put(b"k0", b"v0");
-
-    pd_client.must_add_peer(1, new_learner_peer(2, 2));
-
-    std::thread::sleep(std::time::Duration::from_millis(1000));
-    cluster.must_put(b"k1", b"v1");
-    check_key(&cluster, b"k1", b"v1", Some(true), None, None);
 
     fail::remove("on_pre_persist_with_finish");
     cluster.shutdown();

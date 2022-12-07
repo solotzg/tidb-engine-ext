@@ -32,9 +32,9 @@ pub use read_index_helper::ReadIndexClient;
 
 pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
-    EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
-    KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
-    RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    EngineStoreServerStatus, FastAddPeerRes, FileEncryptionRes, FsStats, HttpRequestRes,
+    HttpRequestStatus, KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper,
+    RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
@@ -1163,6 +1163,11 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_debug_func.is_some());
         unsafe { (self.fn_debug_func.into_inner())(self.inner, debug_type, ptr) }
     }
+
+    pub fn fast_add_peer(&self, region_id: u64) -> FastAddPeerRes {
+        debug_assert!(self.fn_fast_add_peer.is_some());
+        unsafe { (self.fn_fast_add_peer.into_inner())(self.inner, region_id) }
+    }
 }
 
 #[allow(clippy::clone_on_copy)]
@@ -1252,8 +1257,18 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
     }
 }
 
-pub const USE_LEADER_FOR_REGION: u64 = 10;
+use serde_derive::{Deserialize, Serialize};
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct EngineStoreConfig {
+    pub enable_fast_add_peer: bool,
+}
 
-pub struct DebugStruct_UseLeaderForRegion {
-    pub region_id: u64,
+impl Default for EngineStoreConfig {
+    fn default() -> Self {
+        Self {
+            enable_fast_add_peer: false,
+        }
+    }
 }
