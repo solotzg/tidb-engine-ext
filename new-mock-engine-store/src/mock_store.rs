@@ -201,7 +201,7 @@ pub fn make_new_region(
     region
 }
 
-pub fn write_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8], v: &[u8]) {
+pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8]) {
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];
@@ -210,7 +210,7 @@ pub fn write_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8], v: &
     pending_write.insert(k.to_vec(), v.to_vec());
 }
 
-fn delete_kv_in_mem(region: &mut Box<Region>, cf_index: usize, k: &[u8]) {
+fn delete_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8]) {
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     pending_delete.insert(k.to_vec());
@@ -611,10 +611,10 @@ impl EngineStoreServerWrap {
                 let _data = &mut region.data[cf_index as usize];
                 match tp {
                     engine_store_ffi::WriteCmdType::Put => {
-                        write_kv_in_mem(region, cf_index as usize, k, v);
+                        write_kv_in_mem(region.as_mut(), cf_index as usize, k, v);
                     }
                     engine_store_ffi::WriteCmdType::Del => {
-                        delete_kv_in_mem(region, cf_index as usize, k);
+                        delete_kv_in_mem(region.as_mut(), cf_index as usize, k);
                     }
                 }
             }
@@ -1058,7 +1058,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
 
             let cf_index = (*snapshot).type_ as u8;
             write_kv_in_mem(
-                &mut region,
+                region.as_mut(),
                 cf_index as usize,
                 key.to_slice(),
                 value.to_slice(),
@@ -1180,7 +1180,7 @@ unsafe extern "C" fn ffi_handle_ingest_sst(
             let key = sst_reader.key();
             let value = sst_reader.value();
             let cf_index = (*snapshot).type_ as usize;
-            write_kv_in_mem(region, cf_index, key.to_slice(), value.to_slice());
+            write_kv_in_mem(region.as_mut(), cf_index, key.to_slice(), value.to_slice());
             sst_reader.next();
         }
     }

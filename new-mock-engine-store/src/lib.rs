@@ -13,8 +13,8 @@ pub use mock_store::*;
 pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_traits::Peekable>(
     source_engines: &Engines<EK, ER>,
     target_engines: &Engines<EK, ER>,
-    source: &Box<Region>,
-    target: &mut Box<Region>,
+    source: &Region,
+    target: &mut Region,
     new_region_meta: kvproto::metapb::Region,
     copy_region_state: bool,
     copy_apply_state: bool,
@@ -65,8 +65,8 @@ pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_trait
 pub fn copy_data_from(
     source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable>,
     target_engines: &Engines<impl KvEngine, impl RaftEngine>,
-    source: &Box<Region>,
-    target: &mut Box<Region>,
+    source: &Region,
+    target: &mut Region,
 ) -> raftstore::Result<()> {
     let region_id = source.region.get_id();
 

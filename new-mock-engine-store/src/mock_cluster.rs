@@ -235,15 +235,15 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn iter_ffi_helpers(
         &self,
         store_ids: Option<Vec<u64>>,
-        f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
+        f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet),
     ) {
         let ids = match store_ids {
             Some(ids) => ids,
-            None => self.engines.keys().map(|e| *e).collect::<Vec<_>>(),
+            None => self.engines.keys().copied().collect::<Vec<_>>(),
         };
         for id in ids {
             let engine = self.get_engine(id);
-            let mut lock = self.ffi_helper_set.lock();
+            let lock = self.ffi_helper_set.lock();
             match lock {
                 Ok(mut l) => {
                     let ffiset = l.get_mut(&id).unwrap();

@@ -398,12 +398,18 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
             if let Some(region) = server.kvstore.get_mut(&region_id) {
                 let source_engines = cluster.get_engines(from);
                 let target_engines = cluster.get_engines(to);
-                copy_data_from(source_engines, target_engines, &source_region, region).unwrap();
+                copy_data_from(
+                    source_engines,
+                    target_engines,
+                    source_region.as_ref(),
+                    region.as_mut(),
+                )
+                .unwrap();
                 copy_meta_from(
                     source_engines,
                     target_engines,
-                    &source_region,
-                    region,
+                    source_region.as_ref(),
+                    region.as_mut(),
                     new_region_meta.clone(),
                     true,
                     true,
