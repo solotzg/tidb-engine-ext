@@ -218,7 +218,7 @@ pub fn must_get_mem(
         value.map(tikv_util::escape),
         log_wrappers::hex_encode_upper(key),
         s,
-        engine_store_server.id,
+        node_id,
         cf,
         last_res,
     )
