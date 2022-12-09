@@ -491,24 +491,6 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     }
 }
 
-fn force_compact_log(
-    cluster: &mut Cluster<NodeCluster>,
-    key: &[u8],
-    use_nodes: Option<Vec<u64>>,
-) -> u64 {
-    let region = cluster.get_region(key);
-    let region_id = region.get_id();
-    let prev_states = maybe_collect_states(&cluster, region_id, None);
-
-    let (compact_index, compact_term) = get_valid_compact_index_by(&prev_states, use_nodes);
-    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
-    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
-    let _ = cluster
-        .call_command_on_leader(req, Duration::from_secs(3))
-        .unwrap();
-    return compact_index;
-}
-
 #[test]
 fn test_add_delayed_started_learner_no_snapshot() {
     // fail::cfg("before_tiflash_check_double_write", "return").unwrap();

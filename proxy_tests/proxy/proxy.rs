@@ -183,7 +183,8 @@ pub fn new_mock_cluster_snap(id: u64, count: usize) -> (Cluster<NodeCluster>, Ar
 }
 
 pub fn must_get_mem(
-    engine_store_server: &Box<new_mock_engine_store::EngineStoreServer>,
+    cluster: &Cluster<NodeCluster>,
+    node_id: u64,
     region_id: u64,
     key: &[u8],
     value: Option<&[u8]>,
@@ -191,15 +192,24 @@ pub fn must_get_mem(
     let last_res: Option<&Vec<u8>> = None;
     let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
-        let res = engine_store_server.get_mem(region_id, cf, &key.to_vec());
+        {
+            let lock = cluster.ffi_helper_set.lock();
+            match lock {
+                Ok(l) => {
+                    let server = &l.get(&node_id).unwrap().engine_store_server;
+                    let res = server.get_mem(region_id, cf, &key.to_vec());
+                    if let (Some(value), Some(last_res)) = (value, res) {
+                        assert_eq!(value, &last_res[..]);
+                        return;
+                    }
+                    if value.is_none() && last_res.is_none() {
+                        return;
+                    }
+                }
+                Err(_) => std::process::exit(1),
+            }
+        };
 
-        if let (Some(value), Some(last_res)) = (value, res) {
-            assert_eq!(value, &last_res[..]);
-            return;
-        }
-        if value.is_none() && last_res.is_none() {
-            return;
-        }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let s = std::str::from_utf8(key).unwrap_or("");
@@ -279,7 +289,7 @@ pub fn check_key(
         }
     };
     for id in engine_keys {
-        let engine = &cluster.get_engine(id);
+        let engine = cluster.get_engine(id);
 
         match in_disk {
             Some(b) => {
@@ -293,12 +303,10 @@ pub fn check_key(
         };
         match in_mem {
             Some(b) => {
-                let lock = cluster.ffi_helper_set.lock().unwrap();
-                let server = &lock.get(&id).unwrap().engine_store_server;
                 if b {
-                    must_get_mem(server, region_id, k, Some(v));
+                    must_get_mem(cluster, id, region_id, k, Some(v));
                 } else {
-                    must_get_mem(server, region_id, k, None);
+                    must_get_mem(cluster, id, region_id, k, None);
                 }
             }
             None => (),
@@ -593,4 +601,22 @@ pub fn must_wait_until_cond_states(
             panic!("states not as expect after timeout")
         }
     }
+}
+
+pub fn force_compact_log(
+    cluster: &mut Cluster<NodeCluster>,
+    key: &[u8],
+    use_nodes: Option<Vec<u64>>,
+) -> u64 {
+    let region = cluster.get_region(key);
+    let region_id = region.get_id();
+    let prev_states = maybe_collect_states(&cluster, region_id, None);
+
+    let (compact_index, compact_term) = get_valid_compact_index_by(&prev_states, use_nodes);
+    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
+    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+    let _ = cluster
+        .call_command_on_leader(req, Duration::from_secs(3))
+        .unwrap();
+    return compact_index;
 }
