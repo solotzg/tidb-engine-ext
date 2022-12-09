@@ -31,8 +31,8 @@ use engine_store_ffi::{
     RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
 };
 use engine_traits::{
-    CfOptionsExt, Engines, FlowControlFactorsExt, KvEngine, MiscExt, RaftEngine, TabletFactory,
-    CF_DEFAULT, CF_LOCK, CF_WRITE,
+    CfOptionsExt, Engines, FlowControlFactorsExt, Iterable, KvEngine, MiscExt, Peekable,
+    RaftEngine, TabletFactory, WriteBatchExt, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
 };
 use error_code::ErrorCodeExt;
 use file_system::{
@@ -43,9 +43,13 @@ use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
 use grpcio_health::HealthService;
 use kvproto::{
-    debugpb::create_debug, diagnosticspb::create_diagnostics, import_sstpb::create_import_sst,
+    debugpb::create_debug,
+    diagnosticspb::create_diagnostics,
+    import_sstpb::create_import_sst,
+    raft_serverpb::{PeerState, RegionLocalState, StoreIdent},
 };
 use pd_client::{PdClient, RpcClient};
+use protobuf::Message;
 use raft_log_engine::RaftLogEngine;
 use raftstore::{
     coprocessor::{config::SplitCheckConfigManager, CoprocessorHost, RegionInfoAccessor},
@@ -1129,6 +1133,12 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             panic!("engine address is empty");
         }
 
+        {
+            let new_store_id = self.proxy_config.cloud.new_store_id;
+            let engines = self.engines.as_ref().unwrap().engines.clone();
+            maybe_recover_from_crash(new_store_id, engines);
+        }
+
         let mut node = Node::new(
             self.system.take().unwrap(),
             &server_config.value().clone(),
@@ -1598,6 +1608,100 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     }
 }
 
+pub fn maybe_recover_from_crash<EK: KvEngine, ER: RaftEngine>(
+    new_store_id: u64,
+    engines: Engines<EK, ER>,
+) -> raftstore::Result<()> {
+    if new_store_id == 0 {
+        return Ok(());
+    }
+    let old_store_ident = match engines.kv.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)? {
+        None => {
+            error!(
+                "try recover from a non initialized store to {}, just quit",
+                new_store_id
+            );
+            return Ok(());
+        }
+        Some(e) => e,
+    };
+    let old_store_id = old_store_ident.get_store_id();
+
+    warn!(
+        "start recover store from {} to {}",
+        old_store_id, new_store_id
+    );
+    // For each regions
+    // TODO should request pd for current region.
+    let mut total_count = 0;
+    let mut dropped_epoch_count = 0;
+    let mut dropped_merging_count = 0;
+    let mut dropped_applying_count = 0;
+    let mut tombstone_count = 0;
+
+    let mut reused_region: Vec<u64> = vec![];
+    let mut pending_clean_region: Vec<u64> = vec![];
+
+    let start_key = keys::REGION_META_MIN_KEY;
+    let end_key = keys::REGION_META_MAX_KEY;
+    engines
+        .kv
+        .scan(CF_RAFT, start_key, end_key, false, |key, value| {
+            let (region_id, suffix) = box_try!(keys::decode_region_meta_key(key));
+            if suffix != keys::REGION_STATE_SUFFIX {
+                return Ok(true);
+            }
+
+            total_count += 1;
+
+            let mut local_state = RegionLocalState::default();
+            local_state.merge_from_bytes(value)?;
+
+            let region = local_state.get_region();
+            if local_state.get_state() == PeerState::Tombstone {
+                tombstone_count += 1;
+                return Ok(true);
+            }
+            if local_state.get_state() == PeerState::Applying {
+                dropped_applying_count += 1;
+                pending_clean_region.push(region_id);
+                return Ok(true);
+            }
+            if local_state.get_state() == PeerState::Merging {
+                dropped_merging_count += 1;
+                pending_clean_region.push(region_id);
+                return Ok(true);
+            }
+            // TODO add epoch check.
+            let old_epoch = region.get_region_epoch();
+
+            Ok(true)
+        })?;
+
+    warn!("after scan";
+        "total_count" => total_count,
+        "dropped_epoch_count" => dropped_epoch_count,
+        "dropped_merging_count" => dropped_merging_count,
+        "dropped_applying_count" => dropped_applying_count,
+        "tombstone_count" => tombstone_count,
+        "reused_count" => reused_region.len(),
+        "pending_clean_count" => pending_clean_region.len(),
+    );
+    for region_id in reused_region {
+        // TODO Rewrite region peer infomation.
+    }
+
+    for region_id in pending_clean_region {
+        // TODO clean all data, especially segment data in delta layer of this region.
+        let mut wb = engines.kv.write_batch();
+        let mut raft_wb = engines.raft.log_batch(1024);
+        // TODO check if this work.
+        // raftstore::store::clear_meta(engines, &mut wb, &mut raft_wb,
+        // region_id, );
+    }
+
+    Ok(())
+}
 pub trait ConfiguredRaftEngine: RaftEngine {
     fn build(
         _: &TikvConfig,

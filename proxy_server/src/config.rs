@@ -256,6 +256,22 @@ pub struct ProxyConfig {
 
     #[online_config(skip)]
     pub import: ImportConfig,
+
+    #[online_config(skip)]
+    pub cloud: TiFlashCloudConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct TiFlashCloudConfig {
+    pub new_store_id: u64,
+}
+
+impl Default for TiFlashCloudConfig {
+    fn default() -> TiFlashCloudConfig {
+        TiFlashCloudConfig { new_store_id: 0 }
+    }
 }
 
 /// We use custom default, in case of later non-ordinary config items.
@@ -271,6 +287,7 @@ impl Default for ProxyConfig {
             enable_io_snoop: false,
             readpool: ReadPoolConfig::default(),
             import: ImportConfig::default(),
+            cloud: TiFlashCloudConfig::default(),
         }
     }
 }
