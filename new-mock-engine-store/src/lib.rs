@@ -59,6 +59,7 @@ pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_trait
         raft_wb.put_raft_state(region_id, &raft_state)?;
     };
 
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
     Ok(())
 }
 
