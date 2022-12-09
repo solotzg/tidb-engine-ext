@@ -78,21 +78,7 @@ pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
 ) {
-    let ids = match store_ids {
-        Some(ids) => ids,
-        None => cluster.engines.keys().map(|e| *e).collect::<Vec<_>>(),
-    };
-    for id in ids {
-        let engine = cluster.get_engine(id);
-        let mut lock = cluster.ffi_helper_set.lock();
-        match lock {
-            Ok(mut l) => {
-                let ffiset = l.get_mut(&id).unwrap();
-                f(id, &engine, ffiset);
-            }
-            Err(_) => std::process::exit(1),
-        }
-    }
+    cluster.iter_ffi_helpers(store_ids, f);
 }
 
 pub fn maybe_collect_states(
