@@ -153,6 +153,7 @@ pub fn must_get_mem(
     let last_res: Option<&Vec<u8>> = None;
     let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
+        let mut ok = false;
         {
             iter_ffi_helpers(
                 &cluster,
@@ -162,14 +163,19 @@ pub fn must_get_mem(
                     let res = server.get_mem(region_id, cf, &key.to_vec());
                     if let (Some(value), Some(last_res)) = (value, res) {
                         assert_eq!(value, &last_res[..]);
+                        ok = true;
                         return;
                     }
                     if value.is_none() && last_res.is_none() {
+                        ok = true;
                         return;
                     }
                 },
             );
-        };
+        }
+        if ok {
+            return;
+        }
 
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
