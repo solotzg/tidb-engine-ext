@@ -89,8 +89,8 @@ mod persist {
         must_cmd_add_flashback_flag(&mut cluster, &mut region.clone(), new_put_cmd(b"k3", b"v3"));
 
         let victim = 1;
-        stop_tiflash_node(&cluster, victim);
-        restart_tiflash_node(&cluster, victim);
+        stop_tiflash_node(&mut cluster, victim);
+        restart_tiflash_node(&mut cluster, victim);
 
         let new_states = collect_all_states(&cluster, region_id);
 

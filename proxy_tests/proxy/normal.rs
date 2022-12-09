@@ -430,8 +430,8 @@ mod restart {
             );
         }
 
-        stop_tiflash_node(&cluster, eng_ids[2]);
-        restart_tiflash_node(&cluster, eng_ids[2]);
+        stop_tiflash_node(&mut cluster, eng_ids[2]);
+        restart_tiflash_node(&mut cluster, eng_ids[2]);
 
         fail::remove("apply_pending_snapshot");
 
@@ -490,9 +490,9 @@ mod restart {
         // So we have to disable this test.
         // std::thread::sleep(std::time::Duration::from_millis(2500));
 
-        stop_tiflash_node(&cluster, eng_ids[1]);
+        stop_tiflash_node(&mut cluster, eng_ids[1]);
         fail::remove("on_ob_pre_handle_snapshot");
-        restart_tiflash_node(&cluster, eng_ids[1]);
+        restart_tiflash_node(&mut cluster, eng_ids[1]);
 
         let (key, value) = (b"k2", b"v2");
         cluster.must_put(key, value);
@@ -589,8 +589,8 @@ mod restart {
             );
         }
 
-        stop_tiflash_node(&cluster, eng_ids[0]);
-        restart_tiflash_node(&cluster, eng_ids[0]);
+        stop_tiflash_node(&mut cluster, eng_ids[0]);
+        restart_tiflash_node(&mut cluster, eng_ids[0]);
 
         std::thread::sleep(std::time::Duration::from_millis(2000));
 

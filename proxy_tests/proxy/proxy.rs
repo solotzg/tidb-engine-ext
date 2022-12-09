@@ -73,8 +73,8 @@ pub struct States {
     pub ident: StoreIdent,
 }
 
-pub fn iter_ffi_helpers(
-    cluster: &Cluster<NodeCluster>,
+pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
+    cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
 ) {
@@ -84,9 +84,14 @@ pub fn iter_ffi_helpers(
     };
     for id in ids {
         let engine = cluster.get_engine(id);
-        let mut lock = cluster.ffi_helper_set.lock().unwrap();
-        let ffiset = lock.get_mut(&id).unwrap();
-        f(id, &engine, ffiset);
+        let mut lock = cluster.ffi_helper_set.lock();
+        match lock {
+            Ok(mut l) => {
+                let ffiset = l.get_mut(&id).unwrap();
+                f(id, &engine, ffiset);
+            }
+            Err(_) => std::process::exit(1),
+        }
     }
 }
 
@@ -163,10 +168,11 @@ pub fn must_get_mem(
     let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
         {
-            let lock = cluster.ffi_helper_set.lock();
-            match lock {
-                Ok(l) => {
-                    let server = &l.get(&node_id).unwrap().engine_store_server;
+            iter_ffi_helpers(
+                &cluster,
+                Some(vec![node_id]),
+                &mut |_, _, ffi: &mut FFIHelperSet| {
+                    let server = &ffi.engine_store_server;
                     let res = server.get_mem(region_id, cf, &key.to_vec());
                     if let (Some(value), Some(last_res)) = (value, res) {
                         assert_eq!(value, &last_res[..]);
@@ -175,9 +181,8 @@ pub fn must_get_mem(
                     if value.is_none() && last_res.is_none() {
                         return;
                     }
-                }
-                Err(_) => std::process::exit(1),
-            }
+                },
+            );
         };
 
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -591,8 +596,8 @@ pub fn force_compact_log(
     return compact_index;
 }
 
-pub fn stop_tiflash_node(cluster: &Cluster<NodeCluster>, node_id: u64) {
-    info!("stop node {}", victim);
+pub fn stop_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
+    info!("stop node {}", node_id);
     {
         cluster.stop_node(node_id);
     }
@@ -601,21 +606,21 @@ pub fn stop_tiflash_node(cluster: &Cluster<NodeCluster>, node_id: u64) {
             &cluster,
             Some(vec![node_id]),
             &mut |_, _, ffi: &mut FFIHelperSet| {
-                let server = &ffi.engine_store_server;
+                let server = &mut ffi.engine_store_server;
                 server.stop();
             },
         );
     }
 }
 
-pub fn restart_tiflash_node(cluster: &Cluster<NodeCluster>, node_id: u64) {
-    info!("restored node {}", victim);
+pub fn restart_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
+    info!("restored node {}", node_id);
     {
         iter_ffi_helpers(
             &cluster,
-            Some(node_id),
+            Some(vec![node_id]),
             &mut |_, _, ffi: &mut FFIHelperSet| {
-                let server = &ffi.engine_store_server;
+                let server = &mut ffi.engine_store_server;
                 server.restore();
             },
         );
