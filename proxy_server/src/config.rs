@@ -62,6 +62,7 @@ pub struct ServerConfig {
     pub advertise_addr: String,
     #[online_config(skip)]
     pub background_thread_count: usize,
+    pub status_thread_pool_size: usize,
 }
 
 impl Default for ServerConfig {
@@ -77,6 +78,7 @@ impl Default for ServerConfig {
             advertise_status_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
             advertise_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
             background_thread_count,
+            status_thread_pool_size: 2,
         }
     }
 }
@@ -396,6 +398,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
 
     config.server.background_thread_count = proxy_config.server.background_thread_count;
     config.import.num_threads = proxy_config.import.num_threads;
+    config.server.status_thread_pool_size = proxy_config.server.status_thread_pool_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
