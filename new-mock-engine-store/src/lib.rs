@@ -1273,6 +1273,15 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
     }
 }
 
+macro_rules! unwrap_or_return {
+    ($e:expr, $res:expr) => {
+        match $e {
+            Some(x) => x,
+            None => return $res,
+        }
+    };
+}
+
 unsafe extern "C" fn ffi_fast_add_peer(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,
@@ -1282,6 +1291,12 @@ unsafe extern "C" fn ffi_fast_add_peer(
     let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
     let store_id = (*store.engine_store_server).id;
 
+    let failed_add_peer_res =
+        |status: ffi_interfaces::FastAddPeerStatus| ffi_interfaces::FastAddPeerRes {
+            status,
+            apply_state: create_cpp_str(None),
+            region: create_cpp_str(None),
+        };
     let from_store = (|| {
         fail::fail_point!("ffi_fast_add_peer_from_id", |t| {
             let t = t.unwrap().parse::<u64>().unwrap();
@@ -1296,33 +1311,21 @@ unsafe extern "C" fn ffi_fast_add_peer(
         Ok(e) => e,
         Err(_) => {
             error!("ffi_debug_func failed to lock");
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::OtherError,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::OtherError);
         }
     };
     debug!("recover from remote peer: preparing from {} to {}, persist and check source", from_store, store_id; "region_id" => region_id);
     let source_server = match guard.get_mut(&from_store) {
         Some(s) => &mut s.engine_store_server,
         None => {
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::NoSuitable,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::NoSuitable);
         }
     };
     let source_engines = match source_server.engines.clone() {
         Some(s) => s,
         None => {
             error!("recover from remote peer: failed get source engine"; "region_id" => region_id);
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::BadData,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
         }
     };
 
@@ -1343,11 +1346,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         Some(s) => s,
         None => {
             error!("recover from remote peer: failed read source region info"; "region_id" => region_id);
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::BadData,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
         }
     };
     let region_local_state: RegionLocalState =
@@ -1355,11 +1354,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
             Some(x) => x,
             None => {
                 // We don't return BadData here, since the data may not be persisted.
-                return ffi_interfaces::FastAddPeerRes {
-                    status: ffi_interfaces::FastAddPeerStatus::WaitForData,
-                    apply_state: create_cpp_str(None),
-                    region: create_cpp_str(None),
-                };
+                return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
             }
         };
     let new_region_meta = region_local_state.get_region();
@@ -1370,11 +1365,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         store_id,
         new_peer_id,
     ) {
-        return ffi_interfaces::FastAddPeerRes {
-            status: ffi_interfaces::FastAddPeerStatus::WaitForData,
-            apply_state: create_cpp_str(None),
-            region: create_cpp_str(None),
-        };
+        return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
     }
 
     debug!("recover from remote peer: preparing from {} to {}, check target", from_store, store_id; "region_id" => region_id);
@@ -1388,21 +1379,13 @@ unsafe extern "C" fn ffi_fast_add_peer(
     let target_engines = match (*store.engine_store_server).engines.clone() {
         Some(s) => s,
         None => {
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::OtherError,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::OtherError);
         }
     };
     let target_region = match (*store.engine_store_server).kvstore.get_mut(&region_id) {
         Some(s) => s,
         None => {
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::BadData,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
         }
     };
     debug!("recover from remote peer: meta from {} to {}", from_store, store_id; "region_id" => region_id);
@@ -1412,26 +1395,19 @@ unsafe extern "C" fn ffi_fast_add_peer(
         Some(x) => x,
         None => {
             error!("recover from remote peer: failed read apply state"; "region_id" => region_id);
-            return ffi_interfaces::FastAddPeerRes {
-                status: ffi_interfaces::FastAddPeerStatus::BadData,
-                apply_state: create_cpp_str(None),
-                region: create_cpp_str(None),
-            };
+            return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
         }
     };
 
     debug!("recover from remote peer: data from {} to {}", from_store, store_id; "region_id" => region_id);
-    if let Err(_) = copy_data_from(
+    if let Err(e) = copy_data_from(
         &source_engines,
         &target_engines,
         &source_region,
         target_region,
     ) {
-        return ffi_interfaces::FastAddPeerRes {
-            status: ffi_interfaces::FastAddPeerStatus::FailedInject,
-            apply_state: create_cpp_str(None),
-            region: create_cpp_str(None),
-        };
+        error!("recover from remote peer: inject error {:?}", e; "region_id" => region_id);
+        return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::FailedInject);
     }
 
     let apply_state_bytes = apply_state.write_to_bytes().unwrap();
