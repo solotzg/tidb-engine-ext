@@ -967,6 +967,7 @@ impl Snapshot {
         debug!(
             "deleting snapshot file";
             "snapshot" => %self.path(),
+            "!!!!! bt" => ?std::backtrace::Backtrace::capture(),
         );
         for cf_file in &self.cf_files {
             // Delete cloned files.
@@ -1118,10 +1119,11 @@ impl Snapshot {
     pub fn exists(&self) -> bool {
         self.cf_files.iter().all(|cf_file| {
             debug!(
-                "!!!!! copy_snapshot exists cf_file.size {:?} cf_file.file_paths() {:?} meta {:?}",
+                "!!!!! exists cf_file.size {:?} cf_file.file_paths() {:?} meta {:?} {}",
                 cf_file.size,
                 cf_file.file_paths(),
-                self.meta_file.path
+                self.meta_file.path,
+                file_exists(&self.meta_file.path)
             );
             cf_file.size.is_empty()
                 || (cf_file
@@ -1670,6 +1672,7 @@ impl SnapManager {
             "register snapshot";
             "key" => %key,
             "entry" => ?entry,
+            "!!!!! bt" => ?std::backtrace::Backtrace::capture(),
         );
         match self.core.registry.wl().entry(key) {
             Entry::Occupied(mut e) => {

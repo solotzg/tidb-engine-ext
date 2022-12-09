@@ -215,6 +215,15 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         )
     }
 
+    fn fallback_to_slow_path(&self, region_id: u64) {
+        // TODO clean local, and prepare to request snapshot from TiKV as a trivial
+        // procedure.
+        fail::fail_point!("fallback_to_slow_path_not_allow", |_| {});
+        if let Err(e) = self.set_inited_or_fallback(region_id, true) {
+            tikv_util::safe_panic!("set_inited_or_fallback");
+        }
+    }
+
     // Returns whether we need to ignore this message and run fast path instead.
     pub fn maybe_fast_path(&self, msg: &RaftMessage) -> bool {
         if !self.engine_store_cfg.enable_fast_add_peer {
@@ -287,32 +296,56 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         );
         // Feed data
         let res = self.engine_store_server_helper.fast_add_peer(region_id);
-        if res != crate::FastAddPeerRes::Ok {
-            error!(
-                "fast path: ongoing {}:{} failed. fetch and replace error {:?}, fallback to normal",
-                self.store_id, region_id, res
-            );
-            if let Err(e) = self.set_inited_or_fallback(region_id, true) {
-                tikv_util::safe_panic!("set_inited_or_fallback");
+        match res.status {
+            crate::FastAddPeerStatus::Ok => (),
+            crate::FastAddPeerStatus::WaitForData => {
+                error!(
+                    "fast path: ongoing {}:{}. remote peer preparing data, wait",
+                    self.store_id, region_id
+                );
+                return true;
             }
-            // TODO clean local, and prepare to request snapshot from TiKV as a trivial
-            // procedure.
-            return false;
-        }
+            _ => {
+                error!(
+                    "fast path: ongoing {}:{} failed. fetch and replace error {:?}, fallback to normal",
+                    self.store_id, region_id, res
+                );
+                self.fallback_to_slow_path(region_id);
+                return false;
+            }
+        };
 
         info!("fast path: ongoing {}:{}, start buid and send", self.store_id, region_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
-        match self.build_and_send_snapshot(region_id, msg.get_to_peer().get_id(), msg) {
+        let apply_state_str = res.apply_state.view.to_slice();
+        let mut apply_state = RaftApplyState::default();
+        apply_state.merge_from_bytes(apply_state_str);
+        match self.build_and_send_snapshot(region_id, msg.get_to_peer().get_id(), msg, apply_state)
+        {
             Ok(s) => {
-                if s != crate::FastAddPeerRes::Ok {
-                    error!("fast path: ongoing {}:{} failed. build and sent snapshot code {:?}", self.store_id, region_id, s;
-                    "is_first" => is_first,);
-                    if let Err(e) = self.set_inited_or_fallback(region_id, true) {
-                        tikv_util::safe_panic!("set_inited_or_fallback");
+                match s {
+                    crate::FastAddPeerStatus::Ok => {
+                        info!("fast path: ongoing {}:{}, finish build and send", self.store_id, region_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                        );
                     }
-                }
+                    crate::FastAddPeerStatus::WaitForData => {
+                        error!(
+                            "fast path: ongoing {}:{}. remote peer preparing data, wait",
+                            self.store_id, region_id
+                        );
+                        return true;
+                    }
+                    _ => {
+                        error!("fast path: ongoing {}:{} failed. build and sent snapshot code {:?}", self.store_id, region_id, s;
+                        "is_first" => is_first,);
+                        self.fallback_to_slow_path(region_id);
+                        return false;
+                    }
+                };
             }
             Err(e) => {
                 error!("fast path: ongoing {}:{} failed. build and sent snapshot error {:?}", self.store_id, region_id, e;
@@ -320,12 +353,9 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 if let Err(e) = self.set_inited_or_fallback(region_id, true) {
                     tikv_util::safe_panic!("set_inited_or_fallback");
                 }
+                return false;
             }
         };
-        info!("fast path: ongoing {}:{}, finish build and send", self.store_id, region_id;
-            "to_peer_id" => msg.get_to_peer().get_id(),
-            "from_peer_id" => msg.get_from_peer().get_id(),
-        );
         is_first
     }
 
@@ -334,33 +364,36 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         region_id: u64,
         new_peer_id: u64,
         msg: &RaftMessage,
-    ) -> RaftStoreResult<crate::FastAddPeerRes> {
+        apply_state: RaftApplyState,
+    ) -> RaftStoreResult<crate::FastAddPeerStatus> {
         let inner_msg = msg.get_message();
         // Build snapshot by get_snapshot_for_building
-        let (mut snap, key, apply_state, region_state) = {
-            let apply_state: RaftApplyState = match self
-                .engine
-                .get_msg_cf(CF_RAFT, &keys::apply_state_key(region_id))?
-            {
-                Some(e) => e,
-                None => return Ok(crate::FastAddPeerRes::BadData),
-            };
+        let (mut snap, key, region_state) = {
             let region_state: RegionLocalState = match self
                 .engine
                 .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))?
             {
                 Some(e) => e,
-                None => return Ok(crate::FastAddPeerRes::BadData),
+                None => return Ok(crate::FastAddPeerStatus::BadData),
             };
 
             // check if the source already knows the know peer
-            match find_peer(region_state.get_region(), self.store_id) {
+            let has_peer = match find_peer(region_state.get_region(), self.store_id) {
                 Some(peer) => {
                     if peer.get_id() != new_peer_id {
-                        return Ok(crate::FastAddPeerRes::BadData);
+                        false
+                    } else {
+                        true
                     }
                 }
-                None => return Ok(crate::FastAddPeerRes::BadData),
+                None => false,
+            };
+            if !has_peer {
+                warn!(
+                    "build_and_send_snapshot remote peer has not applied conf change {:?}",
+                    region_state.get_region()
+                );
+                return Ok(crate::FastAddPeerStatus::WaitForData);
             }
 
             // Find term of entry at applied_index.
@@ -384,7 +417,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
             let snapshot = self.snap_mgr.get_empty_snapshot_for_building(&key)?;
 
-            (snapshot, key.clone(), apply_state, region_state)
+            (snapshot, key.clone(), region_state)
         };
 
         debug!(
@@ -394,11 +427,11 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             snap.cf_files.len()
         );
         // Build snapshot by do_snapshot
-        let mut snapshot: eraftpb::Snapshot = Default::default();
-        let metadata: &mut eraftpb::SnapshotMetadata = snapshot.mut_metadata();
+        let mut pb_snapshot: eraftpb::Snapshot = Default::default();
+        let pb_snapshot_metadata: &mut eraftpb::SnapshotMetadata = pb_snapshot.mut_metadata();
         let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
         {
-            // Data
+            // eraftpb::SnapshotMetadata
             for (cf_enum, cf) in raftstore::store::snap::SNAPSHOT_CFS_ENUM_PAIR {
                 let cf_index: RaftStoreResult<usize> = snap
                     .cf_files
@@ -421,18 +454,21 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             snap_data.set_file_size(0);
             let SNAPSHOT_VERSION = 2;
             snap_data.set_version(SNAPSHOT_VERSION);
-            // MetaFile
+
+            // SnapshotMeta
             // Which is snap.meta_file.meta
-            let meta_file_meta =
+            let mut snapshot_meta =
                 raftstore::store::snap::gen_snapshot_meta(&snap.cf_files[..], true)?;
+
+            // Write MetaFile
             {
-                let v = meta_file_meta.write_to_bytes()?;
+                let v = snapshot_meta.write_to_bytes()?;
                 let mut f = std::fs::File::create(snap.meta_file.path.as_path())?;
                 f.write_all(&v[..])?;
                 f.flush()?;
                 f.sync_all()?;
             }
-
+            snap_data.set_meta(snapshot_meta);
             debug!(
                 "!!!!! snap 2 {:?} {:?} XX {:?} {}",
                 snap.meta_file.meta,
@@ -440,24 +476,21 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 snap.meta_file.path,
                 snap.cf_files.len()
             );
-
-            snap_data.set_meta(meta_file_meta.clone());
         }
-        // Compose snapshot
 
         // TODO The rest is test, please remove it after we can fetch the real data.
-        metadata
+        pb_snapshot_metadata
             .mut_conf_state()
             .mut_voters()
             .push(msg.get_from_peer().get_id());
-        metadata
+        pb_snapshot_metadata
             .mut_conf_state()
             .mut_learners()
             .push(msg.get_to_peer().get_id());
-        metadata.set_index(inner_msg.get_index());
-        metadata.set_term(inner_msg.get_term());
+        pb_snapshot_metadata.set_index(key.idx);
+        pb_snapshot_metadata.set_term(key.term);
 
-        snapshot.set_data(snap_data.write_to_bytes().unwrap().into());
+        pb_snapshot.set_data(snap_data.write_to_bytes().unwrap().into());
 
         // Send reponse
         let mut response = RaftMessage::default();
@@ -471,8 +504,11 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             .mut_message()
             .set_msg_type(MessageType::MsgSnapshot);
         response.mut_message().set_term(inner_msg.get_term());
-        response.mut_message().set_snapshot(snapshot);
-        debug!("!!!!! send response {:?} data {:?}", response, snap_data);
+        response.mut_message().set_snapshot(pb_snapshot);
+        debug!(
+            "!!!!! send response  key {} response {:?} data {:?}",
+            key, response, snap_data
+        );
         match self.trans.lock() {
             Ok(mut trans) => {
                 let res = trans.send(response);
@@ -480,7 +516,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             Err(e) => return Err(box_err!("send snapshot meets error {:?}", e)),
         }
 
-        Ok(crate::FastAddPeerRes::Ok)
+        Ok(crate::FastAddPeerStatus::Ok)
     }
 }
 

@@ -232,12 +232,19 @@ pub mod root {
         }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-        pub enum FastAddPeerRes {
+        pub enum FastAddPeerStatus {
             Ok = 0,
-            OtherError = 1,
-            NoSuitable = 2,
-            BadData = 3,
-            FailedInject = 4,
+            WaitForData = 1,
+            OtherError = 2,
+            NoSuitable = 3,
+            BadData = 4,
+            FailedInject = 5,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct FastAddPeerRes {
+            pub status: root::DB::FastAddPeerStatus,
+            pub apply_state: root::DB::CppStrWithView,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -474,7 +481,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13418513559228271669;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 8449819960368956227;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

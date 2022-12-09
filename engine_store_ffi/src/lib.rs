@@ -32,9 +32,10 @@ pub use read_index_helper::ReadIndexClient;
 
 pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
-    EngineStoreServerStatus, FastAddPeerRes, FileEncryptionRes, FsStats, HttpRequestRes,
-    HttpRequestStatus, KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper,
-    RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus, FileEncryptionRes, FsStats,
+    HttpRequestRes, HttpRequestStatus, KVGetStatus, RaftCmdHeader, RaftProxyStatus,
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
+    WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
@@ -1066,7 +1067,10 @@ impl EngineStoreServerHelper {
         }
     }
 
-    fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
+    // Generate a cpp string, so the other side can read.
+    // The string is owned by the otherside, and will be deleted by
+    // `gc_raw_cpp_ptr`.
+    pub fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
         debug_assert!(self.fn_gen_cpp_string.is_some());
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
     }

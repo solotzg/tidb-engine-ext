@@ -2455,10 +2455,6 @@ where
 
         self.handle_reported_disk_usage(&msg);
 
-        tikv_util::debug!("!!!!! on_raft_message after check 0.1";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         let msg_type = msg.get_message().get_msg_type();
         if matches!(self.ctx.self_disk_usage, DiskUsage::AlreadyFull)
             && MessageType::MsgTimeoutNow == msg_type
@@ -2475,10 +2471,6 @@ where
             return Ok(());
         }
 
-        tikv_util::debug!("!!!!! on_raft_message after check 0.2";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         if msg.get_is_tombstone() {
             // we receive a message tells us to remove ourself.
             self.handle_gc_peer_msg(&msg);
@@ -2493,18 +2485,10 @@ where
             return Ok(());
         }
 
-        tikv_util::debug!("!!!!! on_raft_message after check 0.3";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         if self.check_msg(&msg) {
             return Ok(());
         }
 
-        tikv_util::debug!("!!!!! on_raft_message after check 2";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         if msg.has_extra_msg() {
             self.on_extra_message(msg);
             return Ok(());
@@ -2512,10 +2496,6 @@ where
 
         let is_snapshot = msg.get_message().has_snapshot();
 
-        tikv_util::debug!("!!!!! on_raft_message after check 3";
-            "region_id" => self.region_id(),
-            "peer_id" => self.fsm.peer_id()
-        );
         // TODO: spin off the I/O code (delete_snapshot)
         let regions_to_destroy = match self.check_snapshot(&msg)? {
             Either::Left(key) => {

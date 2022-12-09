@@ -407,6 +407,8 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
                     &source_region,
                     region,
                     new_region_meta.clone(),
+                    true,
+                    true,
                 )
                 .unwrap();
             } else {

@@ -143,12 +143,18 @@ enum class KVGetStatus : uint32_t {
   NotFound,
 };
 
-enum class FastAddPeerRes : uint32_t {
+enum class FastAddPeerStatus : uint32_t {
   Ok = 0,
+  WaitForData,
   OtherError,
   NoSuitable,
   BadData,
   FailedInject,
+};
+
+struct FastAddPeerRes {
+  FastAddPeerStatus status;
+  CppStrWithView apply_state;
 };
 
 struct RaftStoreProxyFFIHelper {

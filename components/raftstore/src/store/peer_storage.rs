@@ -396,6 +396,7 @@ where
 
     #[inline]
     pub fn save_apply_state_to(&self, kv_wb: &mut impl Mutable) -> Result<()> {
+        debug!("!!!! save_apply_state_to {:?}", self.apply_state());
         kv_wb.put_msg_cf(
             CF_RAFT,
             &keys::apply_state_key(self.region.get_id()),
@@ -637,6 +638,11 @@ where
 
         let snap_index = snap.get_metadata().get_index();
         let snap_term = snap.get_metadata().get_term();
+
+        debug!("!!!! apply snapshot {}", self.peer_id;
+            "snap_index" => snap_index,
+            "snap_term" => snap_term,
+        );
 
         self.raft_state_mut().set_last_index(snap_index);
         self.set_last_term(snap_term);

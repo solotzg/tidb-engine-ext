@@ -1233,6 +1233,35 @@ unsafe extern "C" fn ffi_debug_func(
     std::ptr::null_mut()
 }
 
+fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
+    match s {
+        Some(s) => {
+            let len = s.len() as u64;
+            let ptr = Box::into_raw(Box::new(s)); // leak
+            ffi_interfaces::CppStrWithView {
+                inner: ffi_interfaces::RawCppPtr {
+                    ptr: ptr as *mut _,
+                    type_: RawCppPtrTypeImpl::String.into(),
+                },
+                view: ffi_interfaces::BaseBuffView {
+                    data: ptr as *mut _,
+                    len,
+                },
+            }
+        }
+        None => ffi_interfaces::CppStrWithView {
+            inner: ffi_interfaces::RawCppPtr {
+                ptr: std::ptr::null_mut(),
+                type_: RawCppPtrTypeImpl::None.into(),
+            },
+            view: ffi_interfaces::BaseBuffView {
+                data: std::ptr::null(),
+                len: 0,
+            },
+        },
+    }
+}
+
 unsafe extern "C" fn ffi_fast_add_peer(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,
@@ -1244,7 +1273,10 @@ unsafe extern "C" fn ffi_fast_add_peer(
         Ok(e) => e,
         Err(e) => {
             error!("ffi_debug_func failed to lock");
-            return ffi_interfaces::FastAddPeerRes::OtherError;
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::OtherError,
+                apply_state: create_cpp_str(None),
+            };
         }
     };
     let from_store = (|| {
@@ -1257,19 +1289,40 @@ unsafe extern "C" fn ffi_fast_add_peer(
     debug!("ffi_fast_add_peer from {}", from_store);
     let source_server = match guard.get(&from_store) {
         Some(s) => &s.engine_store_server,
-        None => return ffi_interfaces::FastAddPeerRes::NoSuitable,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::NoSuitable,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
     let source_engines = match source_server.engines.clone() {
         Some(s) => s,
-        None => return ffi_interfaces::FastAddPeerRes::BadData,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::BadData,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
     let source_region = match source_server.kvstore.get(&region_id) {
         Some(s) => s,
-        None => return ffi_interfaces::FastAddPeerRes::BadData,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::BadData,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
+    // TODO We must ask the remote peer to persist before get a snapshot.
     let new_region_meta = match get_region_local_state(&source_engines.kv.rocks, region_id) {
         Some(s) => s.get_region().clone(),
-        None => return ffi_interfaces::FastAddPeerRes::BadData,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::BadData,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
     let new_region = make_new_region(
         Some(new_region_meta.clone()),
@@ -1280,33 +1333,66 @@ unsafe extern "C" fn ffi_fast_add_peer(
         .insert(region_id, Box::new(new_region));
     let target_engines = match (*store.engine_store_server).engines.clone() {
         Some(s) => s,
-        None => return ffi_interfaces::FastAddPeerRes::OtherError,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::OtherError,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
     let target_region = match (*store.engine_store_server).kvstore.get_mut(&region_id) {
         Some(s) => s,
-        None => return ffi_interfaces::FastAddPeerRes::BadData,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::BadData,
+                apply_state: create_cpp_str(None),
+            };
+        }
     };
-    debug!("recover from other peer"; "region_id" => region_id);
+    debug!("recover from remote peer: data"; "region_id" => region_id);
     if let Err(_) = copy_data_from(
         &source_engines,
         &target_engines,
         &source_region,
         target_region,
     ) {
-        return ffi_interfaces::FastAddPeerRes::FailedInject;
+        return ffi_interfaces::FastAddPeerRes {
+            status: ffi_interfaces::FastAddPeerStatus::FailedInject,
+            apply_state: create_cpp_str(None),
+        };
     }
-    debug!("recover meta from other peer"; "region_id" => region_id);
+    debug!("recover from remote peer: meta"; "region_id" => region_id);
+    // Do not copy apply state, otherwise may race with `apply_snapshot`
     if let Err(_) = copy_meta_from(
         &source_engines,
         &target_engines,
         &source_region,
         target_region,
         new_region_meta,
+        true,
+        false,
     ) {
-        return ffi_interfaces::FastAddPeerRes::FailedInject;
+        return ffi_interfaces::FastAddPeerRes {
+            status: ffi_interfaces::FastAddPeerStatus::FailedInject,
+            apply_state: create_cpp_str(None),
+        };
     }
-    debug!("recover from other peer ok"; "region_id" => region_id);
-    ffi_interfaces::FastAddPeerRes::Ok
+    let apply_state: RaftApplyState = match general_get_apply_state(&source_engines.kv, region_id) {
+        Some(x) => x,
+        None => {
+            return ffi_interfaces::FastAddPeerRes {
+                status: ffi_interfaces::FastAddPeerStatus::BadData,
+                apply_state: create_cpp_str(None),
+            };
+        }
+    };
+    let apply_state_bytes = apply_state.write_to_bytes().unwrap();
+
+    debug!("recover from remote peer: ok"; "region_id" => region_id);
+    ffi_interfaces::FastAddPeerRes {
+        status: ffi_interfaces::FastAddPeerStatus::Ok,
+        apply_state: create_cpp_str(Some(apply_state_bytes)),
+    }
 }
 
 use engine_store_ffi::RawVoidPtr;
@@ -1376,6 +1462,8 @@ pub fn copy_meta_from<
     source: &Box<Region>,
     target: &mut Box<Region>,
     new_region_meta: kvproto::metapb::Region,
+    copy_region_state: bool,
+    copy_apply_state: bool,
 ) -> raftstore::Result<()> {
     let region_id = source.region.get_id();
 
@@ -1386,12 +1474,14 @@ pub fn copy_meta_from<
     // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
 
     // region local state
-    let mut state = RegionLocalState::default();
-    state.set_region(new_region_meta);
-    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
+    if copy_region_state {
+        let mut state = RegionLocalState::default();
+        state.set_region(new_region_meta);
+        box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
+    }
 
     // apply state
-    {
+    if copy_apply_state {
         let apply_state: RaftApplyState =
             match general_get_apply_state(&source_engines.kv, region_id) {
                 Some(x) => x,
