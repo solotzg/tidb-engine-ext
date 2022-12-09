@@ -135,7 +135,6 @@ impl Transport for ChannelTransport {
 
         match core.routers.get(&to_store) {
             Some(h) => {
-                debug!("!!!!! ChannelTransport send {} msg {:?}", to_store, msg);
                 h.send_raft_msg(msg)?;
                 if is_snapshot {
                     // should report snapshot finish.

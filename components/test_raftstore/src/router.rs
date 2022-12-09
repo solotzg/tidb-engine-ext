@@ -58,7 +58,6 @@ impl ProposalRouter<RocksSnapshot> for MockRaftStoreRouter {
 
 impl CasualRouter<RocksEngine> for MockRaftStoreRouter {
     fn send(&self, region_id: u64, msg: CasualMessage<RocksEngine>) -> RaftStoreResult<()> {
-        debug!("!!!!! MockRaftStoreRouter");
         let mut senders = self.senders.lock().unwrap();
         if let Some(tx) = senders.get_mut(&region_id) {
             tx.try_send(PeerMsg::CasualMessage(msg))
@@ -75,7 +74,6 @@ impl SignificantRouter<RocksEngine> for MockRaftStoreRouter {
         region_id: u64,
         msg: SignificantMsg<RocksSnapshot>,
     ) -> RaftStoreResult<()> {
-        debug!("!!!!! MockRaftStoreRouter");
         let mut senders = self.senders.lock().unwrap();
         if let Some(tx) = senders.get_mut(&region_id) {
             tx.force_send(PeerMsg::SignificantMsg(msg)).unwrap();

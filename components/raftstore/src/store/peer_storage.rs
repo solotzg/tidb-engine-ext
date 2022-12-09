@@ -206,10 +206,6 @@ fn init_apply_state<EK: KvEngine, ER: RaftEngine>(
                     state.set_index(RAFT_INIT_LOG_INDEX);
                     state.set_term(RAFT_INIT_LOG_TERM);
                 }
-                debug!(
-                    "!!!!! init_raft_state {}",
-                    util::is_region_initialized(region)
-                );
                 apply_state
             }
         },
@@ -863,6 +859,10 @@ where
     }
 
     pub fn schedule_applying_snapshot(&mut self) {
+        debug!(
+            "!!!!!! schedule_applying_snapshot {:?}",
+            std::backtrace::Backtrace::capture()
+        );
         let status = Arc::new(AtomicUsize::new(JOB_STATUS_PENDING));
         self.set_snap_state(SnapState::Applying(Arc::clone(&status)));
         let task = RegionTask::Apply {
@@ -925,6 +925,7 @@ where
         // and has not applied snapshot yet, so skip persistent hard state.
         if self.raft_state().get_last_index() > 0 {
             if let Some(hs) = ready.hs() {
+                debug!("!!!! apply_snapshot set hard state");
                 self.raft_state_mut().set_hard_state(hs.clone());
             }
         }

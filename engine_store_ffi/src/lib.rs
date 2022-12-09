@@ -1168,9 +1168,9 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_debug_func.into_inner())(self.inner, debug_type, ptr) }
     }
 
-    pub fn fast_add_peer(&self, region_id: u64) -> FastAddPeerRes {
+    pub fn fast_add_peer(&self, region_id: u64, new_peer_id: u64) -> FastAddPeerRes {
         debug_assert!(self.fn_fast_add_peer.is_some());
-        unsafe { (self.fn_fast_add_peer.into_inner())(self.inner, region_id) }
+        unsafe { (self.fn_fast_add_peer.into_inner())(self.inner, region_id, new_peer_id) }
     }
 }
 

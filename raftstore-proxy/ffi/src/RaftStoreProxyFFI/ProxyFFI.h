@@ -155,6 +155,7 @@ enum class FastAddPeerStatus : uint32_t {
 struct FastAddPeerRes {
   FastAddPeerStatus status;
   CppStrWithView apply_state;
+  CppStrWithView region;
 };
 
 struct RaftStoreProxyFFIHelper {
@@ -232,6 +233,6 @@ struct EngineStoreServerHelper {
   RawVoidPtr (*fn_debug_func)(EngineStoreServerWrap *, uint64_t type,
                               RawVoidPtr);
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
-                                     uint64_t region_id);
+                                     uint64_t region_id, uint64_t new_peer_id);
 };
 }  // namespace DB

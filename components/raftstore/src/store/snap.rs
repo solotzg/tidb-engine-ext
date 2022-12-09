@@ -432,7 +432,7 @@ pub struct Snapshot {
     key: SnapKey,
     display_path: String,
     dir_path: PathBuf,
-    pub cf_files: Vec<CfFile>,
+    cf_files: Vec<CfFile>,
     cf_index: usize,
     cf_file_index: usize,
     pub meta_file: MetaFile,
@@ -644,7 +644,6 @@ impl Snapshot {
     // new file at the temporary meta file path, so that all other try will fail.
     fn init_for_building(&mut self) -> RaftStoreResult<()> {
         if self.exists() {
-            debug!("!!!!! init_for_building exists");
             return Ok(());
         }
         let file = OpenOptions::new()
@@ -874,10 +873,6 @@ impl Snapshot {
         for (cf_enum, cf) in SNAPSHOT_CFS_ENUM_PAIR {
             self.switch_to_cf_file(cf)?;
             let cf_file = &mut self.cf_files[self.cf_index];
-            info!(
-                "!!!!! buuild {:?} {} {} {:?}",
-                cf_file.path, cf_file.file_prefix, cf_file.file_suffix, cf_file.file_names
-            );
             let cf_stat = if plain_file_used(cf_file.cf) {
                 let key_mgr = self.mgr.encryption_key_manager.as_ref();
                 snap_io::build_plain_cf_file::<EK>(cf_file, key_mgr, kv_snap, &begin_key, &end_key)?

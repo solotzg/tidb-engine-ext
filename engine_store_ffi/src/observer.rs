@@ -180,6 +180,23 @@ fn unhash_u64(mut i: u64) -> u64 {
     i ^ (i >> 30) ^ (i >> 60)
 }
 
+pub fn validate_remote_peer_region(
+    new_region: &kvproto::metapb::Region,
+    store_id: u64,
+    new_peer_id: u64,
+) -> bool {
+    match find_peer(new_region, store_id) {
+        Some(peer) => {
+            if peer.get_id() != new_peer_id {
+                false
+            } else {
+                true
+            }
+        }
+        None => false,
+    }
+}
+
 impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     #[inline]
     fn slot_index(id: u64) -> usize {
@@ -237,6 +254,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             return false;
         }
         let region_id = msg.get_region_id();
+        let new_peer_id = msg.get_to_peer().get_id();
         let mut is_first = false;
         let mut is_replicated = false;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
@@ -290,12 +308,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         }
 
-        info!("fast path: ongoing {}:{}, start load", self.store_id, region_id;
+        info!("fast path: ongoing {}:{}, fetch data from remote peer", self.store_id, region_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
         // Feed data
-        let res = self.engine_store_server_helper.fast_add_peer(region_id);
+        let res = self
+            .engine_store_server_helper
+            .fast_add_peer(region_id, new_peer_id);
         match res.status {
             crate::FastAddPeerStatus::Ok => (),
             crate::FastAddPeerStatus::WaitForData => {
@@ -315,15 +335,23 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         };
 
-        info!("fast path: ongoing {}:{}, start buid and send", self.store_id, region_id;
+        info!("fast path: ongoing {}:{}, parse", self.store_id, region_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
         let apply_state_str = res.apply_state.view.to_slice();
+        let region_str = res.region.view.to_slice();
         let mut apply_state = RaftApplyState::default();
-        apply_state.merge_from_bytes(apply_state_str);
-        match self.build_and_send_snapshot(region_id, msg.get_to_peer().get_id(), msg, apply_state)
-        {
+        let mut new_region = kvproto::metapb::Region::default();
+        apply_state.merge_from_bytes(apply_state_str).unwrap();
+        new_region.merge_from_bytes(region_str).unwrap();
+        info!("fast path: ongoing {}:{}, start build and send", self.store_id, region_id;
+            "to_peer_id" => msg.get_to_peer().get_id(),
+            "from_peer_id" => msg.get_from_peer().get_id(),
+            "new_region" => ?new_region,
+            "apply_state" => ?apply_state,
+        );
+        match self.build_and_send_snapshot(region_id, new_peer_id, msg, apply_state, new_region) {
             Ok(s) => {
                 match s {
                     crate::FastAddPeerStatus::Ok => {
@@ -365,35 +393,24 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         new_peer_id: u64,
         msg: &RaftMessage,
         apply_state: RaftApplyState,
+        new_region: kvproto::metapb::Region,
     ) -> RaftStoreResult<crate::FastAddPeerStatus> {
         let inner_msg = msg.get_message();
         // Build snapshot by get_snapshot_for_building
-        let (mut snap, key, region_state) = {
-            let region_state: RegionLocalState = match self
-                .engine
-                .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))?
-            {
-                Some(e) => e,
-                None => return Ok(crate::FastAddPeerStatus::BadData),
-            };
-
+        let (mut snap, key) = {
             // check if the source already knows the know peer
-            let has_peer = match find_peer(region_state.get_region(), self.store_id) {
-                Some(peer) => {
-                    if peer.get_id() != new_peer_id {
-                        false
-                    } else {
-                        true
-                    }
-                }
-                None => false,
-            };
-            if !has_peer {
-                warn!(
-                    "build_and_send_snapshot remote peer has not applied conf change {:?}",
-                    region_state.get_region()
+            if !validate_remote_peer_region(&new_region, self.store_id, new_peer_id) {
+                info!(
+                    "fast path: ongoing {}:{}. remote peer has not applied conf change for {}",
+                    self.store_id, region_id, new_peer_id;
+                    "region" => ?new_region,
                 );
                 return Ok(crate::FastAddPeerStatus::WaitForData);
+            } else {
+                info!(
+                    "fast path: ongoing {}:{}. remote peer has applied conf change for {}",
+                    self.store_id, region_id, new_peer_id
+                );
             }
 
             // Find term of entry at applied_index.
@@ -402,9 +419,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 Some(apply_entry) => apply_entry.get_term(),
                 None => {
                     return Err(box_err!(
-                        "can't find entry for applied_index {} of region {}",
+                        "can't find entry for applied_index {} of region {}, peer_id: {}",
                         applied_index,
-                        region_id
+                        region_id,
+                        new_peer_id
                     ));
                 }
             };
@@ -415,16 +433,16 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             );
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
             defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
-            let snapshot = self.snap_mgr.get_empty_snapshot_for_building(&key)?;
+            let snapshot = self.snap_mgr.get_snapshot_for_building(&key)?;
 
-            (snapshot, key.clone(), region_state)
+            (snapshot, key.clone())
         };
 
         debug!(
             "!!!!! snap 1 {:?} {:?} {}",
             snap,
             snap.meta_file,
-            snap.cf_files.len()
+            snap.cf_files().len()
         );
         // Build snapshot by do_snapshot
         let mut pb_snapshot: eraftpb::Snapshot = Default::default();
@@ -434,12 +452,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // eraftpb::SnapshotMetadata
             for (cf_enum, cf) in raftstore::store::snap::SNAPSHOT_CFS_ENUM_PAIR {
                 let cf_index: RaftStoreResult<usize> = snap
-                    .cf_files
+                    .cf_files()
                     .iter()
                     .position(|x| &x.cf == cf)
                     .ok_or(box_err!("can't find index for cf {}", cf));
                 let cf_index = cf_index?;
-                let cf_file = &mut snap.cf_files[cf_index];
+                let cf_file = &snap.cf_files()[cf_index];
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
                 path.set_extension("sst");
@@ -450,7 +468,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 let mut file = std::fs::File::create(path.as_path())?;
                 // let mut file = std::fs::create_dir();
             }
-            snap_data.set_region(region_state.get_region().clone());
+            snap_data.set_region(new_region.clone());
             snap_data.set_file_size(0);
             let SNAPSHOT_VERSION = 2;
             snap_data.set_version(SNAPSHOT_VERSION);
@@ -458,7 +476,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // SnapshotMeta
             // Which is snap.meta_file.meta
             let mut snapshot_meta =
-                raftstore::store::snap::gen_snapshot_meta(&snap.cf_files[..], true)?;
+                raftstore::store::snap::gen_snapshot_meta(&snap.cf_files()[..], true)?;
 
             // Write MetaFile
             {
@@ -474,7 +492,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 snap.meta_file.meta,
                 snap.meta_file.file,
                 snap.meta_file.path,
-                snap.cf_files.len()
+                snap.cf_files().len()
             );
         }
 
@@ -495,7 +513,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // Send reponse
         let mut response = RaftMessage::default();
         use kvproto::metapb::RegionEpoch;
-        let mut epoch = region_state.get_region().get_region_epoch();
+        let mut epoch = new_region.get_region_epoch();
         response.set_region_epoch(epoch.clone());
         response.set_region_id(region_id);
         response.set_from_peer(msg.get_from_peer().clone());

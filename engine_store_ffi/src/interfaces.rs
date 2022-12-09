@@ -245,6 +245,7 @@ pub mod root {
         pub struct FastAddPeerRes {
             pub status: root::DB::FastAddPeerStatus,
             pub apply_state: root::DB::CppStrWithView,
+            pub region: root::DB::CppStrWithView,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -478,10 +479,11 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
                     region_id: u64,
+                    new_peer_id: u64,
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 8449819960368956227;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 7429771182224851884;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
