@@ -590,3 +590,35 @@ pub fn force_compact_log(
         .unwrap();
     return compact_index;
 }
+
+pub fn stop_tiflash_node(cluster: &Cluster<NodeCluster>, node_id: u64) {
+    info!("stop node {}", victim);
+    {
+        cluster.stop_node(node_id);
+    }
+    {
+        iter_ffi_helpers(
+            &cluster,
+            Some(vec![node_id]),
+            &mut |_, _, ffi: &mut FFIHelperSet| {
+                let server = &ffi.engine_store_server;
+                server.stop();
+            },
+        );
+    }
+}
+
+pub fn restart_tiflash_node(cluster: &Cluster<NodeCluster>, node_id: u64) {
+    info!("restored node {}", victim);
+    {
+        iter_ffi_helpers(
+            &cluster,
+            Some(node_id),
+            &mut |_, _, ffi: &mut FFIHelperSet| {
+                let server = &ffi.engine_store_server;
+                server.restore();
+            },
+        );
+    }
+    cluster.run_node(node_id).unwrap();
+}
