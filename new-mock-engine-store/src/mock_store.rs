@@ -13,7 +13,7 @@ pub use std::{
 
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
-    RawCppPtr, UnwrapExternCFunc,
+    RawCppPtr, RawVoidPtr, UnwrapExternCFunc,
 };
 pub use engine_traits::{
     Engines, Iterable, KvEngine, Mutable, Peekable, RaftEngine, RaftLogBatch, SyncMutable,
@@ -26,9 +26,11 @@ pub use kvproto::{
 pub use protobuf::Message;
 pub use tikv_util::{box_err, box_try, debug, error, info, warn};
 
+use crate::node::NodeCluster;
 pub use crate::{
     config::MockConfig,
-    mock_cluster,
+    copy_data_from, copy_meta_from, general_get_apply_state, general_get_region_local_state,
+    get_apply_state, get_raft_local_state, get_region_local_state, mock_cluster,
     mock_cluster::{
         must_get_equal, must_get_none, Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine,
     },
@@ -695,6 +697,7 @@ pub fn gen_engine_store_server_helper(
         fn_set_store: None,
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
+        fn_fast_add_peer: Some(ffi_fast_add_peer),
     }
 }
 
@@ -1293,6 +1296,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         if retry > 0 {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
+
         let lock = cluster.ffi_helper_set.lock();
         let mut guard = match lock {
             Ok(e) => e,
@@ -1422,138 +1426,4 @@ unsafe extern "C" fn ffi_fast_add_peer(
     }
     error!("recover from remote peer: failed after retry"; "region_id" => region_id);
     return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
-}
-
-use engine_store_ffi::RawVoidPtr;
-use engine_traits::{KvEngine, Mutable, RaftEngine, RaftLogBatch, WriteBatch};
-use kvproto::raft_serverpb::RaftLocalState;
-use tikv_util::{box_err, box_try};
-
-// TODO Need refactor if moved to raft-engine
-pub fn general_get_region_local_state<EK: engine_traits::KvEngine>(
-    engine: &EK,
-    region_id: u64,
-) -> Option<RegionLocalState> {
-    let region_state_key = keys::region_state_key(region_id);
-    engine
-        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
-        .unwrap_or(None)
-}
-
-// TODO Need refactor if moved to raft-engine
-pub fn general_get_apply_state<EK: engine_traits::KvEngine>(
-    engine: &EK,
-    region_id: u64,
-) -> Option<RaftApplyState> {
-    let apply_state_key = keys::apply_state_key(region_id);
-    engine
-        .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
-        .unwrap_or(None)
-}
-
-pub fn get_region_local_state(
-    engine: &engine_rocks::RocksEngine,
-    region_id: u64,
-) -> Option<RegionLocalState> {
-    general_get_region_local_state(engine, region_id)
-}
-
-// TODO Need refactor if moved to raft-engine
-pub fn get_apply_state(
-    engine: &engine_rocks::RocksEngine,
-    region_id: u64,
-) -> Option<RaftApplyState> {
-    general_get_apply_state(engine, region_id)
-}
-
-pub fn get_raft_local_state<ER: engine_traits::RaftEngine>(
-    raft_engine: &ER,
-    region_id: u64,
-) -> Option<RaftLocalState> {
-    match raft_engine.get_raft_state(region_id) {
-        Ok(Some(x)) => Some(x),
-        _ => None,
-    }
-}
-
-pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_traits::Peekable>(
-    source_engines: &Engines<EK, ER>,
-    target_engines: &Engines<EK, ER>,
-    source: &Box<Region>,
-    target: &mut Box<Region>,
-    new_region_meta: kvproto::metapb::Region,
-    copy_region_state: bool,
-    copy_apply_state: bool,
-    copy_raft_state: bool,
-) -> raftstore::Result<()> {
-    let region_id = source.region.get_id();
-
-    let mut wb = target_engines.kv.write_batch();
-
-    // Can't copy this key, otherwise will cause a bootstrap.
-    // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
-
-    // region local state
-    if copy_region_state {
-        let mut state = RegionLocalState::default();
-        state.set_region(new_region_meta);
-        box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
-    }
-
-    // apply state
-    if copy_apply_state {
-        let apply_state: RaftApplyState =
-            match general_get_apply_state(&source_engines.kv, region_id) {
-                Some(x) => x,
-                None => return Err(box_err!("bad RaftApplyState")),
-            };
-        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
-        target.apply_state = apply_state.clone();
-        target.applied_term = source.applied_term;
-    }
-
-    wb.write()?;
-    target_engines.sync_kv()?;
-
-    let mut raft_wb = target_engines.raft.log_batch(1024);
-    // raft state
-    if copy_raft_state {
-        let raft_state = match get_raft_local_state(&source_engines.raft, region_id) {
-            Some(x) => x,
-            None => return Err(box_err!("bad RaftLocalState")),
-        };
-        raft_wb.put_raft_state(region_id, &raft_state)?;
-    };
-
-    box_try!(target_engines.raft.consume(&mut raft_wb, true));
-    Ok(())
-}
-
-pub fn copy_data_from(
-    source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable>,
-    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
-    source: &Box<Region>,
-    target: &mut Box<Region>,
-) -> raftstore::Result<()> {
-    let region_id = source.region.get_id();
-
-    // kv data in memory
-    for cf in 0..3 {
-        for (k, v) in &source.data[cf] {
-            write_kv_in_mem(target, cf, k.as_slice(), v.as_slice());
-        }
-    }
-
-    // raft log
-    let mut raft_wb = target_engines.raft.log_batch(1024);
-    let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
-    source_engines
-        .raft
-        .get_all_entries_to(region_id, &mut entries)
-        .unwrap();
-    debug!("copy raft log {:?}", entries);
-
-    raft_wb.append(region_id, entries)?;
-    box_try!(target_engines.raft.consume(&mut raft_wb, true));
-    Ok(())
 }

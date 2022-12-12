@@ -93,7 +93,7 @@ pub struct TestData {
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
     // Helper to set ffi_helper_set.
     pub ffi_helper_lst: Vec<FFIHelperSet>,
-    ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
+    pub ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
 
     pub cfg: Config,
     leaders: HashMap<u64, metapb::Peer>,

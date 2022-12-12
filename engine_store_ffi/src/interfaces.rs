@@ -468,13 +468,6 @@ pub mod root {
                     leader_safe_ts: u64,
                 ),
             >,
-            pub fn_debug_func: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *mut root::DB::EngineStoreServerWrap,
-                    type_: u64,
-                    arg2: root::DB::RawVoidPtr,
-                ) -> root::DB::RawVoidPtr,
-            >,
             pub fn_fast_add_peer: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
@@ -483,7 +476,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 7429771182224851884;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 5489124786978559153;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

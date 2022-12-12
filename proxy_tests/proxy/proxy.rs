@@ -168,6 +168,7 @@ pub fn must_get_mem(
                     if value.is_none() && last_res.is_none() {
                         ok = true;
                         return;
+                    }
                 },
             );
         }
