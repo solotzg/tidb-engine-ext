@@ -419,8 +419,8 @@ impl CfFile {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct MetaFile {
+#[derive(Default)]
+struct MetaFile {
     pub meta: Option<SnapshotMeta>,
     pub path: PathBuf,
     pub file: Option<File>,
@@ -436,7 +436,7 @@ pub struct Snapshot {
     cf_files: Vec<CfFile>,
     cf_index: usize,
     cf_file_index: usize,
-    pub meta_file: MetaFile,
+    meta_file: MetaFile,
     hold_tmp_files: bool,
 
     mgr: SnapManagerCore,
@@ -963,7 +963,6 @@ impl Snapshot {
         debug!(
             "deleting snapshot file";
             "snapshot" => %self.path(),
-            "!!!!! bt" => ?std::backtrace::Backtrace::capture(),
         );
         for cf_file in &self.cf_files {
             // Delete cloned files.
@@ -1114,13 +1113,6 @@ impl Snapshot {
 
     pub fn exists(&self) -> bool {
         self.cf_files.iter().all(|cf_file| {
-            debug!(
-                "!!!!! exists cf_file.size {:?} cf_file.file_paths() {:?} meta {:?} {}",
-                cf_file.size,
-                cf_file.file_paths(),
-                self.meta_file.path,
-                file_exists(&self.meta_file.path)
-            );
             cf_file.size.is_empty()
                 || (cf_file
                     .file_paths()
@@ -1131,6 +1123,10 @@ impl Snapshot {
 
     pub fn meta(&self) -> io::Result<Metadata> {
         file_system::metadata(&self.meta_file.path)
+    }
+
+    pub fn meta_path(&self) -> &PathBuf {
+        &self.meta_file.path
     }
 
     pub fn total_size(&self) -> u64 {
@@ -1545,12 +1541,6 @@ impl SnapManager {
         Ok(Box::new(f))
     }
 
-    pub fn get_empty_snapshot_for_building(&self, key: &SnapKey) -> RaftStoreResult<Box<Snapshot>> {
-        let base = &self.core.base;
-        let f = Snapshot::new_for_building(base, key, &self.core)?;
-        Ok(Box::new(f))
-    }
-
     pub fn get_snapshot_for_gc(
         &self,
         key: &SnapKey,
@@ -1668,7 +1658,6 @@ impl SnapManager {
             "register snapshot";
             "key" => %key,
             "entry" => ?entry,
-            "!!!!! bt" => ?std::backtrace::Backtrace::capture(),
         );
         match self.core.registry.wl().entry(key) {
             Entry::Occupied(mut e) => {
@@ -1790,11 +1779,6 @@ impl SnapManagerCore {
             );
             return false;
         }
-        debug!(
-            "!!!!! deletee snapshot {:?} {:?}",
-            key,
-            std::backtrace::Backtrace::capture()
-        );
         snap.delete();
         true
     }

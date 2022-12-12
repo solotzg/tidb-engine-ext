@@ -1812,7 +1812,6 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         if local_state.get_state() != PeerState::Tombstone {
             // Maybe split, but not registered yet.
             if !util::is_first_message(msg.get_message()) {
-                debug!("!!!!! find RegionNotRegistered {:?}", msg);
                 self.ctx
                     .raft_metrics
                     .message_dropped
@@ -1984,7 +1983,6 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             error!(
                 "missing epoch in raft message, ignore it";
                 "region_id" => region_id,
-                "!!!! msg" => ?msg,
             );
             self.ctx
                 .raft_metrics

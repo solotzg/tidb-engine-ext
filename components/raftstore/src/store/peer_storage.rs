@@ -392,7 +392,6 @@ where
 
     #[inline]
     pub fn save_apply_state_to(&self, kv_wb: &mut impl Mutable) -> Result<()> {
-        debug!("!!!! save_apply_state_to {:?}", self.apply_state());
         kv_wb.put_msg_cf(
             CF_RAFT,
             &keys::apply_state_key(self.region.get_id()),
@@ -635,11 +634,6 @@ where
         let snap_index = snap.get_metadata().get_index();
         let snap_term = snap.get_metadata().get_term();
 
-        debug!("!!!! apply snapshot {}", self.peer_id;
-            "snap_index" => snap_index,
-            "snap_term" => snap_term,
-        );
-
         self.raft_state_mut().set_last_index(snap_index);
         self.set_last_term(snap_term);
         self.apply_state_mut().set_applied_index(snap_index);
@@ -859,10 +853,6 @@ where
     }
 
     pub fn schedule_applying_snapshot(&mut self) {
-        debug!(
-            "!!!!!! schedule_applying_snapshot {:?}",
-            std::backtrace::Backtrace::capture()
-        );
         let status = Arc::new(AtomicUsize::new(JOB_STATUS_PENDING));
         self.set_snap_state(SnapState::Applying(Arc::clone(&status)));
         let task = RegionTask::Apply {
@@ -925,7 +915,6 @@ where
         // and has not applied snapshot yet, so skip persistent hard state.
         if self.raft_state().get_last_index() > 0 {
             if let Some(hs) = ready.hs() {
-                debug!("!!!! apply_snapshot set hard state");
                 self.raft_state_mut().set_hard_state(hs.clone());
             }
         }

@@ -1,6 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use std::{
-    cell::Cell,
     collections::hash_map::Entry as MapEntry,
     io::Write,
     ops::DerefMut,
@@ -14,8 +13,7 @@ use std::{
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use engine_traits::{Peekable, RaftEngine, SstMetaInfo, CF_RAFT};
-use into_other::into_other;
+use engine_traits::{Peekable, RaftEngine, SstMetaInfo};
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
@@ -212,7 +210,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let slot_id = Self::slot_index(region_id);
         let mut guard = match self.cached_region_info.get(slot_id).unwrap().write() {
             Ok(g) => g,
-            Err(e) => return Err(box_err!("access_cached_region_info_mut poisoned")),
+            Err(_) => return Err(box_err!("access_cached_region_info_mut poisoned")),
         };
         f(guard.entry(region_id));
         Ok(())
@@ -236,7 +234,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // TODO clean local, and prepare to request snapshot from TiKV as a trivial
         // procedure.
         fail::fail_point!("fallback_to_slow_path_not_allow", |_| {});
-        if let Err(e) = self.set_inited_or_fallback(region_id, true) {
+        if let Err(_) = self.set_inited_or_fallback(region_id, true) {
             tikv_util::safe_panic!("set_inited_or_fallback");
         }
     }
@@ -434,12 +432,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             (snapshot, key.clone())
         };
 
-        debug!(
-            "!!!!! snap 1 {:?} {:?} {}",
-            snap,
-            snap.meta_file,
-            snap.cf_files().len()
-        );
         // Build snapshot by do_snapshot
         let mut pb_snapshot: eraftpb::Snapshot = Default::default();
         let pb_snapshot_metadata: &mut eraftpb::SnapshotMetadata = pb_snapshot.mut_metadata();
@@ -457,10 +449,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
                 path.set_extension("sst");
-                debug!(
-                    "!!!! snap g cf_file.path {:?} {:?} {:?}",
-                    cf_file.path, cf_file.file_prefix, path
-                );
                 let mut _file = std::fs::File::create(path.as_path())?;
             }
             snap_data.set_region(new_region.clone());
@@ -476,19 +464,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // Write MetaFile
             {
                 let v = snapshot_meta.write_to_bytes()?;
-                let mut f = std::fs::File::create(snap.meta_file.path.as_path())?;
+                let mut f = std::fs::File::create(snap.meta_path())?;
                 f.write_all(&v[..])?;
                 f.flush()?;
                 f.sync_all()?;
             }
             snap_data.set_meta(snapshot_meta);
-            debug!(
-                "!!!!! snap 2 {:?} {:?} XX {:?} {}",
-                snap.meta_file.meta,
-                snap.meta_file.file,
-                snap.meta_file.path,
-                snap.cf_files().len()
-            );
         }
 
         // TODO The rest is test, please remove it after we can fetch the real data.
@@ -507,7 +488,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
         // Send reponse
         let mut response = RaftMessage::default();
-        use kvproto::metapb::RegionEpoch;
         let epoch = new_region.get_region_epoch();
         response.set_region_epoch(epoch.clone());
         response.set_region_id(region_id);
@@ -519,7 +499,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         response.mut_message().set_term(inner_msg.get_term());
         response.mut_message().set_snapshot(pb_snapshot);
         debug!(
-            "!!!!! send response  key {} response {:?} data {:?}",
+            "!!!! send snapshot key {} raft message {:?} snap data {:?}",
             key, response, snap_data
         );
         match self.trans.lock() {

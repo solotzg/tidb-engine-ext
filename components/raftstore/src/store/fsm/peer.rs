@@ -611,7 +611,6 @@ where
             match m {
                 PeerMsg::RaftMessage(msg) => {
                     if self.ctx.coprocessor_host.should_skip_raft_message(&msg.msg) {
-                        debug!("!!!! peer skip message");
                         continue;
                     }
                     if let Err(e) = self.on_raft_message(msg) {
