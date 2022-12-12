@@ -121,6 +121,7 @@ pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> Has
 }
 
 pub fn new_mock_cluster(id: u64, count: usize) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
+    tikv_util::set_panic_hook(true, "./");
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(id, count, sim, pd_client.clone(), ProxyConfig::default());

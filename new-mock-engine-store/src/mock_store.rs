@@ -711,7 +711,7 @@ pub fn gen_engine_store_server_helper(
         fn_handle_purge_pagestorage: None,
         fn_handle_scan_page: None,
         fn_handle_seek_ps_key: None,
-        fn_ps_is_empty: None
+        fn_ps_is_empty: None,
     }
 }
 

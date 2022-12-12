@@ -1260,7 +1260,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                     o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                 }
                 MapEntry::Vacant(_) => {
-                    panic!("unknown snapshot!");
+                    // Compat no fast add peer logic
+                    // panic!("unknown snapshot!");
                 }
             },
         ).is_err() {
