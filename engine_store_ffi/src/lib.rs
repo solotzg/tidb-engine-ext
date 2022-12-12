@@ -1092,8 +1092,8 @@ impl EngineStoreServerHelper {
     }
 
     pub fn is_ps_empty(&self) -> u8 {
-        debug_assert!(self.fn_is_ps_empty.is_some());
-        unsafe { (self.fn_is_ps_empty.into_inner())(self.inner) }
+        debug_assert!(self.fn_ps_is_empty.is_some());
+        unsafe { (self.fn_ps_is_empty.into_inner())(self.inner) }
     }
 
     pub fn pre_handle_snapshot(
