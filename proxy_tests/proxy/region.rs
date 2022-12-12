@@ -369,18 +369,16 @@ fn test_add_delayed_started_learner_by_joint() {
 use new_mock_engine_store::{copy_data_from, copy_meta_from};
 
 fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_id: u64) {
-    let source_region = cluster
-        .ffi_helper_set
-        .lock()
-        .unwrap()
-        .get_mut(&from)
-        .unwrap()
-        .engine_store_server
-        .kvstore
-        .get(&region_id)
-        .unwrap()
-        .clone();
-
+    let mut maybe_source_region = None;
+    iter_ffi_helpers(
+        cluster,
+        Some(vec![from]),
+        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+            let server = &mut ffi.engine_store_server;
+            maybe_source_region = server.kvstore.get(&region_id).cloned();
+        },
+    );
+    let source_region = maybe_source_region.unwrap();
     let mut new_region_meta = source_region.region.clone();
     new_region_meta.mut_peers().push(new_learner_peer(to, to));
 
@@ -399,12 +397,18 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
             if let Some(region) = server.kvstore.get_mut(&region_id) {
                 let source_engines = cluster.get_engines(from);
                 let target_engines = cluster.get_engines(to);
-                copy_data_from(source_engines, target_engines, &source_region, region).unwrap();
+                copy_data_from(
+                    source_engines,
+                    target_engines,
+                    source_region.as_ref(),
+                    region.as_mut(),
+                )
+                .unwrap();
                 copy_meta_from(
                     source_engines,
                     target_engines,
-                    &source_region,
-                    region,
+                    source_region.as_ref(),
+                    region.as_mut(),
                     new_region_meta.clone(),
                     true,
                     true,

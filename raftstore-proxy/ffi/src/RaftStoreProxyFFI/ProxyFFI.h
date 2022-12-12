@@ -230,8 +230,6 @@ struct EngineStoreServerHelper {
   void (*fn_handle_safe_ts_update)(EngineStoreServerWrap *, uint64_t region_id,
                                    uint64_t self_safe_ts,
                                    uint64_t leader_safe_ts);
-  RawVoidPtr (*fn_debug_func)(EngineStoreServerWrap *, uint64_t type,
-                              RawVoidPtr);
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
                                      uint64_t region_id, uint64_t new_peer_id);
 };
