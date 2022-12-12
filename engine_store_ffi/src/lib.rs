@@ -32,7 +32,7 @@ use protobuf::Message;
 pub use read_index_helper::ReadIndexClient;
 
 pub use self::interfaces::root::DB::{
-    BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, CppStrWithViewVec,
+    BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView,
     EngineStoreApplyRes, EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes,
     FastAddPeerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageWithView, PageWithViewVec, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper,
