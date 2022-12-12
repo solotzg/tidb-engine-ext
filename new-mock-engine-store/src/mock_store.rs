@@ -208,11 +208,13 @@ pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8])
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];
     pending_delete.remove(k);
+    debug!("!!!! write_kv_in_mem {:?}", k);
     data.insert(k.to_vec(), v.to_vec());
     pending_write.insert(k.to_vec(), v.to_vec());
 }
 
 fn delete_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8]) {
+    debug!("!!!! delete_kv_in_mem {:?}", k);
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     pending_delete.insert(k.to_vec());
@@ -1417,6 +1419,9 @@ unsafe extern "C" fn ffi_fast_add_peer(
         let region_bytes = region_local_state.get_region().write_to_bytes().unwrap();
         let apply_state_ptr = create_cpp_str(Some(apply_state_bytes));
         let region_ptr = create_cpp_str(Some(region_bytes));
+
+        // Check if we have commit_index.
+
         debug!("recover from remote peer: ok from {} to {}", from_store, store_id; "region_id" => region_id);
         return ffi_interfaces::FastAddPeerRes {
             status: ffi_interfaces::FastAddPeerStatus::Ok,

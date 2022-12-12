@@ -13,11 +13,11 @@ use std::{
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use engine_traits::{RaftEngine, SstMetaInfo};
+use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
-    raft_serverpb::{RaftApplyState, RaftMessage},
+    raft_serverpb::{RaftApplyState, RaftMessage, RegionLocalState},
 };
 use protobuf::Message;
 use raft::{eraftpb, eraftpb::MessageType, StateRole};
@@ -184,11 +184,19 @@ pub fn validate_remote_peer_region(
     new_peer_id: u64,
 ) -> bool {
     match find_peer(new_region, store_id) {
-        Some(peer) => {
-            peer.get_id() == new_peer_id
-        }
+        Some(peer) => peer.get_id() == new_peer_id,
         None => false,
     }
+}
+
+pub fn get_region_local_state<EK: engine_traits::KvEngine>(
+    engine: &EK,
+    region_id: u64,
+) -> Option<RegionLocalState> {
+    let region_state_key = keys::region_state_key(region_id);
+    engine
+        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+        .unwrap_or(None)
 }
 
 impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
@@ -235,6 +243,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         }
     }
 
+    pub fn is_initialized(&self, region_id: u64) -> bool {
+        match get_region_local_state(&self.engine, region_id) {
+            None => false,
+            Some(r) => raftstore::store::util::is_region_initialized(r.get_region()),
+        }
+    }
+
     // Returns whether we need to ignore this message and run fast path instead.
     pub fn maybe_fast_path(&self, msg: &RaftMessage) -> bool {
         if !self.engine_store_cfg.enable_fast_add_peer {
@@ -251,10 +266,24 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let new_peer_id = msg.get_to_peer().get_id();
         let mut is_first = false;
         let mut is_replicated = false;
+        let mut has_already_inited = None;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
             match info {
-                MapEntry::Occupied(o) => {
-                    is_first = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                MapEntry::Occupied(mut o) => {
+                    (is_first, has_already_inited) =
+                        if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
+                            // If `has_already_inited` is true, usually means we recover from a
+                            // restart. So we have data in disk, but not
+                            // in memory. TODO maybe only check once, or
+                            // we can remove apply snapshot.
+                            let has_already_inited = self.is_initialized(region_id);
+                            if has_already_inited {
+                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                            }
+                            (!has_already_inited, Some(has_already_inited))
+                        } else {
+                            (false, None)
+                        };
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                     if is_first {
@@ -264,6 +293,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                             "from_peer_id" => msg.get_from_peer().get_id(),
                             "inner_msg" => ?inner_msg,
                             "is_replicated" => is_replicated,
+                            "has_already_inited" => has_already_inited,
+                            "is_first" => is_first,
                         );
                     }
                 }
@@ -282,9 +313,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         self.access_cached_region_info_mut(region_id, f).unwrap();
 
         if !is_first {
+            // TODO avoid too much log
             info!(
                 "fast path: normal MsgAppend of {}:{}",
-                self.store_id, region_id
+                self.store_id, region_id;
+                "to_peer_id" => msg.get_to_peer().get_id(),
+                "from_peer_id" => msg.get_from_peer().get_id(),
+                "inner_msg" => ?inner_msg,
             );
             return false;
         }
@@ -380,6 +415,25 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         is_first
     }
 
+    fn check_entry_at_index(
+        &self,
+        region_id: u64,
+        index: u64,
+        peer_id: u64,
+    ) -> RaftStoreResult<u64> {
+        match self.raft_engine.get_entry(region_id, index)? {
+            Some(entry) => Ok(entry.get_term()),
+            None => {
+                return Err(box_err!(
+                    "can't find entry for index {} of region {}, peer_id: {}",
+                    index,
+                    region_id,
+                    peer_id
+                ));
+            }
+        }
+    }
+
     fn build_and_send_snapshot(
         &self,
         region_id: u64,
@@ -408,17 +462,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
             // Find term of entry at applied_index.
             let applied_index = apply_state.get_applied_index();
-            let applied_term = match self.raft_engine.get_entry(region_id, applied_index)? {
-                Some(apply_entry) => apply_entry.get_term(),
-                None => {
-                    return Err(box_err!(
-                        "can't find entry for applied_index {} of region {}, peer_id: {}",
-                        applied_index,
-                        region_id,
-                        new_peer_id
-                    ));
-                }
-            };
+            let applied_term = self.check_entry_at_index(region_id, applied_index, new_peer_id)?;
+            // Will otherwise cause "got message with lower index than committed" loop.
+            self.check_entry_at_index(region_id, apply_state.get_commit_index(), new_peer_id)?;
+
             let key = SnapKey::new(region_id, applied_term, applied_index);
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
             defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
@@ -453,8 +500,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
             // SnapshotMeta
             // Which is snap.meta_file.meta
-            let snapshot_meta =
-                raftstore::store::snap::gen_snapshot_meta(snap.cf_files(), true)?;
+            let snapshot_meta = raftstore::store::snap::gen_snapshot_meta(snap.cf_files(), true)?;
 
             // Write MetaFile
             {
@@ -494,8 +540,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         response.mut_message().set_term(inner_msg.get_term());
         response.mut_message().set_snapshot(pb_snapshot);
         debug!(
-            "!!!! send snapshot key {} raft message {:?} snap data {:?}",
-            key, response, snap_data
+            "!!!! send snapshot key {} raft message {:?} snap data {:?} apply_state {:?}",
+            key, response, snap_data, apply_state
         );
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
@@ -1254,13 +1300,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             region_id,
             |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                 MapEntry::Occupied(mut o) => {
-                    if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
+                    let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                    if is_first_snapsot {
                         info!("fast path: applied first snapshot {}:{}, recover MsgAppend", self.store_id, region_id;
                             "snap_key" => ?snap_key,
                         );
+                        should_skip = true;
+                        o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                     }
-                    should_skip = o.get().inited_or_fallback.load(Ordering::SeqCst);
-                    o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                 }
                 MapEntry::Vacant(_) => {
                     panic!("unknown snapshot!");
