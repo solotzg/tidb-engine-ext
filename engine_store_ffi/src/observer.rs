@@ -13,11 +13,11 @@ use std::{
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use engine_traits::{Peekable, RaftEngine, SstMetaInfo};
+use engine_traits::{RaftEngine, SstMetaInfo};
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
-    raft_serverpb::{RaftApplyState, RaftMessage, RegionLocalState},
+    raft_serverpb::{RaftApplyState, RaftMessage},
 };
 use protobuf::Message;
 use raft::{eraftpb, eraftpb::MessageType, StateRole};
@@ -184,13 +184,7 @@ pub fn validate_remote_peer_region(
     new_peer_id: u64,
 ) -> bool {
     match find_peer(new_region, store_id) {
-        Some(peer) => {
-            if peer.get_id() != new_peer_id {
-                false
-            } else {
-                true
-            }
-        }
+        Some(peer) => peer.get_id() == new_peer_id,
         None => false,
     }
 }
@@ -234,7 +228,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // TODO clean local, and prepare to request snapshot from TiKV as a trivial
         // procedure.
         fail::fail_point!("fallback_to_slow_path_not_allow", |_| {});
-        if let Err(_) = self.set_inited_or_fallback(region_id, true) {
+        if self.set_inited_or_fallback(region_id, true).is_err() {
             tikv_util::safe_panic!("set_inited_or_fallback");
         }
     }
@@ -310,7 +304,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
-        fail::fail_point("go_fast_path_not_allow", |_| {});
+        fail::fail_point!("go_fast_path_not_allow", |e| { return false });
         // Feed data
         let res = self
             .engine_store_server_helper
@@ -377,9 +371,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             Err(e) => {
                 error!("fast path: ongoing {}:{} failed. build and sent snapshot error {:?}", self.store_id, region_id, e;
                 "is_first" => is_first,);
-                if let Err(_) = self.set_inited_or_fallback(region_id, true) {
-                    tikv_util::safe_panic!("set_inited_or_fallback");
-                }
+                self.fallback_to_slow_path(region_id);
                 return false;
             }
         };
@@ -454,13 +446,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
             snap_data.set_region(new_region.clone());
             snap_data.set_file_size(0);
-            let SNAPSHOT_VERSION = 2;
+            const SNAPSHOT_VERSION: u64 = 2;
             snap_data.set_version(SNAPSHOT_VERSION);
 
             // SnapshotMeta
             // Which is snap.meta_file.meta
-            let snapshot_meta =
-                raftstore::store::snap::gen_snapshot_meta(&snap.cf_files()[..], true)?;
+            let snapshot_meta = raftstore::store::snap::gen_snapshot_meta(snap.cf_files(), true)?;
 
             // Write MetaFile
             {
@@ -516,6 +507,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 }
 
 impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store_id: u64,
         engine: engine_tiflash::RocksEngine,
@@ -1255,7 +1247,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         );
         let region_id = ob_ctx.region().get_id();
         let mut should_skip = false;
-        match self.access_cached_region_info_mut(
+        if self.access_cached_region_info_mut(
             region_id,
             |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                 MapEntry::Occupied(mut o) => {
@@ -1267,13 +1259,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                     should_skip = o.get().inited_or_fallback.load(Ordering::SeqCst);
                     o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                 }
-                MapEntry::Vacant(v) => {
+                MapEntry::Vacant(_) => {
                     panic!("unknown snapshot!");
                 }
             },
-        ) {
-            Err(_) => fatal!("post_apply_snapshot poisoned"),
-            _ => (),
+        ).is_err() {
+            fatal!("post_apply_snapshot poisoned")
         };
         let snap = match snap {
             None => return,

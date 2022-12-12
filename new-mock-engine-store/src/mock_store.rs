@@ -698,6 +698,15 @@ pub fn gen_engine_store_server_helper(
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
         fn_fast_add_peer: Some(ffi_fast_add_peer),
+        fn_create_write_batch: None,
+        fn_write_batch_put_page: None,
+        fn_write_batch_del_page: None,
+        fn_write_batch_size: None,
+        fn_write_batch_is_empty: None,
+        fn_write_batch_merge: None,
+        fn_write_batch_clear: None,
+        fn_consume_write_batch: None,
+        fn_read_page: None,
     }
 }
 

@@ -512,9 +512,9 @@ impl RaftEngine for PSEngine {
     fn dump_stats(&self) -> Result<String> {
         Ok(String::from(""))
     }
-    
+
     fn get_engine_path(&self) -> &str {
-        self.as_inner().path()
+        ""
     }
 
     fn get_engine_size(&self) -> Result<u64> {

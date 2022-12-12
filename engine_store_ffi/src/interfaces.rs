@@ -145,13 +145,7 @@ pub mod root {
         #[repr(C)]
         #[derive(Debug)]
         pub struct PageWithViewVec {
-            pub inner: *mut PageWithView,
-            pub len: u64,
-        }
-        #[repr(C)]
-        #[derive(Debug)]
-        pub struct CppStrWithViewVec {
-            pub inner: *const CppStrWithView,
+            pub inner: *mut root::DB::PageWithView,
             pub len: u64,
         }
         #[repr(u8)]
@@ -443,8 +437,9 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::PageWithViewVec,
             >,
-            pub fn_gc_page_with_view_vec:
-                ::std::option::Option<unsafe extern "C" fn(arg1: *mut PageWithView, arg2: u64)>,
+            pub fn_gc_page_with_view_vec: ::std::option::Option<
+                unsafe extern "C" fn(inner: *mut root::DB::PageWithView, len: u64),
+            >,
             pub fn_handle_purge_pagestorage: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
             >,
@@ -454,7 +449,7 @@ pub mod root {
                     arg2: root::DB::BaseBuffView,
                 ) -> root::DB::CppStrWithView,
             >,
-            pub fn_is_ps_empty: ::std::option::Option<
+            pub fn_ps_is_empty: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap) -> u8,
             >,
             pub fn_atomic_update_proxy: ::std::option::Option<
@@ -548,7 +543,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 5489124786978559153;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 4954147441045435430;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

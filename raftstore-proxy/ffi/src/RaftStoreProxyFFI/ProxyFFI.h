@@ -87,13 +87,13 @@ struct CppStrWithView {
 };
 
 struct PageWithView {
-    RawCppPtr inner;
-    BaseBuffView view;
+  RawCppPtr inner;
+  BaseBuffView view;
 };
 
 struct PageWithViewVec {
-    PageWithView * inner;
-    const uint64_t len;
+  PageWithView *inner;
+  const uint64_t len;
 };
 
 enum class HttpRequestStatus : uint8_t {
@@ -215,20 +215,23 @@ struct EngineStoreServerHelper {
   uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
   uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
                                uint64_t, uint64_t);
-    RawCppPtr (*fn_create_write_batch)();
-    void (*fn_write_batch_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
-    void (*fn_write_batch_del_page)(RawVoidPtr, BaseBuffView);
-    uint64_t (*fn_write_batch_size)(RawVoidPtr);
-    uint8_t (*fn_write_batch_is_empty)(RawVoidPtr);
-    void (*fn_write_batch_merge)(RawVoidPtr, RawVoidPtr);
-    void (*fn_write_batch_clear)(RawVoidPtr);
-    void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
-    PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *, BaseBuffView);
-    PageWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *, BaseBuffView, BaseBuffView);
-    void (*fn_gc_page_with_view_vec)(PageWithView * inner, uint64_t len);
-    void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
-    CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *, BaseBuffView);
-    uint8_t (*fn_ps_is_empty)(const EngineStoreServerWrap *);
+  RawCppPtr (*fn_create_write_batch)();
+  void (*fn_write_batch_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
+  void (*fn_write_batch_del_page)(RawVoidPtr, BaseBuffView);
+  uint64_t (*fn_write_batch_size)(RawVoidPtr);
+  uint8_t (*fn_write_batch_is_empty)(RawVoidPtr);
+  void (*fn_write_batch_merge)(RawVoidPtr, RawVoidPtr);
+  void (*fn_write_batch_clear)(RawVoidPtr);
+  void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
+  PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
+                                      BaseBuffView);
+  PageWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
+                                         BaseBuffView, BaseBuffView);
+  void (*fn_gc_page_with_view_vec)(PageWithView *inner, uint64_t len);
+  void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
+  CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *,
+                                          BaseBuffView);
+  uint8_t (*fn_ps_is_empty)(const EngineStoreServerWrap *);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
