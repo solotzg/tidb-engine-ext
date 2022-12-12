@@ -1,8 +1,9 @@
 set -uxeo pipefail
 if [[ $M == "fmt" ]]; then
     make gen_proxy_ffi
+    git status -s
     GIT_STATUS=$(git status -s) && if [[ ${GIT_STATUS} ]]; then echo "Error: found illegal git status"; echo ${GIT_STATUS}; [[ -z ${GIT_STATUS} ]]; fi
-    cargo fmt -- --check >/dev/null
+    cargo fmt -- --check
 elif [[ $M == "testold" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
