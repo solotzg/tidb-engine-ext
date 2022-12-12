@@ -2,7 +2,6 @@
 use std::iter::FromIterator;
 
 use collections::HashSet;
-use raft::eraftpb::Entry;
 
 use crate::proxy::*;
 

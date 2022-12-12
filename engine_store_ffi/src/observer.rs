@@ -259,7 +259,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let mut is_replicated = false;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
             match info {
-                MapEntry::Occupied(mut o) => {
+                MapEntry::Occupied(o) => {
                     is_first = !o.get().inited_or_fallback.load(Ordering::SeqCst);
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);

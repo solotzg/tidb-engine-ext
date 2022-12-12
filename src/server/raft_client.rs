@@ -1010,7 +1010,6 @@ where
         let store_id = msg.get_to_peer().store_id;
         let grpc_raft_conn_num = self.builder.cfg.value().grpc_raft_conn_num as u64;
 
-        tikv_util::info!("!!!!! Client send {:?}", store_id);
         let conn_id = if grpc_raft_conn_num == 1 {
             0
         } else {

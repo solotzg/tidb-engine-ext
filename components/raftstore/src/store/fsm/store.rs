@@ -715,7 +715,6 @@ impl<'a, EK: KvEngine + 'static, ER: RaftEngine + 'static, T: Transport>
                 StoreMsg::Tick(tick) => self.on_tick(tick),
                 StoreMsg::RaftMessage(msg) => {
                     if self.ctx.coprocessor_host.should_skip_raft_message(&msg.msg) {
-                        debug!("!!!! store skip message");
                         continue;
                     }
                     if let Err(e) = self.on_raft_message(msg) {
