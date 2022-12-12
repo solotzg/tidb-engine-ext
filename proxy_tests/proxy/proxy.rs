@@ -3,14 +3,18 @@
 pub use std::{
     collections::HashMap,
     io::Write,
+    iter::FromIterator,
     ops::DerefMut,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{atomic::Ordering, mpsc, Arc, RwLock},
 };
 
+pub use collections::HashSet;
 pub use engine_store_ffi::{KVGetStatus, RaftStoreProxyFFI};
-pub use engine_traits::{MiscExt, CF_DEFAULT, CF_LOCK, CF_WRITE};
+pub use engine_traits::{
+    MiscExt, Mutable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
+};
 // use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
 pub use engine_traits::{Peekable, CF_RAFT};
 pub use kvproto::{
@@ -18,47 +22,29 @@ pub use kvproto::{
     metapb,
     metapb::RegionEpoch,
     raft_cmdpb::{AdminCmdType, AdminRequest, CmdType, Request},
-    raft_serverpb::{RaftApplyState, RegionLocalState, StoreIdent},
+    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState, StoreIdent},
 };
 pub use new_mock_engine_store::{
     config::Config,
+    get_apply_state, get_raft_local_state, get_region_local_state, make_new_region,
     mock_cluster::{new_put_cmd, new_request, FFIHelperSet},
     must_get_equal, must_get_none,
     node::NodeCluster,
     transport_simulate::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
-    Cluster, ProxyConfig, Simulator, TestPdClient,
+    write_kv_in_mem, Cluster, ProxyConfig, RegionStats, Simulator, TestPdClient,
 };
+pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
-pub use test_raftstore::new_peer;
+pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
+    box_err, box_try,
     config::{ReadableDuration, ReadableSize},
+    store::{find_peer, find_peer_by_id},
     time::Duration,
+    HandyRwLock,
 };
-
-// TODO Need refactor if moved to raft-engine
-pub fn get_region_local_state(
-    engine: &engine_rocks::RocksEngine,
-    region_id: u64,
-) -> RegionLocalState {
-    let region_state_key = keys::region_state_key(region_id);
-    let region_state = match engine.get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    region_state
-}
-
-// TODO Need refactor if moved to raft-engine
-pub fn get_apply_state(engine: &engine_rocks::RocksEngine, region_id: u64) -> RaftApplyState {
-    let apply_state_key = keys::apply_state_key(region_id);
-    let apply_state = match engine.get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key) {
-        Ok(Some(s)) => s,
-        _ => unreachable!(),
-    };
-    apply_state
-}
 
 pub fn new_compute_hash_request() -> AdminRequest {
     let mut req = AdminRequest::default();
@@ -82,54 +68,60 @@ pub struct States {
     pub in_memory_applied_term: u64,
     pub in_disk_apply_state: RaftApplyState,
     pub in_disk_region_state: RegionLocalState,
+    pub in_disk_raft_state: RaftLocalState,
     pub ident: StoreIdent,
 }
 
-pub fn iter_ffi_helpers(
-    cluster: &Cluster<NodeCluster>,
+pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
+    cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
 ) {
-    let ids = match store_ids {
-        Some(ids) => ids,
-        None => cluster.engines.keys().map(|e| *e).collect::<Vec<_>>(),
-    };
-    for id in ids {
-        let engine = cluster.get_engine(id);
-        let mut lock = cluster.ffi_helper_set.lock().unwrap();
-        let ffiset = lock.get_mut(&id).unwrap();
-        f(id, &engine, ffiset);
-    }
+    cluster.iter_ffi_helpers(store_ids, f);
 }
 
-pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> HashMap<u64, States> {
+pub fn maybe_collect_states(
+    cluster: &Cluster<NodeCluster>,
+    region_id: u64,
+    store_ids: Option<Vec<u64>>,
+) -> HashMap<u64, States> {
     let mut prev_state: HashMap<u64, States> = HashMap::default();
     iter_ffi_helpers(
         cluster,
-        None,
+        store_ids,
         &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
-            let region = server.kvstore.get(&region_id).unwrap();
-            let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
-                Ok(Some(i)) => (i),
-                _ => unreachable!(),
-            };
-            prev_state.insert(
-                id,
-                States {
-                    in_memory_apply_state: region.apply_state.clone(),
-                    in_memory_applied_term: region.applied_term,
-                    in_disk_apply_state: get_apply_state(&engine, region_id),
-                    in_disk_region_state: get_region_local_state(&engine, region_id),
-                    ident,
-                },
-            );
+            let raft_engine = &cluster.get_engines(id).raft;
+            if let Some(region) = server.kvstore.get(&region_id) {
+                let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
+                    Ok(Some(i)) => i,
+                    _ => unreachable!(),
+                };
+                prev_state.insert(
+                    id,
+                    States {
+                        in_memory_apply_state: region.apply_state.clone(),
+                        in_memory_applied_term: region.applied_term,
+                        in_disk_apply_state: get_apply_state(&engine, region_id).unwrap(),
+                        in_disk_region_state: get_region_local_state(&engine, region_id).unwrap(),
+                        in_disk_raft_state: get_raft_local_state(raft_engine, region_id).unwrap(),
+                        ident,
+                    },
+                );
+            }
         },
     );
     prev_state
 }
 
+pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> HashMap<u64, States> {
+    let prev_state = maybe_collect_states(cluster, region_id, None);
+    assert_eq!(prev_state.len(), cluster.engines.keys().len());
+    prev_state
+}
+
 pub fn new_mock_cluster(id: u64, count: usize) -> (Cluster<NodeCluster>, Arc<TestPdClient>) {
+    tikv_util::set_panic_hook(true, "./");
     let pd_client = Arc::new(TestPdClient::new(0, false));
     let sim = Arc::new(RwLock::new(NodeCluster::new(pd_client.clone())));
     let mut cluster = Cluster::new(id, count, sim, pd_client.clone(), ProxyConfig::default());
@@ -152,7 +144,8 @@ pub fn new_mock_cluster_snap(id: u64, count: usize) -> (Cluster<NodeCluster>, Ar
 }
 
 pub fn must_get_mem(
-    engine_store_server: &Box<new_mock_engine_store::EngineStoreServer>,
+    cluster: &Cluster<NodeCluster>,
+    node_id: u64,
     region_id: u64,
     key: &[u8],
     value: Option<&[u8]>,
@@ -160,27 +153,93 @@ pub fn must_get_mem(
     let last_res: Option<&Vec<u8>> = None;
     let cf = new_mock_engine_store::ffi_interfaces::ColumnFamilyType::Default;
     for _ in 1..300 {
-        let res = engine_store_server.get_mem(region_id, cf, &key.to_vec());
+        let mut ok = false;
+        {
+            iter_ffi_helpers(
+                &cluster,
+                Some(vec![node_id]),
+                &mut |_, _, ffi: &mut FFIHelperSet| {
+                    let server = &ffi.engine_store_server;
+                    let res = server.get_mem(region_id, cf, &key.to_vec());
+                    if let (Some(value), Some(last_res)) = (value, res) {
+                        assert_eq!(value, &last_res[..]);
+                        ok = true;
+                        return;
+                    }
+                    if value.is_none() && last_res.is_none() {
+                        ok = true;
+                        return;
+                    }
+                },
+            );
+        }
+        if ok {
+            return;
+        }
 
-        if let (Some(value), Some(last_res)) = (value, res) {
-            assert_eq!(value, &last_res[..]);
-            return;
-        }
-        if value.is_none() && last_res.is_none() {
-            return;
-        }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let s = std::str::from_utf8(key).unwrap_or("");
-    panic!(
+    let e = format!(
         "can't get mem value {:?} for key {}({}) in store {} cf {:?}, actual {:?}",
         value.map(tikv_util::escape),
         log_wrappers::hex_encode_upper(key),
         s,
-        engine_store_server.id,
+        node_id,
         cf,
         last_res,
-    )
+    );
+    error!("{}", e);
+    panic!("{}", e);
+}
+
+pub fn must_put_and_check_key_with_generator<F: Fn(u64) -> (String, String)>(
+    cluster: &mut Cluster<NodeCluster>,
+    gen: F,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    for i in from..to {
+        let (k, v) = gen(i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+    for i in from..to {
+        let (k, v) = gen(i);
+        check_key(
+            &cluster,
+            k.as_bytes(),
+            v.as_bytes(),
+            in_mem,
+            in_disk,
+            engines.clone(),
+        );
+    }
+}
+
+pub fn must_put_and_check_key(
+    cluster: &mut Cluster<NodeCluster>,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    must_put_and_check_key_with_generator(
+        cluster,
+        |i: u64| {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            (k, v)
+        },
+        from,
+        to,
+        in_mem,
+        in_disk,
+        engines.clone(),
+    );
 }
 
 pub fn check_key(
@@ -199,7 +258,7 @@ pub fn check_key(
         }
     };
     for id in engine_keys {
-        let engine = &cluster.get_engine(id);
+        let engine = cluster.get_engine(id);
 
         match in_disk {
             Some(b) => {
@@ -213,12 +272,10 @@ pub fn check_key(
         };
         match in_mem {
             Some(b) => {
-                let lock = cluster.ffi_helper_set.lock().unwrap();
-                let server = &lock.get(&id).unwrap().engine_store_server;
                 if b {
-                    must_get_mem(server, region_id, k, Some(v));
+                    must_get_mem(cluster, id, region_id, k, Some(v));
                 } else {
-                    must_get_mem(server, region_id, k, None);
+                    must_get_mem(cluster, id, region_id, k, None);
                 }
             }
             None => (),
@@ -281,8 +338,24 @@ pub fn check_apply_state(
 }
 
 pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
+    get_valid_compact_index_by(states, None)
+}
+
+pub fn get_valid_compact_index_by(
+    states: &HashMap<u64, States>,
+    use_nodes: Option<Vec<u64>>,
+) -> (u64, u64) {
+    let set = use_nodes.map_or(None, |nodes| {
+        Some(HashSet::from_iter(nodes.clone().into_iter()))
+    });
     states
         .iter()
+        .filter(|(k, _)| {
+            if let Some(ref s) = set {
+                return s.contains(k);
+            }
+            true
+        })
         .map(|(_, s)| {
             (
                 s.in_memory_apply_state.get_applied_index(),
@@ -302,104 +375,281 @@ pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
     cluster.cfg.raft_store.raft_log_gc_threshold = 10000;
 }
 
-#[test]
-fn test_kv_write() {
-    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
-
-    cluster.cfg.proxy_compat = false;
-    // No persist will be triggered by CompactLog
-    fail::cfg("no_persist_compact_log", "return").unwrap();
-    let _ = cluster.run();
-
-    cluster.must_put(b"k0", b"v0");
-    // check_key(&cluster, b"k0", b"v0", Some(false), Some(false), None);
-
-    // We can read initial raft state, since we don't persist meta either.
-    let r1 = cluster.get_region(b"k0").get_id();
-    let prev_states = collect_all_states(&mut cluster, r1);
-
-    for i in 1..10 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        cluster.must_put(k.as_bytes(), v.as_bytes());
+pub fn compare_states<F: Fn(&States, &States)>(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    f: F,
+) {
+    for i in prev_states.keys() {
+        let old = prev_states.get(i).unwrap();
+        let new = new_states.get(i).unwrap();
+        f(old, new);
     }
+}
 
-    // Since we disable all observers, we can get nothing in either memory and disk.
-    for i in 0..10 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
-    }
+pub fn must_unaltered_memory_apply_term(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(old.in_memory_applied_term, new.in_memory_applied_term);
+    };
+    compare_states(prev_states, new_states, f);
+}
 
-    let new_states = collect_all_states(&mut cluster, r1);
-    for id in cluster.engines.keys() {
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_memory_apply_state,
-            &new_states.get(id).unwrap().in_memory_apply_state
-        );
+pub fn must_altered_memory_apply_term(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(old.in_memory_applied_term, new.in_memory_applied_term);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_memory_apply_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(old.in_memory_apply_state, new.in_memory_apply_state);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_memory_apply_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(old.in_memory_apply_state, new.in_memory_apply_state);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_memory_apply_index(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    apply_index_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
         assert_eq!(
-            &prev_states.get(id).unwrap().in_disk_apply_state,
-            &new_states.get(id).unwrap().in_disk_apply_state
+            old.in_memory_apply_state.get_applied_index() + apply_index_advanced,
+            new.in_memory_apply_state.get_applied_index()
         );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_disk_apply_index(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    apply_index_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_disk_apply_state.get_applied_index() + apply_index_advanced,
+            new.in_disk_apply_state.get_applied_index()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_apply_index_advanced_diff(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+    memory_more_advanced: u64,
+) {
+    let f = |old: &States, new: &States| {
+        let gap = new.in_memory_apply_state.get_applied_index()
+            - old.in_memory_apply_state.get_applied_index();
+        let gap2 = new.in_disk_apply_state.get_applied_index()
+            - old.in_disk_apply_state.get_applied_index();
+        assert_eq!(gap, gap2 + memory_more_advanced);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_disk_apply_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(old.in_disk_apply_state, new.in_disk_apply_state);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_disk_apply_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(old.in_disk_apply_state, new.in_disk_apply_state);
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_memory_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(
+            old.in_memory_apply_state.get_truncated_state(),
+            new.in_memory_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_memory_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_memory_apply_state.get_truncated_state(),
+            new.in_memory_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_altered_disk_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_ne!(
+            old.in_disk_apply_state.get_truncated_state(),
+            new.in_disk_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+pub fn must_unaltered_disk_truncated_state(
+    prev_states: &HashMap<u64, States>,
+    new_states: &HashMap<u64, States>,
+) {
+    let f = |old: &States, new: &States| {
+        assert_eq!(
+            old.in_disk_apply_state.get_truncated_state(),
+            new.in_disk_apply_state.get_truncated_state()
+        );
+    };
+    compare_states(prev_states, new_states, f);
+}
+
+// Must wait until all nodes satisfy cond given by `pref`.
+pub fn must_wait_until_cond_states(
+    cluster: &Cluster<NodeCluster>,
+    region_id: u64,
+    prev_states: &HashMap<u64, States>,
+    pred: &dyn Fn(&States, &States) -> bool,
+) -> HashMap<u64, States> {
+    let mut retry = 0;
+    loop {
+        let new_states = collect_all_states(&cluster, region_id);
+        let mut ok = true;
+        for i in prev_states.keys() {
+            let old = prev_states.get(i).unwrap();
+            let new = new_states.get(i).unwrap();
+            if !pred(old, new) {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            break new_states;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        retry += 1;
+        if retry >= 30 {
+            panic!("states not as expect after timeout")
+        }
     }
+}
 
-    debug!("now CompactLog can persist");
-    fail::remove("no_persist_compact_log");
-
-    let prev_states = collect_all_states(&mut cluster, r1);
-    // Write more after we force persist when CompactLog.
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        cluster.must_put(k.as_bytes(), v.as_bytes());
+// Must wait until some node satisfy cond given by `pref`.
+pub fn must_wait_until_cond_node(
+    cluster: &Cluster<NodeCluster>,
+    region_id: u64,
+    store_ids: Option<Vec<u64>>,
+    pred: &dyn Fn(&States) -> bool,
+) -> HashMap<u64, States> {
+    let mut retry = 0;
+    loop {
+        let new_states = maybe_collect_states(&cluster, region_id, store_ids.clone());
+        if let Some(ref e) = store_ids {
+            assert_eq!(e.len(), new_states.len());
+        }
+        let mut ok = true;
+        for i in new_states.keys() {
+            let new = new_states.get(i).unwrap();
+            if !pred(new) {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            break new_states;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        retry += 1;
+        if retry >= 30 {
+            panic!("states not as expect after timeout")
+        }
     }
+}
 
-    // We can read from mock-store's memory, we are not sure if we can read from
-    // disk, since there may be or may not be a CompactLog.
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
-    }
+pub fn force_compact_log(
+    cluster: &mut Cluster<NodeCluster>,
+    key: &[u8],
+    use_nodes: Option<Vec<u64>>,
+) -> u64 {
+    let region = cluster.get_region(key);
+    let region_id = region.get_id();
+    let prev_states = maybe_collect_states(&cluster, region_id, None);
 
-    // Force a compact log to persist.
-    let region_r = cluster.get_region("k1".as_bytes());
-    let region_id = region_r.get_id();
-    let compact_log = test_raftstore::new_compact_log_request(100, 10);
-    let req =
-        test_raftstore::new_admin_request(region_id, region_r.get_region_epoch(), compact_log);
-    let res = cluster
+    let (compact_index, compact_term) = get_valid_compact_index_by(&prev_states, use_nodes);
+    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
+    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+    let _ = cluster
         .call_command_on_leader(req, Duration::from_secs(3))
         .unwrap();
-    assert!(res.get_header().has_error(), "{:?}", res);
+    return compact_index;
+}
 
-    for i in 20..30 {
-        let k = format!("k{}", i);
-        let v = format!("v{}", i);
-        check_key(
+pub fn stop_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
+    info!("stop node {}", node_id);
+    {
+        cluster.stop_node(node_id);
+    }
+    {
+        iter_ffi_helpers(
             &cluster,
-            k.as_bytes(),
-            v.as_bytes(),
-            Some(true),
-            Some(true),
-            None,
+            Some(vec![node_id]),
+            &mut |_, _, ffi: &mut FFIHelperSet| {
+                let server = &mut ffi.engine_store_server;
+                server.stop();
+            },
         );
     }
+}
 
-    let new_states = collect_all_states(&mut cluster, r1);
-
-    // apply_state is changed in memory, and persisted.
-    for id in cluster.engines.keys() {
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_memory_apply_state,
-            &new_states.get(id).unwrap().in_memory_apply_state
-        );
-        assert_ne!(
-            &prev_states.get(id).unwrap().in_disk_apply_state,
-            &new_states.get(id).unwrap().in_disk_apply_state
+pub fn restart_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
+    info!("restored node {}", node_id);
+    {
+        iter_ffi_helpers(
+            &cluster,
+            Some(vec![node_id]),
+            &mut |_, _, ffi: &mut FFIHelperSet| {
+                let server = &mut ffi.engine_store_server;
+                server.restore();
+            },
         );
     }
-
-    fail::remove("no_persist_compact_log");
-    cluster.shutdown();
+    cluster.run_node(node_id).unwrap();
 }

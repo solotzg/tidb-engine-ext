@@ -8,6 +8,7 @@ use kvproto::{
     metapb::Region,
     pdpb::CheckPolicy,
     raft_cmdpb::{ComputeHashRequest, RaftCmdRequest},
+    raft_serverpb::RaftMessage,
 };
 use protobuf::Message;
 use raft::eraftpb;
@@ -667,6 +668,23 @@ impl<E: KvEngine> CoprocessorHost<E> {
             }
         }
         true
+    }
+
+    pub fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
+        for observer in &self.registry.region_change_observers {
+            let observer = observer.observer.inner();
+            if observer.should_skip_raft_message(msg) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn on_peer_created(&self, region_id: u64) {
+        for observer in &self.registry.region_change_observers {
+            let observer = observer.observer.inner();
+            observer.on_peer_created(region_id)
+        }
     }
 
     pub fn on_flush_applied_cmd_batch(

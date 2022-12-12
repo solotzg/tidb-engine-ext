@@ -40,7 +40,7 @@ use tikv_util::{
     mpsc::bounded,
     slow_log,
     sys::thread::ThreadBuildWrapper,
-    time::{Limiter, SlowTimer},
+    time::{Instant, Limiter, SlowTimer},
     timer::SteadyTimer,
     warn,
     worker::{Runnable, RunnableWithTimer, ScheduleError, Scheduler},
@@ -154,6 +154,8 @@ pub enum Task {
     },
     RegisterMinTsEvent {
         leader_resolver: LeadershipResolver,
+        // The time at which the event actually occurred.
+        event_time: Instant,
     },
     // The result of ChangeCmd should be returned from CDC Endpoint to ensure
     // the downstream switches to Normal after the previous commands was sunk.
@@ -222,7 +224,9 @@ impl fmt::Debug for Task {
                 .field("observe_id", &observe_id)
                 .field("region_id", &region.get_id())
                 .finish(),
-            Task::RegisterMinTsEvent { .. } => de.field("type", &"register_min_ts").finish(),
+            Task::RegisterMinTsEvent { ref event_time, .. } => {
+                de.field("event_time", &event_time).finish()
+            }
             Task::InitDownstream {
                 ref region_id,
                 ref downstream_id,
@@ -447,13 +451,12 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Endpoint<T, E> {
             resolved_region_count: 0,
             unresolved_region_count: 0,
             sink_memory_quota,
-            // store_resolver,
             // Log the first resolved ts warning.
             warn_resolved_ts_repeat_count: WARN_RESOLVED_TS_COUNT_THRESHOLD,
             current_ts: TimeStamp::zero(),
             causal_ts_provider,
         };
-        ep.register_min_ts_event(leader_resolver);
+        ep.register_min_ts_event(leader_resolver, Instant::now());
         ep
     }
 
@@ -617,6 +620,7 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Endpoint<T, E> {
         let api_version = self.api_version;
         let downstream_id = downstream.get_id();
         let downstream_state = downstream.get_state();
+        let filter_loop = downstream.get_filter_loop();
 
         // Register must follow OpenConn, so the connection must be available.
         let conn = self.connections.get_mut(&conn_id).unwrap();
@@ -743,6 +747,7 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Endpoint<T, E> {
             build_resolver: is_new_delegate,
             ts_filter_ratio: self.config.incremental_scan_ts_filter_ratio,
             kv_api,
+            filter_loop,
         };
 
         let raft_router = self.raft_router.clone();
@@ -996,16 +1001,20 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Endpoint<T, E> {
         let _ = downstream.sink_event(resolved_ts_event, force_send);
     }
 
-    fn register_min_ts_event(&self, mut leader_resolver: LeadershipResolver) {
-        let timeout = self.timer.delay(self.config.min_ts_interval.0);
+    fn register_min_ts_event(&self, mut leader_resolver: LeadershipResolver, event_time: Instant) {
+        // Try to keep advance resolved ts every `min_ts_interval`, thus
+        // the actual wait interval = `min_ts_interval` - the last register min_ts event
+        // time.
+        let interval = self
+            .config
+            .min_ts_interval
+            .0
+            .checked_sub(event_time.saturating_elapsed());
+        let timeout = self.timer.delay(interval.unwrap_or_default());
         let pd_client = self.pd_client.clone();
         let scheduler = self.scheduler.clone();
         let raft_router = self.raft_router.clone();
-        let regions: Vec<u64> = self
-            .capture_regions
-            .iter()
-            .map(|(region_id, _)| *region_id)
-            .collect();
+        let regions: Vec<u64> = self.capture_regions.keys().copied().collect();
         let cm: ConcurrencyManager = self.concurrency_manager.clone();
         let hibernate_regions_compatible = self.config.hibernate_regions_compatible;
         let causal_ts_provider = self.causal_ts_provider.clone();
@@ -1043,7 +1052,10 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Endpoint<T, E> {
             defer!({
                 slow_log!(T slow_timer, "cdc resolve region leadership");
                 if let Ok(leader_resolver) = leader_resolver_rx.try_recv() {
-                    match scheduler.schedule(Task::RegisterMinTsEvent { leader_resolver }) {
+                    match scheduler.schedule(Task::RegisterMinTsEvent {
+                        leader_resolver,
+                        event_time: Instant::now(),
+                    }) {
                         Ok(_) | Err(ScheduleError::Stopped(_)) => (),
                         // Must schedule `RegisterMinTsEvent` event otherwise resolved ts can not
                         // advance normally.
@@ -1129,8 +1141,9 @@ impl<T: 'static + RaftStoreRouter<E>, E: KvEngine> Runnable for Endpoint<T, E> {
             } => self.on_multi_batch(multi, old_value_cb),
             Task::OpenConn { conn } => self.on_open_conn(conn),
             Task::RegisterMinTsEvent {
-                leader_resolver: store_resolver,
-            } => self.register_min_ts_event(store_resolver),
+                leader_resolver,
+                event_time,
+            } => self.register_min_ts_event(leader_resolver, event_time),
             Task::InitDownstream {
                 region_id,
                 downstream_id,
@@ -1384,7 +1397,10 @@ mod tests {
 
     #[test]
     fn test_api_version_check() {
-        let cfg = CdcConfig::default();
+        let mut cfg = CdcConfig::default();
+        // To make the case more stable.
+        cfg.min_ts_interval = ReadableDuration(Duration::from_secs(1));
+
         let mut suite = mock_endpoint(&cfg, None, ApiVersion::V1);
         suite.add_region(1, 100);
         let quota = crate::channel::MemoryQuota::new(usize::MAX);
@@ -1409,6 +1425,7 @@ mod tests {
             1,
             conn_id,
             ChangeDataRequestKvApi::RawKv,
+            false,
         );
         req.set_kv_api(ChangeDataRequestKvApi::RawKv);
         suite.run(Task::Register {
@@ -1444,6 +1461,7 @@ mod tests {
             2,
             conn_id,
             ChangeDataRequestKvApi::TxnKv,
+            false,
         );
         req.set_kv_api(ChangeDataRequestKvApi::TxnKv);
         suite.run(Task::Register {
@@ -1480,6 +1498,7 @@ mod tests {
             3,
             conn_id,
             ChangeDataRequestKvApi::TxnKv,
+            false,
         );
         req.set_kv_api(ChangeDataRequestKvApi::TxnKv);
         suite.run(Task::Register {
@@ -1524,7 +1543,7 @@ mod tests {
             }
             let diff = cfg.diff(&updated_cfg);
             ep.run(Task::ChangeConfig(diff));
-            assert_eq!(ep.config.min_ts_interval, ReadableDuration::secs(1));
+            assert_eq!(ep.config.min_ts_interval, ReadableDuration::millis(200));
             assert_eq!(ep.config.hibernate_regions_compatible, true);
 
             {
@@ -1658,6 +1677,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req,
@@ -1704,6 +1724,7 @@ mod tests {
             1,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         // Enable batch resolved ts in the test.
         let version = FeatureGate::batch_resolved_ts();
@@ -1726,6 +1747,7 @@ mod tests {
             2,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req.clone(),
@@ -1762,6 +1784,7 @@ mod tests {
             3,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req,
@@ -1806,6 +1829,7 @@ mod tests {
             1,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.add_local_reader(100);
         suite.run(Task::Register {
@@ -1837,6 +1861,7 @@ mod tests {
             1,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req,
@@ -1871,7 +1896,10 @@ mod tests {
         let mut suite =
             mock_endpoint_with_ts_provider(&cfg, None, ApiVersion::V2, Some(ts_provider.clone()));
         let leader_resolver = suite.leader_resolver.take().unwrap();
-        suite.run(Task::RegisterMinTsEvent { leader_resolver });
+        suite.run(Task::RegisterMinTsEvent {
+            leader_resolver,
+            event_time: Instant::now(),
+        });
         suite
             .task_rx
             .recv_timeout(Duration::from_millis(1500))
@@ -1909,6 +1937,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         downstream.get_state().store(DownstreamState::Normal);
         // Enable batch resolved ts in the test.
@@ -1945,6 +1974,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         downstream.get_state().store(DownstreamState::Normal);
         suite.add_region(2, 100);
@@ -1990,6 +2020,7 @@ mod tests {
             3,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         downstream.get_state().store(DownstreamState::Normal);
         suite.add_region(3, 100);
@@ -2060,6 +2091,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         let downstream_id = downstream.get_id();
         suite.run(Task::Register {
@@ -2102,6 +2134,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         let new_downstream_id = downstream.get_id();
         suite.run(Task::Register {
@@ -2153,6 +2186,7 @@ mod tests {
             0,
             conn_id,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req,
@@ -2207,6 +2241,7 @@ mod tests {
                     0,
                     conn_id,
                     ChangeDataRequestKvApi::TiDb,
+                    false,
                 );
                 downstream.get_state().store(DownstreamState::Normal);
                 suite.run(Task::Register {
@@ -2324,6 +2359,7 @@ mod tests {
             0,
             conn_id_a,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req.clone(),
@@ -2347,6 +2383,7 @@ mod tests {
             0,
             conn_id_b,
             ChangeDataRequestKvApi::TiDb,
+            false,
         );
         suite.run(Task::Register {
             request: req.clone(),

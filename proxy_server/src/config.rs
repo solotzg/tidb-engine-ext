@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, iter::FromIterator, path::Path};
 
+use engine_store_ffi::EngineStoreConfig;
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use itertools::Itertools;
 use online_config::OnlineConfig;
@@ -61,6 +62,7 @@ pub struct ServerConfig {
     pub advertise_addr: String,
     #[online_config(skip)]
     pub background_thread_count: usize,
+    pub status_thread_pool_size: usize,
 }
 
 impl Default for ServerConfig {
@@ -76,6 +78,7 @@ impl Default for ServerConfig {
             advertise_status_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
             advertise_addr: TIFLASH_DEFAULT_ADVERTISE_LISTENING_ADDR.to_string(),
             background_thread_count,
+            status_thread_pool_size: 2,
         }
     }
 }
@@ -115,11 +118,7 @@ pub fn memory_limit_for_cf(is_raft_db: bool, cf: &str, total_mem: u64) -> Readab
         _ => unreachable!(),
     };
     let mut size = (total_mem as f64 * ratio) as usize;
-    if size < min {
-        size = min;
-    } else if size > max {
-        size = max;
-    }
+    size = size.clamp(min, max);
     ReadableSize::mb(size as u64 / MIB)
 }
 
@@ -258,6 +257,9 @@ pub struct ProxyConfig {
 
     #[online_config(skip)]
     pub import: ImportConfig,
+
+    #[online_config(skip)]
+    pub engine_store: EngineStoreConfig,
 }
 
 /// We use custom default, in case of later non-ordinary config items.
@@ -273,6 +275,7 @@ impl Default for ProxyConfig {
             enable_io_snoop: false,
             readpool: ReadPoolConfig::default(),
             import: ImportConfig::default(),
+            engine_store: EngineStoreConfig::default(),
         }
     }
 }
@@ -395,6 +398,7 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
 
     config.server.background_thread_count = proxy_config.server.background_thread_count;
     config.import.num_threads = proxy_config.import.num_threads;
+    config.server.status_thread_pool_size = proxy_config.server.status_thread_pool_size;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {

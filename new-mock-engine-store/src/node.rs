@@ -138,11 +138,14 @@ impl Transport for ChannelTransport {
                 h.send_raft_msg(msg)?;
                 if is_snapshot {
                     // should report snapshot finish.
-                    let _ = core.routers[&from_store].report_snapshot_status(
-                        region_id,
-                        to_peer_id,
-                        SnapshotStatus::Finish,
-                    );
+                    match core.routers.get(&from_store) {
+                        Some(router) => router.report_snapshot_status(
+                            region_id,
+                            to_peer_id,
+                            SnapshotStatus::Finish,
+                        ),
+                        None => return Err(box_err!("Find no from_store {}", from_store)),
+                    };
                 }
                 Ok(())
             }
@@ -175,6 +178,8 @@ pub struct NodeCluster {
     post_create_coprocessor_host: Option<Box<dyn Fn(u64, &mut CoprocessorHost<TiFlashEngine>)>>,
     pub importer: Option<Arc<SstImporter>>,
 }
+
+impl std::panic::UnwindSafe for NodeCluster {}
 
 impl NodeCluster {
     pub fn new(pd_client: Arc<TestPdClient>) -> NodeCluster {
@@ -315,8 +320,12 @@ impl Simulator<TiFlashEngine> for NodeCluster {
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node_id,
             engines.kv.clone(),
+            engines.raft.clone(),
             importer.clone(),
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            simulate_trans.clone(),
+            snap_mgr.clone(),
+            cfg.proxy_cfg.engine_store.clone(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 
@@ -340,6 +349,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
         );
 
         node.try_bootstrap_store(engines.clone())?;
+
         node.start(
             engines.clone(),
             simulate_trans.clone(),

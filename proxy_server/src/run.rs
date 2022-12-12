@@ -27,8 +27,8 @@ use engine_rocks::{
 };
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
-    self, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-    RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine, ps_engine::PSEngine
+    self, ps_engine::PSEngine, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus,
+    RaftStoreProxy, RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
 };
 use engine_traits::{
     CfOptionsExt, Engines, FlowControlFactorsExt, KvEngine, MiscExt, RaftEngine, TabletFactory,
@@ -57,8 +57,8 @@ use raftstore::{
             RaftBatchSystem, RaftRouter, StoreMeta, MULTI_FILES_SNAPSHOT_FEATURE, PENDING_MSG_CAP,
         },
         memory::MEMTRACE_ROOT as MEMTRACE_RAFTSTORE,
-        AutoSplitController, CheckLeaderRunner, GlobalReplicationState, LocalReader, SnapManager,
-        SnapManagerBuilder, SplitCheckRunner, SplitConfigManager, StoreMetaDelegate,
+        AutoSplitController, CheckLeaderRunner, LocalReader, SnapManager, SnapManagerBuilder,
+        SplitCheckRunner, SplitConfigManager, StoreMetaDelegate,
     },
 };
 use security::SecurityManager;
@@ -333,7 +333,8 @@ pub unsafe fn run_tikv_proxy(
             )
         } else {
             run_impl::<PSEngine, API>(config, proxy_config, engine_store_server_helper)
-            // run_impl::<RaftLogEngine, API>(config, proxy_config, engine_store_server_helper)
+            // run_impl::<RaftLogEngine, API>(config, proxy_config,
+            // engine_store_server_helper)
         }
     })
 }
@@ -399,9 +400,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             &block_cache,
         );
         match raft_engine.as_ps_engine() {
-            None => {
-
-            }
+            None => {}
             Some(ps_engine) => {
                 ps_engine.init(engine_store_server_helper);
             }
@@ -477,8 +476,7 @@ struct TiKvServer<ER: RaftEngine> {
     flow_info_sender: Option<mpsc::Sender<FlowInfo>>,
     flow_info_receiver: Option<mpsc::Receiver<FlowInfo>>,
     system: Option<RaftBatchSystem<TiFlashEngine, ER>>,
-    resolver: resolve::PdStoreAddrResolver,
-    state: Arc<Mutex<GlobalReplicationState>>,
+    resolver: Option<resolve::PdStoreAddrResolver>,
     store_path: PathBuf,
     snap_mgr: Option<SnapManager>, // Will be filled in `init_servers`.
     encryption_key_manager: Option<Arc<DataKeyManager>>,
@@ -509,8 +507,7 @@ struct Servers<EK: KvEngine, ER: RaftEngine> {
     importer: Arc<SstImporter>,
 }
 
-type LocalServer<EK, ER> =
-    Server<RaftRouter<EK, ER>, resolve::PdStoreAddrResolver, LocalRaftKv<EK, ER>>;
+type LocalServer<EK, ER> = Server<resolve::PdStoreAddrResolver, LocalRaftKv<EK, ER>>;
 type LocalRaftKv<EK, ER> = RaftKv<EK, ServerRaftStoreRouter<EK, ER>>;
 
 impl<ER: RaftEngine> TiKvServer<ER> {
@@ -550,8 +547,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         let background_worker = WorkerBuilder::new("background")
             .thread_count(thread_count)
             .create();
-        let (resolver, state) =
-            resolve::new_resolver(Arc::clone(&pd_client), &background_worker, router.clone());
 
         let mut coprocessor_host = Some(CoprocessorHost::new(
             router.clone(),
@@ -584,8 +579,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             pd_client,
             router,
             system: Some(system),
-            resolver,
-            state,
+            resolver: None,
             store_path,
             snap_mgr: None,
             encryption_key_manager: None,
@@ -831,14 +825,10 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
     fn init_gc_worker(
         &mut self,
-    ) -> GcWorker<
-        RaftKv<TiFlashEngine, ServerRaftStoreRouter<TiFlashEngine, ER>>,
-        RaftRouter<TiFlashEngine, ER>,
-    > {
+    ) -> GcWorker<RaftKv<TiFlashEngine, ServerRaftStoreRouter<TiFlashEngine, ER>>> {
         let engines = self.engines.as_ref().unwrap();
         let gc_worker = GcWorker::new(
             engines.engine.clone(),
-            self.router.clone(),
             self.flow_info_sender.take().unwrap(),
             self.config.gc.clone(),
             self.pd_client.feature_gate().clone(),
@@ -1009,6 +999,13 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             )),
         );
 
+        let (resolver, state) = resolve::new_resolver(
+            self.pd_client.clone(),
+            &self.background_worker,
+            storage.get_engine().raft_extension().clone(),
+        );
+        self.resolver = Some(resolver);
+
         ReplicaReadLockChecker::new(self.concurrency_manager.clone())
             .register(self.coprocessor_host.as_mut().unwrap());
 
@@ -1146,7 +1143,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             raft_store.clone(),
             self.config.storage.api_version(),
             self.pd_client.clone(),
-            self.state.clone(),
+            state,
             self.background_worker.clone(),
             Some(health_service.clone()),
             Some(default_store),
@@ -1182,14 +1179,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         }
         let importer = Arc::new(importer);
 
-        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
-            node.id(),
-            self.engines.as_ref().unwrap().engines.kv.clone(),
-            importer.clone(),
-            self.proxy_config.raft_store.snap_handle_pool_size,
-        );
-        tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
-
         let check_leader_runner = CheckLeaderRunner::new(
             engines.store_meta.clone(),
             self.coprocessor_host.clone().unwrap(),
@@ -1213,8 +1202,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 Arc::clone(&self.quota_limiter),
             ),
             coprocessor_v2::Endpoint::new(&self.config.coprocessor_v2),
-            self.router.clone(),
-            self.resolver.clone(),
+            self.resolver.clone().unwrap(),
             snap_mgr.clone(),
             gc_worker.clone(),
             check_leader_scheduler,
@@ -1224,6 +1212,19 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             health_service,
         )
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
+
+        let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
+            node.id(),
+            self.engines.as_ref().unwrap().engines.kv.clone(),
+            self.engines.as_ref().unwrap().engines.raft.clone(),
+            importer.clone(),
+            self.proxy_config.raft_store.snap_handle_pool_size,
+            server.transport().clone(),
+            snap_mgr.clone(),
+            self.proxy_config.engine_store.clone(),
+        );
+        tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
+
         cfg_controller.register(
             tikv::config::Module::Server,
             Box::new(ServerConfigManager::new(
@@ -1370,7 +1371,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 raft: engines.engines.raft.clone(),
             },
             servers.server.get_debug_thread_pool().clone(),
-            self.router.clone(),
+            engines.engine.raft_extension().clone(),
             self.cfg_controller.as_ref().unwrap().clone(),
         );
         if servers
@@ -1723,7 +1724,7 @@ impl ConfiguredRaftEngine for PSEngine {
         env: &Arc<Env>,
         key_manager: &Option<Arc<DataKeyManager>>,
         block_cache: &Option<Cache>,
-    )-> Self {
+    ) -> Self {
         PSEngine::new()
     }
 

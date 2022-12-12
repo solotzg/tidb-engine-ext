@@ -6,9 +6,9 @@ pub mod interfaces;
 
 mod lock_cf_reader;
 pub mod observer;
+pub mod ps_engine;
 mod read_index_helper;
 mod utils;
-pub mod ps_engine;
 
 use std::{
     cell::RefCell,
@@ -32,11 +32,11 @@ use protobuf::Message;
 pub use read_index_helper::ReadIndexClient;
 
 pub use self::interfaces::root::DB::{
-    BaseBuffView, ColumnFamilyType, CppStrVecView, EngineStoreApplyRes, EngineStoreServerHelper,
-    EngineStoreServerStatus, FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus,
-    KVGetStatus, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
+    BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, EngineStoreApplyRes,
+    EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
+    FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus, PageWithView,
+    PageWithViewVec, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
-    CppStrWithView, CppStrWithViewVec, PageWithView, PageWithViewVec,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
@@ -996,6 +996,7 @@ impl EngineStoreServerHelper {
     // of (index,term) before post_exec. DO NOT use it other than CompactLog.
     // Use (0,0) instead.
     #[allow(clippy::collapsible_else_if)]
+    #[allow(clippy::bool_to_int_with_if)]
     pub fn try_flush_data(
         &self,
         region_id: u64,
@@ -1021,119 +1022,49 @@ impl EngineStoreServerHelper {
         }
     }
 
-    pub fn create_write_batch(
-        &self,
-    ) -> RawCppPtr {
+    pub fn create_write_batch(&self) -> RawCppPtr {
         debug_assert!(self.fn_create_write_batch.is_some());
-        unsafe {
-            (self.fn_create_write_batch.into_inner())()
-        }
+        unsafe { (self.fn_create_write_batch.into_inner())() }
     }
 
-    pub fn write_batch_put_page(
-        &self,
-        wb: RawVoidPtr,
-        page_id: BaseBuffView,
-        page: BaseBuffView,
-    ) {
+    pub fn write_batch_put_page(&self, wb: RawVoidPtr, page_id: BaseBuffView, page: BaseBuffView) {
         debug_assert!(self.fn_write_batch_put_page.is_some());
-        unsafe {
-            (self.fn_write_batch_put_page.into_inner())(
-                wb,
-                page_id,
-                page,
-            )
-        }
+        unsafe { (self.fn_write_batch_put_page.into_inner())(wb, page_id, page) }
     }
 
-    pub fn write_batch_del_page(
-        &self,
-        wb: RawVoidPtr,
-        page_id: BaseBuffView,
-    ) {
+    pub fn write_batch_del_page(&self, wb: RawVoidPtr, page_id: BaseBuffView) {
         debug_assert!(self.fn_write_batch_del_page.is_some());
-        unsafe {
-            (self.fn_write_batch_del_page.into_inner())(
-                wb,
-                page_id,
-            )
-        }
+        unsafe { (self.fn_write_batch_del_page.into_inner())(wb, page_id) }
     }
 
-    pub fn write_batch_size(
-        &self,
-        wb: RawVoidPtr,
-    ) -> u64 {
+    pub fn write_batch_size(&self, wb: RawVoidPtr) -> u64 {
         debug_assert!(self.fn_write_batch_size.is_some());
-        unsafe {
-            (self.fn_write_batch_size.into_inner())(
-                wb,
-            )
-        }
+        unsafe { (self.fn_write_batch_size.into_inner())(wb) }
     }
 
-    pub fn write_batch_is_empty(
-        &self,
-        wb: RawVoidPtr,
-    ) -> u8 {
+    pub fn write_batch_is_empty(&self, wb: RawVoidPtr) -> u8 {
         debug_assert!(self.fn_write_batch_is_empty.is_some());
-        unsafe {
-            (self.fn_write_batch_is_empty.into_inner())(
-                wb,
-            )
-        }
+        unsafe { (self.fn_write_batch_is_empty.into_inner())(wb) }
     }
 
-    pub fn write_batch_merge(
-        &self,
-        lwb: RawVoidPtr,
-        rwb: RawVoidPtr,
-    ) {
+    pub fn write_batch_merge(&self, lwb: RawVoidPtr, rwb: RawVoidPtr) {
         debug_assert!(self.fn_write_batch_merge.is_some());
-        unsafe {
-            (self.fn_write_batch_merge.into_inner())(
-                lwb,
-                rwb,
-            )
-        }
+        unsafe { (self.fn_write_batch_merge.into_inner())(lwb, rwb) }
     }
 
-    pub fn write_batch_clear(
-        &self,
-        wb: RawVoidPtr,
-    ) {
+    pub fn write_batch_clear(&self, wb: RawVoidPtr) {
         debug_assert!(self.fn_write_batch_clear.is_some());
-        unsafe {
-            (self.fn_write_batch_clear.into_inner())(
-                wb,
-            )
-        }
+        unsafe { (self.fn_write_batch_clear.into_inner())(wb) }
     }
 
-    pub fn consume_write_batch(
-        &self,
-        wb: RawVoidPtr,
-    ) {
+    pub fn consume_write_batch(&self, wb: RawVoidPtr) {
         debug_assert!(self.fn_consume_write_batch.is_some());
-        unsafe {
-            (self.fn_consume_write_batch.into_inner())(
-                self.inner,
-                wb,
-            )
-        }
+        unsafe { (self.fn_consume_write_batch.into_inner())(self.inner, wb) }
     }
 
-    pub fn read_page(
-        &self,
-        page_id: BaseBuffView,
-    ) -> PageWithView {
+    pub fn read_page(&self, page_id: BaseBuffView) -> PageWithView {
         debug_assert!(self.fn_handle_read_page.is_some());
-        unsafe {
-            (self.fn_handle_read_page.into_inner())(
-                self.inner,
-                page_id,
-            )
-        }
+        unsafe { (self.fn_handle_read_page.into_inner())(self.inner, page_id) }
     }
 
     pub fn scan_page(
@@ -1142,62 +1073,27 @@ impl EngineStoreServerHelper {
         end_page_id: BaseBuffView,
     ) -> PageWithViewVec {
         debug_assert!(self.fn_handle_scan_page.is_some());
-        unsafe {
-            (self.fn_handle_scan_page.into_inner())(
-                self.inner,
-                start_page_id,
-                end_page_id,
-            )
-        }
+        unsafe { (self.fn_handle_scan_page.into_inner())(self.inner, start_page_id, end_page_id) }
     }
 
-    pub fn gc_page_with_view_vec(
-        &self,
-        arg1: * mut PageWithView,
-        arg2: u64,
-    ) {
+    pub fn gc_page_with_view_vec(&self, arg1: *mut PageWithView, arg2: u64) {
         debug_assert!(self.fn_gc_page_with_view_vec.is_some());
-        unsafe {
-            (self.fn_gc_page_with_view_vec.into_inner())(
-                arg1,
-                arg2,
-            )
-        }
+        unsafe { (self.fn_gc_page_with_view_vec.into_inner())(arg1, arg2) }
     }
 
-    pub fn purge_pagestorage(
-        &self,
-    ) {
+    pub fn purge_pagestorage(&self) {
         debug_assert!(self.fn_handle_purge_pagestorage.is_some());
-        unsafe {
-            (self.fn_handle_purge_pagestorage.into_inner())(
-                self.inner,
-            )
-        }
+        unsafe { (self.fn_handle_purge_pagestorage.into_inner())(self.inner) }
     }
 
-    pub fn seek_ps_key(
-        &self,
-        page_id: BaseBuffView,
-    ) -> CppStrWithView {
+    pub fn seek_ps_key(&self, page_id: BaseBuffView) -> CppStrWithView {
         debug_assert!(self.fn_handle_seek_ps_key.is_some());
-        unsafe {
-            (self.fn_handle_seek_ps_key.into_inner())(
-                self.inner,
-                page_id,
-            )
-        }
+        unsafe { (self.fn_handle_seek_ps_key.into_inner())(self.inner, page_id) }
     }
 
-    pub fn is_ps_empty(
-        &self,
-    ) -> u8 {
-        debug_assert!(self.fn_is_ps_empty.is_some());
-        unsafe {
-            (self.fn_is_ps_empty.into_inner())(
-                self.inner,
-            )
-        }
+    pub fn is_ps_empty(&self) -> u8 {
+        debug_assert!(self.fn_ps_is_empty.is_some());
+        unsafe { (self.fn_ps_is_empty.into_inner())(self.inner) }
     }
 
     pub fn pre_handle_snapshot(
@@ -1257,7 +1153,10 @@ impl EngineStoreServerHelper {
         }
     }
 
-    fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
+    // Generate a cpp string, so the other side can read.
+    // The string is owned by the otherside, and will be deleted by
+    // `gc_raw_cpp_ptr`.
+    pub fn gen_cpp_string(&self, buff: &[u8]) -> RawCppStringPtr {
         debug_assert!(self.fn_gen_cpp_string.is_some());
         unsafe { (self.fn_gen_cpp_string.into_inner())(buff.into()).into_raw() as RawCppStringPtr }
     }
@@ -1349,6 +1248,11 @@ impl EngineStoreServerHelper {
             )
         }
     }
+
+    pub fn fast_add_peer(&self, region_id: u64, new_peer_id: u64) -> FastAddPeerRes {
+        debug_assert!(self.fn_fast_add_peer.is_some());
+        unsafe { (self.fn_fast_add_peer.into_inner())(self.inner, region_id, new_peer_id) }
+    }
 }
 
 #[allow(clippy::clone_on_copy)]
@@ -1423,6 +1327,7 @@ pub extern "C" fn ffi_make_timer_task(millis: u64) -> RawRustPtr {
     }
 }
 
+#[allow(clippy::bool_to_int_with_if)]
 pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoidPtr) -> u8 {
     let task = &mut *(task_ptr as *mut utils::TimerTask);
     let waker = if waker.is_null() {
@@ -1434,5 +1339,22 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
         1
     } else {
         0
+    }
+}
+
+use serde_derive::{Deserialize, Serialize};
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+#[serde(rename_all = "kebab-case")]
+pub struct EngineStoreConfig {
+    pub enable_fast_add_peer: bool,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for EngineStoreConfig {
+    fn default() -> Self {
+        Self {
+            enable_fast_add_peer: false,
+        }
     }
 }
