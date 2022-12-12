@@ -7,8 +7,13 @@
 #[macro_use]
 extern crate slog_global;
 
+mod config;
+mod fast_add_peer;
 mod flashback;
 mod normal;
 mod proxy;
+mod region;
 mod server_cluster_test;
+mod snapshot;
 mod util;
+mod write;

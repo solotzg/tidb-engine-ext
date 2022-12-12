@@ -36,7 +36,7 @@ use kvproto::{
     metapb::{self, Region, RegionEpoch},
     pdpb::{self, QueryStats, StoreStats},
     raft_cmdpb::{AdminCmdType, AdminRequest},
-    raft_serverpb::{ExtraMessageType, PeerState, RaftMessage, RegionLocalState},
+    raft_serverpb::{ExtraMessage, ExtraMessageType, PeerState, RaftMessage, RegionLocalState},
     replication_modepb::{ReplicationMode, ReplicationStatus},
 };
 use pd_client::{Feature, FeatureGate, PdClient};
@@ -53,7 +53,7 @@ use tikv_util::{
     info, is_zero_duration,
     mpsc::{self, LooseBoundedSender, Receiver},
     slow_log,
-    store::find_peer,
+    store::{find_peer, region_on_stores},
     sys as sys_util,
     sys::disk::{get_disk_status, DiskUsage},
     time::{duration_to_sec, Instant as TiInstant},
@@ -72,6 +72,7 @@ use crate::{
     },
     store::{
         async_io::{
+            read::{ReadRunner, ReadTask},
             write::{StoreWriters, Worker as WriteWorker, WriteMsg},
             write_router::WriteSenders,
         },
@@ -95,9 +96,9 @@ use crate::{
         worker::{
             AutoSplitController, CleanupRunner, CleanupSstRunner, CleanupSstTask, CleanupTask,
             CompactRunner, CompactTask, ConsistencyCheckRunner, ConsistencyCheckTask,
-            GcSnapshotRunner, GcSnapshotTask, PdRunner, RaftlogFetchRunner, RaftlogFetchTask,
-            RaftlogGcRunner, RaftlogGcTask, ReadDelegate, RefreshConfigRunner, RefreshConfigTask,
-            RegionRunner, RegionTask, SplitCheckTask,
+            GcSnapshotRunner, GcSnapshotTask, PdRunner, RaftlogGcRunner, RaftlogGcTask,
+            ReadDelegate, RefreshConfigRunner, RefreshConfigTask, RegionRunner, RegionTask,
+            SplitCheckTask,
         },
         Callback, CasualMessage, GlobalReplicationState, InspectedRaftMessage, MergeResultKind,
         PdTask, PeerMsg, PeerTick, RaftCommand, SignificantMsg, SnapManager, StoreMsg, StoreTick,
@@ -474,7 +475,7 @@ where
     // handle Compact, CleanupSst task
     pub cleanup_scheduler: Scheduler<CleanupTask>,
     pub raftlog_gc_scheduler: Scheduler<RaftlogGcTask>,
-    pub raftlog_fetch_scheduler: Scheduler<RaftlogFetchTask>,
+    pub raftlog_fetch_scheduler: Scheduler<ReadTask<EK>>,
     pub region_scheduler: Scheduler<RegionTask<EK::Snapshot>>,
     pub apply_router: ApplyRouter<EK>,
     pub router: RaftRouter<EK, ER>,
@@ -684,7 +685,7 @@ impl<'a, EK: KvEngine + 'static, ER: RaftEngine + 'static, T: Transport>
     StoreFsmDelegate<'a, EK, ER, T>
 {
     fn on_tick(&mut self, tick: StoreTick) {
-        let t = TiInstant::now_coarse();
+        let timer = TiInstant::now_coarse();
         match tick {
             StoreTick::PdStoreHeartbeat => self.on_pd_store_heartbeat_tick(),
             StoreTick::SnapGc => self.on_snap_mgr_gc(),
@@ -693,10 +694,12 @@ impl<'a, EK: KvEngine + 'static, ER: RaftEngine + 'static, T: Transport>
             StoreTick::ConsistencyCheck => self.on_consistency_check_tick(),
             StoreTick::CleanupImportSst => self.on_cleanup_import_sst_tick(),
         }
-        let elapsed = t.saturating_elapsed();
-        RAFT_EVENT_DURATION
+        let elapsed = timer.saturating_elapsed();
+        self.ctx
+            .raft_metrics
+            .event_time
             .get(tick.tag())
-            .observe(duration_to_sec(elapsed) as f64);
+            .observe(duration_to_sec(elapsed));
         slow_log!(
             elapsed,
             "[store {}] handle timeout {:?}",
@@ -706,10 +709,14 @@ impl<'a, EK: KvEngine + 'static, ER: RaftEngine + 'static, T: Transport>
     }
 
     fn handle_msgs(&mut self, msgs: &mut Vec<StoreMsg<EK>>) {
+        let timer = TiInstant::now_coarse();
         for m in msgs.drain(..) {
             match m {
                 StoreMsg::Tick(tick) => self.on_tick(tick),
                 StoreMsg::RaftMessage(msg) => {
+                    if self.ctx.coprocessor_host.should_skip_raft_message(&msg.msg) {
+                        continue;
+                    }
                     if let Err(e) = self.on_raft_message(msg) {
                         if matches!(&e, Error::RegionNotRegistered { .. }) {
                             // This may happen in normal cases when add-peer runs slowly
@@ -754,8 +761,16 @@ impl<'a, EK: KvEngine + 'static, ER: RaftEngine + 'static, T: Transport>
                     drop(syncer);
                 }
                 StoreMsg::GcSnapshotFinish => self.register_snap_mgr_gc_tick(),
+                StoreMsg::AwakenRegions { abnormal_stores } => {
+                    self.on_wake_up_regions(abnormal_stores);
+                }
             }
         }
+        self.ctx
+            .raft_metrics
+            .event_time
+            .store_msg
+            .observe(duration_to_sec(timer.saturating_elapsed()));
     }
 
     fn start(&mut self, store: metapb::Store) {
@@ -1081,7 +1096,7 @@ pub struct RaftPollerBuilder<EK: KvEngine, ER: RaftEngine, T> {
     split_check_scheduler: Scheduler<SplitCheckTask>,
     cleanup_scheduler: Scheduler<CleanupTask>,
     raftlog_gc_scheduler: Scheduler<RaftlogGcTask>,
-    raftlog_fetch_scheduler: Scheduler<RaftlogFetchTask>,
+    raftlog_fetch_scheduler: Scheduler<ReadTask<EK>>,
     pub region_scheduler: Scheduler<RegionTask<EK::Snapshot>>,
     apply_router: ApplyRouter<EK>,
     pub router: RaftRouter<EK, ER>,
@@ -1531,7 +1546,7 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
 
         let raftlog_fetch_scheduler = workers.raftlog_fetch_worker.start(
             "raftlog-fetch-worker",
-            RaftlogFetchRunner::new(self.router.clone(), engines.raft.clone()),
+            ReadRunner::new(self.router.clone(), engines.raft.clone()),
         );
 
         let compact_runner = CompactRunner::new(engines.kv.clone());
@@ -2215,6 +2230,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             target.clone(),
         )?;
 
+        self.ctx.coprocessor_host.on_peer_created(region_id);
+
         // WARNING: The checking code must be above this line.
         // Now all checking passed
 
@@ -2438,11 +2455,11 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         );
         stats.set_query_stats(query_stats);
 
-        let store_info = StoreInfo {
+        let store_info = Some(StoreInfo {
             kv_engine: self.ctx.engines.kv.clone(),
             raft_engine: self.ctx.engines.raft.clone(),
             capacity: self.ctx.cfg.capacity.0,
-        };
+        });
 
         let task = PdTask::StoreHeartbeat {
             stats,
@@ -2523,6 +2540,45 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         }
 
         self.register_compact_lock_cf_tick();
+    }
+
+    fn on_wake_up_regions(&self, abnormal_stores: Vec<u64>) {
+        info!("try to wake up all hibernated regions in this store";
+            "to_all" => abnormal_stores.is_empty());
+        let meta = self.ctx.store_meta.lock().unwrap();
+        for region_id in meta.regions.keys() {
+            let region = &meta.regions[region_id];
+            // Check whether the current region is not found on abnormal stores. If so,
+            // this region is not the target to be awaken.
+            if !region_on_stores(region, &abnormal_stores) {
+                continue;
+            }
+            let peer = {
+                match find_peer(region, self.ctx.store_id()) {
+                    None => continue,
+                    Some(p) => p.clone(),
+                }
+            };
+            {
+                // Send MsgRegionWakeUp to Peer for awakening hibernated regions.
+                let mut message = RaftMessage::default();
+                message.set_region_id(*region_id);
+                message.set_from_peer(peer.clone());
+                message.set_to_peer(peer);
+                message.set_region_epoch(region.get_region_epoch().clone());
+                let mut msg = ExtraMessage::default();
+                msg.set_type(ExtraMessageType::MsgRegionWakeUp);
+                msg.forcely_awaken = true;
+                message.set_extra_msg(msg);
+                if let Err(e) = self.ctx.router.send_raft_message(message) {
+                    error!(
+                        "send awaken region message failed";
+                        "region_id" => region_id,
+                        "err" => ?e
+                    );
+                }
+            }
+        }
     }
 
     fn register_pd_store_heartbeat_tick(&self) {

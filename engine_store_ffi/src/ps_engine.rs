@@ -3,32 +3,27 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{fmt, slice};
-
 use std::{
-    fmt::{Formatter, Debug},
-    mem,
+    fmt,
+    fmt::{Debug, Formatter},
+    mem, slice,
 };
 
+use byteorder::{BigEndian, ByteOrder};
 use engine_traits::{
-    Error,
-    RaftEngine, RaftEngineDebug, RaftEngineReadOnly, RaftLogBatch, Result, RaftLogGcTask,
-    PerfContext, PerfContextExt, PerfContextKind, PerfLevel,
+    Error, PerfContext, PerfContextExt, PerfContextKind, PerfLevel, RaftEngine, RaftEngineDebug,
+    RaftEngineReadOnly, RaftLogBatch, RaftLogGcTask, Result,
 };
-
-use tracker::TrackerToken;
-
-use protobuf::Message;
-use raft::eraftpb::Entry;
 use kvproto::{
     metapb::Region,
     raft_serverpb::{
         RaftApplyState, RaftLocalState, RegionLocalState, StoreIdent, StoreRecoverState,
     },
 };
-
-use byteorder::{BigEndian, ByteOrder};
-use tikv_util::{info, box_err, box_try};
+use protobuf::Message;
+use raft::eraftpb::Entry;
+use tikv_util::{box_err, box_try, info};
+use tracker::TrackerToken;
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
 
@@ -95,7 +90,10 @@ impl PSEngineWriteBatch {
     pub fn new(engine_store_server_helper: isize) -> PSEngineWriteBatch {
         let helper = gen_engine_store_server_helper(engine_store_server_helper);
         let raw_write_batch = helper.create_write_batch();
-        PSEngineWriteBatch { engine_store_server_helper, raw_write_batch }
+        PSEngineWriteBatch {
+            engine_store_server_helper,
+            raw_write_batch,
+        }
     }
 
     fn put_page(&mut self, page_id: &[u8], value: &[u8]) -> Result<()> {
@@ -150,9 +148,9 @@ impl RaftLogBatch for PSEngineWriteBatch {
     }
 
     fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
-        // This function is used to clean entries that will be overwritten later.
-        // TODO: make sure overlapped entries will be overwritten by newer log.
-        // for index in from..to {
+        // This function is used to clean entries that will be overwritten
+        // later. TODO: make sure overlapped entries will be overwritten
+        // by newer log. for index in from..to {
         //     let key = ps_raft_log_key(raft_group_id, index);
         //     self.del_page(&key).unwrap();
         // }
@@ -216,20 +214,16 @@ impl std::fmt::Debug for PSEngine {
 
 impl PSEngine {
     pub fn new() -> Self {
-        PSEngine { engine_store_server_helper: 0 }
+        PSEngine {
+            engine_store_server_helper: 0,
+        }
     }
 
-    pub fn init(
-        &mut self,
-        engine_store_server_helper: isize,
-    ) {
+    pub fn init(&mut self, engine_store_server_helper: isize) {
         self.engine_store_server_helper = engine_store_server_helper;
     }
 
-    fn get_msg_cf<M: protobuf::Message + Default>(
-        &self,
-        page_id: &[u8],
-    ) -> Result<Option<M>> {
+    fn get_msg_cf<M: protobuf::Message + Default>(&self, page_id: &[u8]) -> Result<Option<M>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
         let value = helper.read_page(page_id.into());
         if value.view.len == 0 {
@@ -237,21 +231,20 @@ impl PSEngine {
         }
 
         let mut m = M::default();
-        m.merge_from_bytes(unsafe { slice::from_raw_parts(value.view.data as *const u8, value.view.len as usize) })?;
+        m.merge_from_bytes(unsafe {
+            slice::from_raw_parts(value.view.data as *const u8, value.view.len as usize)
+        })?;
         Ok(Some(m))
     }
 
-    fn get_value(
-        &self,
-        page_id: &[u8],
-    ) -> Option<Vec<u8>> {
+    fn get_value(&self, page_id: &[u8]) -> Option<Vec<u8>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
         let value = helper.read_page(page_id.into());
         return if value.view.len == 0 {
             None
         } else {
             Some(value.view.to_slice().to_vec())
-        }
+        };
     }
 
     // Seek the first key >= given key, if not found, return None.
@@ -268,15 +261,13 @@ impl PSEngine {
     /// scan the key between start_key(inclusive) and end_key(exclusive),
     /// the upper bound is omitted if end_key is empty
     fn scan<F>(&self, start_key: &[u8], end_key: &[u8], mut f: F) -> Result<()>
-        where
-            F: FnMut(&[u8], &[u8]) -> Result<bool>,
+    where
+        F: FnMut(&[u8], &[u8]) -> Result<bool>,
     {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
         let values = helper.scan_page(start_key.into(), end_key.into());
         for i in 0..values.len {
-            let value = unsafe {
-                &*values.inner.offset(i as isize)
-            };
+            let value = unsafe { &*values.inner.offset(i as isize) };
             if value.view.len != 0 {
                 if !f(&[], &value.view.to_slice().to_vec())? {
                     break;
@@ -290,9 +281,12 @@ impl PSEngine {
         if from == 0 {
             let start_key = keys::raft_log_key(raft_group_id, 0);
             let prefix = keys::raft_log_prefix(raft_group_id);
-            // TODO: make sure the seek can skip other raft related key and to the first log key
+            // TODO: make sure the seek can skip other raft related key and to the first log
+            // key
             match self.seek(&start_key) {
-                Some(target_key) if target_key.starts_with(&prefix) => from = box_try!(keys::raft_log_index(&target_key)),
+                Some(target_key) if target_key.starts_with(&prefix) => {
+                    from = box_try!(keys::raft_log_index(&target_key))
+                }
                 // No need to gc.
                 _ => return Ok(0),
             }
@@ -343,18 +337,14 @@ impl RaftEngineReadOnly for PSEngine {
 
         let mut count = 1;
 
-        self.scan(
-            &start_key,
-            &end_key,
-            |_, page| {
-                let mut entry = Entry::default();
-                entry.merge_from_bytes(page)?;
-                buf.push(entry);
-                total_size += page.len();
-                count += 1;
-                Ok(total_size < max_size)
-            },
-        )?;
+        self.scan(&start_key, &end_key, |_, page| {
+            let mut entry = Entry::default();
+            entry.merge_from_bytes(page)?;
+            buf.push(entry);
+            total_size += page.len();
+            count += 1;
+            Ok(total_size < max_size)
+        })?;
 
         return Ok(count);
     }
@@ -362,16 +352,12 @@ impl RaftEngineReadOnly for PSEngine {
     fn get_all_entries_to(&self, region_id: u64, buf: &mut Vec<Entry>) -> Result<()> {
         let start_key = keys::raft_log_key(region_id, 0);
         let end_key = keys::raft_log_key(region_id, u64::MAX);
-        self.scan(
-            &start_key,
-            &end_key,
-            |_, page| {
-                let mut entry = Entry::default();
-                entry.merge_from_bytes(page)?;
-                buf.push(entry);
-                Ok(true)
-            },
-        )?;
+        self.scan(&start_key, &end_key, |_, page| {
+            let mut entry = Entry::default();
+            entry.merge_from_bytes(page)?;
+            buf.push(entry);
+            Ok(true)
+        })?;
         Ok(())
     }
 
@@ -405,20 +391,16 @@ impl RaftEngineReadOnly for PSEngine {
 
 impl RaftEngineDebug for PSEngine {
     fn scan_entries<F>(&self, raft_group_id: u64, mut f: F) -> Result<()>
-        where
-            F: FnMut(&Entry) -> Result<bool>,
+    where
+        F: FnMut(&Entry) -> Result<bool>,
     {
         let start_key = keys::raft_log_key(raft_group_id, 0);
         let end_key = keys::raft_log_key(raft_group_id, u64::MAX);
-        self.scan(
-            &start_key,
-            &end_key,
-            |_, value| {
-                let mut entry = Entry::default();
-                entry.merge_from_bytes(value)?;
-                f(&entry)
-            },
-        );
+        self.scan(&start_key, &end_key, |_, value| {
+            let mut entry = Entry::default();
+            entry.merge_from_bytes(value)?;
+            f(&entry)
+        });
         Ok(())
     }
 }
@@ -459,16 +441,20 @@ impl RaftEngine for PSEngine {
         state: &RaftLocalState,
         batch: &mut Self::LogBatch,
     ) -> Result<()> {
-        // info!("try clean raft_group_id {} from {} to {}", raft_group_id, first_index, state.last_index);
+        // info!("try clean raft_group_id {} from {} to {}", raft_group_id, first_index,
+        // state.last_index);
         batch.del_page(&keys::raft_state_key(raft_group_id))?;
         batch.del_page(&keys::region_state_key(raft_group_id))?;
         batch.del_page(&keys::apply_state_key(raft_group_id))?;
         if first_index == 0 {
             let start_key = keys::raft_log_key(raft_group_id, 0);
             let prefix = keys::raft_log_prefix(raft_group_id);
-            // TODO: make sure the seek can skip other raft related key and to the first log key
+            // TODO: make sure the seek can skip other raft related key and to the first log
+            // key
             match self.seek(&start_key) {
-                Some(target_key) if target_key.starts_with(&prefix) => first_index = box_try!(keys::raft_log_index(&target_key)),
+                Some(target_key) if target_key.starts_with(&prefix) => {
+                    first_index = box_try!(keys::raft_log_index(&target_key))
+                }
                 // No need to gc.
                 _ => return Ok(()),
             }
@@ -476,11 +462,14 @@ impl RaftEngine for PSEngine {
         if first_index >= state.last_index {
             return Ok(());
         }
-        info!("clean raft_group_id {} from {} to {}", raft_group_id, first_index, state.last_index);
+        info!(
+            "clean raft_group_id {} from {} to {}",
+            raft_group_id, first_index, state.last_index
+        );
         // TODO: find the first raft log index of this raft group
         if first_index <= state.last_index {
             for index in first_index..=state.last_index {
-                batch.del_page( &keys::raft_log_key(raft_group_id, index));
+                batch.del_page(&keys::raft_log_key(raft_group_id, index));
             }
         }
         self.consume(batch, true);
@@ -492,7 +481,7 @@ impl RaftEngine for PSEngine {
         if let Some(max_size) = entries.iter().map(|e| e.compute_size()).max() {
             let buf = Vec::with_capacity(max_size as usize);
             wb.append_impl(raft_group_id, &entries, buf)?;
-            return self.consume(&mut wb, false)
+            return self.consume(&mut wb, false);
         }
         Ok(0)
     }
@@ -516,11 +505,9 @@ impl RaftEngine for PSEngine {
         Ok(total)
     }
 
-    fn flush_metrics(&self, instance: &str) {
-    }
+    fn flush_metrics(&self, instance: &str) {}
 
-    fn reset_statistics(&self) {
-    }
+    fn reset_statistics(&self) {}
 
     fn dump_stats(&self) -> Result<String> {
         Ok(String::from(""))
@@ -538,9 +525,9 @@ impl RaftEngine for PSEngine {
     }
 
     fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
-        where
-            F: FnMut(u64) -> std::result::Result<(), E>,
-            E: From<Error>,
+    where
+        F: FnMut(u64) -> std::result::Result<(), E>,
+        E: From<Error>,
     {
         let start_key = keys::REGION_META_MIN_KEY;
         let end_key = keys::REGION_META_MAX_KEY;
@@ -582,20 +569,16 @@ impl PerfContextExt for PSEngine {
 }
 
 #[derive(Debug)]
-pub struct PSPerfContext {
-}
+pub struct PSPerfContext {}
 
 impl PSPerfContext {
     pub fn new(level: PerfLevel, kind: PerfContextKind) -> Self {
-        PSPerfContext { }
+        PSPerfContext {}
     }
 }
 
 impl PerfContext for PSPerfContext {
-    fn start_observe(&mut self) {
-    }
+    fn start_observe(&mut self) {}
 
-    fn report_metrics(&mut self, trackers: &[TrackerToken]) {
-
-    }
+    fn report_metrics(&mut self, trackers: &[TrackerToken]) {}
 }
