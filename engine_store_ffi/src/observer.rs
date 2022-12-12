@@ -310,6 +310,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
+        fail::fail_point("go_fast_path_not_allow", |_| {});
         // Feed data
         let res = self
             .engine_store_server_helper

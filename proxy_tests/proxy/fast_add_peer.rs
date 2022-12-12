@@ -162,3 +162,28 @@ fn test_fast_add_peer_from_delayed_learner_blocked() {
     simple_fast_add_peer(SourceType::DelayedLearner, true);
     fail::remove("on_pre_persist_with_finish");
 }
+
+#[test]
+fn test_existing_peer() {
+    fail::cfg("go_fast_path_not_allow", "panic").unwrap();
+
+    tikv_util::set_panic_hook(true, "./");
+    let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+    // fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    fail::cfg("before_tiflash_check_double_write", "return").unwrap();
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable auto generate peer.
+    pd_client.disable_default_operator();
+    let _ = cluster.run_conf_change();
+    must_put_and_check_key(&mut cluster, 1, 2, Some(true), None, Some(vec![1]));
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    must_put_and_check_key(&mut cluster, 3, 4, Some(true), None, None);
+
+    stop_tiflash_node(&mut cluster, 2);
+    restart_tiflash_node(&mut cluster, 2);
+    must_put_and_check_key(&mut cluster, 5, 6, Some(true), None, None);
+
+    cluster.shutdown();
+    fail::remove("go_fast_path_not_allow");
+}
