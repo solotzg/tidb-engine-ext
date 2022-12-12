@@ -1350,6 +1350,7 @@ pub struct EngineStoreConfig {
     pub enable_fast_add_peer: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for EngineStoreConfig {
     fn default() -> Self {
         Self {
