@@ -1324,18 +1324,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         };
 
         // TODO We must ask the remote peer to persist before get a snapshot.
-        // {
-        //     if let Some(s) = source_server.kvstore.get_mut(&region_id) {
-        //         write_to_db_data_by_engine(0, &source_engines.kv, s, "fast add
-        // peer".to_string());     } else {
-        //         error!("recover from remote peer: failed persist source region";
-        // "region_id" => region_id);         return ffi_interfaces::FastAddPeerRes
-        // {             status: ffi_interfaces::FastAddPeerStatus::BadData,
-        //             apply_state: create_cpp_str(None),
-        //             region: create_cpp_str(None),
-        //         };
-        //     }
-        // }
+
         let source_region = match source_server.kvstore.get(&region_id) {
             Some(s) => s,
             None => {
