@@ -13,11 +13,11 @@ use std::{
 
 use collections::HashMap;
 use engine_tiflash::FsStatsExt;
-use engine_traits::{RaftEngine, SstMetaInfo};
+use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
 use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
-    raft_serverpb::{RaftApplyState, RaftMessage},
+    raft_serverpb::{PeerState, RaftApplyState, RaftMessage, RegionLocalState},
 };
 use protobuf::Message;
 use raft::{eraftpb, eraftpb::MessageType, StateRole};
@@ -189,6 +189,16 @@ pub fn validate_remote_peer_region(
     }
 }
 
+pub fn get_region_local_state<EK: engine_traits::KvEngine>(
+    engine: &EK,
+    region_id: u64,
+) -> Option<RegionLocalState> {
+    let region_state_key = keys::region_state_key(region_id);
+    engine
+        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+        .unwrap_or(None)
+}
+
 impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     #[inline]
     fn slot_index(id: u64) -> usize {
@@ -208,6 +218,21 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         };
         f(guard.entry(region_id));
         Ok(())
+    }
+
+    pub fn remove_cached_region_info(&self, region_id: u64) {
+        let slot_id = Self::slot_index(region_id);
+        match self.cached_region_info.get(slot_id).unwrap().write() {
+            Ok(mut g) => {
+                info!(
+                    "remove_cached_region_info";
+                    "region_id" => region_id,
+                    "store_id" => self.store_id,
+                );
+                let _ = g.remove(&region_id);
+            }
+            Err(_) => (),
+        };
     }
 
     pub fn set_inited_or_fallback(&self, region_id: u64, v: bool) -> RaftStoreResult<()> {
@@ -233,6 +258,16 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         }
     }
 
+    pub fn is_initialized(&self, region_id: u64) -> bool {
+        match get_region_local_state(&self.engine, region_id) {
+            None => false,
+            Some(r) => {
+                raftstore::store::util::is_region_initialized(r.get_region())
+                    && (r.get_state() != PeerState::Tombstone)
+            }
+        }
+    }
+
     // Returns whether we need to ignore this message and run fast path instead.
     pub fn maybe_fast_path(&self, msg: &RaftMessage) -> bool {
         if !self.engine_store_cfg.enable_fast_add_peer {
@@ -249,24 +284,42 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let new_peer_id = msg.get_to_peer().get_id();
         let mut is_first = false;
         let mut is_replicated = false;
+        let mut has_already_inited = None;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
             match info {
-                MapEntry::Occupied(o) => {
-                    is_first = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                MapEntry::Occupied(mut o) => {
+                    (is_first, has_already_inited) =
+                        if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
+                            // If `has_already_inited` is true, usually means we recover from a
+                            // restart. So we have data in disk, but not
+                            // in memory. TODO maybe only check once, or
+                            // we can remove apply snapshot.
+                            let has_already_inited = self.is_initialized(region_id);
+                            if has_already_inited {
+                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                            }
+                            (!has_already_inited, Some(has_already_inited))
+                        } else {
+                            (false, None)
+                        };
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                     if is_first {
                         // TODO Maybe too much printing
-                        info!("fast path: ongoing {}:{}, skip MsgAppend", self.store_id, region_id;
-                            "to_peer_id" => msg.get_to_peer().get_id(),
-                            "from_peer_id" => msg.get_from_peer().get_id(),
-                            "inner_msg" => ?inner_msg,
-                            "is_replicated" => is_replicated,
-                        );
+                        // info!("fast path: ongoing {}:{}, skip MsgAppend",
+                        //     self.store_id, region_id;
+                        //         "to_peer_id" => msg.get_to_peer().get_id(),
+                        //         "from_peer_id" =>
+                        // msg.get_from_peer().get_id(),
+                        //         "inner_msg" => ?inner_msg,
+                        //         "is_replicated" => is_replicated,
+                        //         "has_already_inited" => has_already_inited,
+                        //         "is_first" => is_first,
+                        // );
                     }
                 }
                 MapEntry::Vacant(v) => {
-                    info!("fast path: ongoing {}:{}, first message", self.store_id, region_id;
+                    info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
                         "to_peer_id" => msg.get_to_peer().get_id(),
                         "from_peer_id" => msg.get_from_peer().get_id(),
                         "inner_msg" => ?inner_msg,
@@ -280,10 +333,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         self.access_cached_region_info_mut(region_id, f).unwrap();
 
         if !is_first {
-            info!(
-                "fast path: normal MsgAppend of {}:{}",
-                self.store_id, region_id
-            );
+            // TODO avoid too much log
+            // info!(
+            //     "fast path: normal MsgAppend of {}:{} {}",
+            //     self.store_id, region_id, new_peer_id;
+            //     "to_peer_id" => msg.get_to_peer().get_id(),
+            //     "from_peer_id" => msg.get_from_peer().get_id(),
+            //     "inner_msg" => ?inner_msg,
+            // );
             return false;
         }
 
@@ -291,7 +348,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // Peer is not created by Peer::replicate, will cause RegionNotRegistered error,
             // see `check_msg`.
             if !is_replicated {
-                info!("fast path: ongoing {}:{}, wait replicating peer", self.store_id, region_id;
+                info!("fast path: ongoing {}:{} {}, wait replicating peer", self.store_id, region_id, new_peer_id;
                     "to_peer_id" => msg.get_to_peer().get_id(),
                     "from_peer_id" => msg.get_from_peer().get_id(),
                     "inner_msg" => ?inner_msg,
@@ -300,11 +357,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         }
 
-        info!("fast path: ongoing {}:{}, fetch data from remote peer", self.store_id, region_id;
+        info!("fast path: ongoing {}:{} {}, fetch data from remote peer", self.store_id, region_id, new_peer_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
-        fail::fail_point!("go_fast_path_not_allow", |e| { return false });
+        fail::fail_point!("go_fast_path_not_allow", |_| { return false });
+        fail::fail_point!("ffi_fast_add_peer_pause", |_| { return false });
         // Feed data
         let res = self
             .engine_store_server_helper
@@ -312,23 +370,23 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         match res.status {
             crate::FastAddPeerStatus::Ok => (),
             crate::FastAddPeerStatus::WaitForData => {
-                error!(
-                    "fast path: ongoing {}:{}. remote peer preparing data, wait",
-                    self.store_id, region_id
+                info!(
+                    "fast path: ongoing {}:{} {}. remote peer preparing data, wait",
+                    self.store_id, region_id, new_peer_id
                 );
                 return true;
             }
             _ => {
                 error!(
-                    "fast path: ongoing {}:{} failed. fetch and replace error {:?}, fallback to normal",
-                    self.store_id, region_id, res
+                    "fast path: ongoing {}:{}{}failed. fetch and replace error {:?}, fallback to normal",
+                    self.store_id, region_id, new_peer_id, res
                 );
                 self.fallback_to_slow_path(region_id);
                 return false;
             }
         };
 
-        info!("fast path: ongoing {}:{}, parse", self.store_id, region_id;
+        info!("fast path: ongoing {}:{} {}, parse", self.store_id, region_id, new_peer_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
@@ -338,7 +396,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let mut new_region = kvproto::metapb::Region::default();
         apply_state.merge_from_bytes(apply_state_str).unwrap();
         new_region.merge_from_bytes(region_str).unwrap();
-        info!("fast path: ongoing {}:{}, start build and send", self.store_id, region_id;
+        info!("fast path: ongoing {}:{} {}, start build and send", self.store_id, region_id, new_peer_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
             "new_region" => ?new_region,
@@ -348,20 +406,20 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             Ok(s) => {
                 match s {
                     crate::FastAddPeerStatus::Ok => {
-                        info!("fast path: ongoing {}:{}, finish build and send", self.store_id, region_id;
+                        info!("fast path: ongoing {}:{} {}, finish build and send", self.store_id, region_id, new_peer_id;
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
                         );
                     }
                     crate::FastAddPeerStatus::WaitForData => {
                         error!(
-                            "fast path: ongoing {}:{}. remote peer preparing data, wait",
-                            self.store_id, region_id
+                            "fast path: ongoing {}:{} {}. remote peer preparing data, wait",
+                            new_peer_id, self.store_id, region_id
                         );
                         return true;
                     }
                     _ => {
-                        error!("fast path: ongoing {}:{} failed. build and sent snapshot code {:?}", self.store_id, region_id, s;
+                        error!("fast path: ongoing {}:{} {} failed. build and sent snapshot code {:?}", self.store_id, region_id, new_peer_id, s;
                         "is_first" => is_first,);
                         self.fallback_to_slow_path(region_id);
                         return false;
@@ -369,13 +427,32 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 };
             }
             Err(e) => {
-                error!("fast path: ongoing {}:{} failed. build and sent snapshot error {:?}", self.store_id, region_id, e;
+                error!("fast path: ongoing {}:{} {} failed. build and sent snapshot error {:?}", self.store_id, region_id, new_peer_id, e;
                 "is_first" => is_first,);
                 self.fallback_to_slow_path(region_id);
                 return false;
             }
         };
         is_first
+    }
+
+    fn check_entry_at_index(
+        &self,
+        region_id: u64,
+        index: u64,
+        peer_id: u64,
+    ) -> RaftStoreResult<u64> {
+        match self.raft_engine.get_entry(region_id, index)? {
+            Some(entry) => Ok(entry.get_term()),
+            None => {
+                return Err(box_err!(
+                    "can't find entry for index {} of region {}, peer_id: {}",
+                    index,
+                    region_id,
+                    peer_id
+                ));
+            }
+        }
     }
 
     fn build_and_send_snapshot(
@@ -392,31 +469,24 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // check if the source already knows the know peer
             if !validate_remote_peer_region(&new_region, self.store_id, new_peer_id) {
                 info!(
-                    "fast path: ongoing {}:{}. remote peer has not applied conf change for {}",
+                    "fast path: ongoing {}:{} {}. remote peer has not applied conf change",
                     self.store_id, region_id, new_peer_id;
                     "region" => ?new_region,
                 );
                 return Ok(crate::FastAddPeerStatus::WaitForData);
             } else {
                 info!(
-                    "fast path: ongoing {}:{}. remote peer has applied conf change for {}",
+                    "fast path: ongoing {}:{} {}. remote peer has applied conf change",
                     self.store_id, region_id, new_peer_id
                 );
             }
 
             // Find term of entry at applied_index.
             let applied_index = apply_state.get_applied_index();
-            let applied_term = match self.raft_engine.get_entry(region_id, applied_index)? {
-                Some(apply_entry) => apply_entry.get_term(),
-                None => {
-                    return Err(box_err!(
-                        "can't find entry for applied_index {} of region {}, peer_id: {}",
-                        applied_index,
-                        region_id,
-                        new_peer_id
-                    ));
-                }
-            };
+            let applied_term = self.check_entry_at_index(region_id, applied_index, new_peer_id)?;
+            // Will otherwise cause "got message with lower index than committed" loop.
+            self.check_entry_at_index(region_id, apply_state.get_commit_index(), new_peer_id)?;
+
             let key = SnapKey::new(region_id, applied_term, applied_index);
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
             defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
@@ -491,8 +561,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         response.mut_message().set_term(inner_msg.get_term());
         response.mut_message().set_snapshot(pb_snapshot);
         debug!(
-            "!!!! send snapshot key {} raft message {:?} snap data {:?}",
-            key, response, snap_data
+            "!!!! send snapshot key {} raft message {:?} snap data {:?} apply_state {:?}",
+            key, response, snap_data, apply_state
         );
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
@@ -1000,14 +1070,18 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         e: RegionChangeEvent,
         _: StateRole,
     ) {
+        let region_id = ob_ctx.region().get_id();
         if e == RegionChangeEvent::Destroy {
             info!(
                 "observe destroy";
-                "region_id" => ob_ctx.region().get_id(),
+                "region_id" => region_id,
                 "store_id" => self.store_id,
             );
             self.engine_store_server_helper
                 .handle_destroy(ob_ctx.region().get_id());
+            if self.engine_store_cfg.enable_fast_add_peer {
+                self.remove_cached_region_info(region_id);
+            }
         }
     }
 
@@ -1247,26 +1321,30 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         );
         let region_id = ob_ctx.region().get_id();
         let mut should_skip = false;
-        if self.access_cached_region_info_mut(
-            region_id,
-            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {
-                    if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
-                        info!("fast path: applied first snapshot {}:{}, recover MsgAppend", self.store_id, region_id;
-                            "snap_key" => ?snap_key,
-                        );
+        #[allow(clippy::collapsible_if)]
+        if self.engine_store_cfg.enable_fast_add_peer {
+            if self.access_cached_region_info_mut(
+                region_id,
+                |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                    MapEntry::Occupied(mut o) => {
+                        let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                        if is_first_snapsot {
+                            info!("fast path: applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                            );
+                            should_skip = true;
+                            o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                        }
                     }
-                    should_skip = o.get().inited_or_fallback.load(Ordering::SeqCst);
-                    o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
-                }
-                MapEntry::Vacant(_) => {
-                    // Compat no fast add peer logic
-                    // panic!("unknown snapshot!");
-                }
-            },
-        ).is_err() {
-            fatal!("post_apply_snapshot poisoned")
-        };
+                    MapEntry::Vacant(_) => {
+                        // Compat no fast add peer logic
+                        // panic!("unknown snapshot!");
+                    }
+                },
+            ).is_err() {
+                fatal!("post_apply_snapshot poisoned")
+            };
+        }
         let snap = match snap {
             None => return,
             Some(s) => s,
