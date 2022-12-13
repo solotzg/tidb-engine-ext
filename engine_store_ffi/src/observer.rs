@@ -322,6 +322,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             //     "from_peer_id" => msg.get_from_peer().get_id(),
             //     "inner_msg" => ?inner_msg,
             // );
+            fail::fail_point!("fast_path_is_not_first", |_| {});
             return false;
         }
 

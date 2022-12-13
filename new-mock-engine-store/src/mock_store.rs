@@ -1236,7 +1236,7 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
         Some(s) => {
             let len = s.len() as u64;
             let ptr = Box::into_raw(Box::new(s.clone())); // leak
-            let s = ffi_interfaces::CppStrWithView {
+            ffi_interfaces::CppStrWithView {
                 inner: ffi_interfaces::RawCppPtr {
                     ptr: ptr as RawVoidPtr,
                     type_: RawCppPtrTypeImpl::String.into(),
@@ -1245,8 +1245,7 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
                     data: (*ptr).as_ptr() as *const _,
                     len,
                 },
-            };
-            s
+            }
         }
         None => ffi_interfaces::CppStrWithView {
             inner: ffi_interfaces::RawCppPtr {
@@ -1428,5 +1427,5 @@ unsafe extern "C" fn ffi_fast_add_peer(
         };
     }
     error!("recover from remote peer: failed after retry"; "region_id" => region_id);
-    return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
+    failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData)
 }

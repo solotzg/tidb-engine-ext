@@ -122,6 +122,8 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
     };
 
     // Destroy peer
+    // These failpoints make sure we will cause again a fast path.
+    fail::cfg("fast_path_is_not_first", "panic").unwrap();
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     pd_client.must_remove_peer(1, new_learner_peer(3, 3));
     must_wait_until_cond_node(&cluster, 1, Some(vec![1]), &|states: &States| -> bool {
@@ -153,6 +155,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
         Some(vec![1, 2, 3]),
     );
     fail::remove("fallback_to_slow_path_not_allow");
+    fail::remove("fast_path_is_not_first");
 
     fail::remove("ffi_fast_add_peer_from_id");
     fail::remove("on_pre_persist_with_finish");
