@@ -121,6 +121,29 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
         _ => (),
     };
 
+    // Destroy peer
+    pd_client.must_remove_peer(1, new_learner_peer(3, 3));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![3]),
+        &mut |_, _, ffi: &mut FFIHelperSet| {
+            let server = &ffi.engine_store_server;
+            assert!(!server.kvstore.contains_key(&1));
+        },
+    );
+    cluster.must_put(b"k5", b"v5");
+    pd_client.must_add_peer(1, new_learner_peer(3, 4));
+    cluster.must_put(b"k6", b"v6");
+    check_key(
+        &cluster,
+        b"k6",
+        b"v6",
+        Some(true),
+        None,
+        Some(vec![1, 2, 3]),
+    );
+
     fail::remove("ffi_fast_add_peer_from_id");
     fail::remove("on_pre_persist_with_finish");
     fail::remove("ffi_fast_add_peer_block_wait");

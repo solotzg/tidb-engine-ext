@@ -1298,27 +1298,29 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         );
         let region_id = ob_ctx.region().get_id();
         let mut should_skip = false;
-        if self.access_cached_region_info_mut(
-            region_id,
-            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {
-                    let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
-                    if is_first_snapsot {
-                        info!("fast path: applied first snapshot {}:{}, recover MsgAppend", self.store_id, region_id;
-                            "snap_key" => ?snap_key,
-                        );
-                        should_skip = true;
-                        o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+        if self.engine_store_cfg.enable_fast_add_peer {
+            if self.access_cached_region_info_mut(
+                region_id,
+                |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                    MapEntry::Occupied(mut o) => {
+                        let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                        if is_first_snapsot {
+                            info!("fast path: applied first snapshot {}:{}, recover MsgAppend", self.store_id, region_id;
+                                "snap_key" => ?snap_key,
+                            );
+                            should_skip = true;
+                            o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                        }
                     }
-                }
-                MapEntry::Vacant(_) => {
-                    // Compat no fast add peer logic
-                    // panic!("unknown snapshot!");
-                }
-            },
-        ).is_err() {
-            fatal!("post_apply_snapshot poisoned")
-        };
+                    MapEntry::Vacant(_) => {
+                        // Compat no fast add peer logic
+                        // panic!("unknown snapshot!");
+                    }
+                },
+            ).is_err() {
+                fatal!("post_apply_snapshot poisoned")
+            };
+        }
         let snap = match snap {
             None => return,
             Some(s) => s,
