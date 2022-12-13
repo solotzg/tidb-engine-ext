@@ -45,7 +45,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
     };
 
     if pause {
-        fail::cfg("fi_fast_add_peer_pause", "pause").unwrap();
+        fail::cfg("ffi_fast_add_peer_pause", "pause").unwrap();
     }
     pd_client.must_add_peer(1, new_learner_peer(3, 3));
     // std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -84,7 +84,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
 
     if pause {
         std::thread::sleep(std::time::Duration::from_millis(3000));
-        fail::remove("fi_fast_add_peer_pause");
+        fail::remove("ffi_fast_add_peer_pause");
     }
 
     match source_type {
@@ -122,9 +122,6 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
     };
 
     // Destroy peer
-    // These failpoints make sure we will cause again a fast path.
-    fail::cfg("fast_path_is_not_first", "panic").unwrap();
-    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     pd_client.must_remove_peer(1, new_learner_peer(3, 3));
     must_wait_until_cond_node(&cluster, 1, Some(vec![1]), &|states: &States| -> bool {
         find_peer_by_id(states.in_disk_region_state.get_region(), 3).is_none()
@@ -136,15 +133,30 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
         &mut |_, _, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
             assert!(!server.kvstore.contains_key(&1));
+            (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
+                e.fast_add_peer_count.store(0, Ordering::SeqCst);
+            });
         },
     );
     cluster.must_put(b"k5", b"v5");
+    // These failpoints make sure we will cause again a fast path.
+    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     pd_client.must_add_peer(1, new_learner_peer(3, 4));
     // Wait until Learner has applied ConfChange
     std::thread::sleep(std::time::Duration::from_millis(1000));
     must_wait_until_cond_node(&cluster, 1, Some(vec![3]), &|states: &States| -> bool {
         find_peer_by_id(states.in_disk_region_state.get_region(), 4).is_some()
     });
+    // If we re-add peer, we can still go fast path.
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![3]),
+        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+            (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
+                assert!(e.fast_add_peer_count.load(Ordering::SeqCst) > 0);
+            });
+        },
+    );
     cluster.must_put(b"k6", b"v6");
     check_key(
         &cluster,

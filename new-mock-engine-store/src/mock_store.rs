@@ -75,6 +75,7 @@ impl Region {
 #[derive(Default)]
 pub struct RegionStats {
     pub pre_handle_count: AtomicU64,
+    pub fast_add_peer_count: AtomicU64,
 }
 
 pub struct EngineStoreServer {
@@ -1268,6 +1269,9 @@ unsafe extern "C" fn ffi_fast_add_peer(
     let store = into_engine_store_server_wrap(arg1);
     let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
     let store_id = (*store.engine_store_server).id;
+    (*store.engine_store_server).mutate_region_states(region_id, |e: &mut RegionStats| {
+        e.fast_add_peer_count.fetch_add(1, Ordering::SeqCst);
+    });
 
     let failed_add_peer_res =
         |status: ffi_interfaces::FastAddPeerStatus| ffi_interfaces::FastAddPeerRes {
