@@ -122,7 +122,11 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
     };
 
     // Destroy peer
+    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     pd_client.must_remove_peer(1, new_learner_peer(3, 3));
+    must_wait_until_cond_node(&cluster, 1, Some(vec![1]), &|states: &States| -> bool {
+        find_peer_by_id(states.in_disk_region_state.get_region(), 3).is_none()
+    });
     std::thread::sleep(std::time::Duration::from_millis(1000));
     iter_ffi_helpers(
         &cluster,
@@ -134,6 +138,11 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
     );
     cluster.must_put(b"k5", b"v5");
     pd_client.must_add_peer(1, new_learner_peer(3, 4));
+    // Wait until Learner has applied ConfChange
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    must_wait_until_cond_node(&cluster, 1, Some(vec![3]), &|states: &States| -> bool {
+        find_peer_by_id(states.in_disk_region_state.get_region(), 4).is_some()
+    });
     cluster.must_put(b"k6", b"v6");
     check_key(
         &cluster,
@@ -143,6 +152,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
         None,
         Some(vec![1, 2, 3]),
     );
+    fail::remove("fallback_to_slow_path_not_allow");
 
     fail::remove("ffi_fast_add_peer_from_id");
     fail::remove("on_pre_persist_with_finish");
@@ -154,7 +164,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) 
 fn test_fast_add_peer_from_leader() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::Leader, false, false);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 /// Fast path by learner snapshot.
@@ -162,7 +172,7 @@ fn test_fast_add_peer_from_leader() {
 fn test_fast_add_peer_from_learner() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::Learner, false, false);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 /// If a learner is delayed, but already applied ConfChange.
@@ -170,7 +180,7 @@ fn test_fast_add_peer_from_learner() {
 fn test_fast_add_peer_from_delayed_learner() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::DelayedLearner, false, false);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 /// If we select a wrong source, or we can't run fast path, we can fallback to
@@ -184,28 +194,28 @@ fn test_fast_add_peer_from_invalid_source() {
 fn test_fast_add_peer_from_learner_blocked() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::Learner, true, false);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 #[test]
 fn test_fast_add_peer_from_delayed_learner_blocked() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::DelayedLearner, true, false);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 #[test]
 fn test_fast_add_peer_from_learner_blocked_paused() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::Learner, true, true);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 #[test]
 fn test_fast_add_peer_from_delayed_learner_blocked_paused() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
     simple_fast_add_peer(SourceType::DelayedLearner, true, true);
-    fail::remove("on_pre_persist_with_finish");
+    fail::remove("fallback_to_slow_path_not_allow");
 }
 
 #[test]

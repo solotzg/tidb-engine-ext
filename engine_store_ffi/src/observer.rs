@@ -1298,6 +1298,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         );
         let region_id = ob_ctx.region().get_id();
         let mut should_skip = false;
+        #[allow(clippy::collapsible_if)]
         if self.engine_store_cfg.enable_fast_add_peer {
             if self.access_cached_region_info_mut(
                 region_id,
