@@ -222,17 +222,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
     pub fn remove_cached_region_info(&self, region_id: u64) {
         let slot_id = Self::slot_index(region_id);
-        match self.cached_region_info.get(slot_id).unwrap().write() {
-            Ok(mut g) => {
-                info!(
-                    "remove_cached_region_info";
-                    "region_id" => region_id,
-                    "store_id" => self.store_id,
-                );
-                let _ = g.remove(&region_id);
-            }
-            Err(_) => (),
-        };
+        if let Ok(mut g) = self.cached_region_info.get(slot_id).unwrap().write() {
+            info!(
+                "remove_cached_region_info";
+                "region_id" => region_id,
+                "store_id" => self.store_id,
+            );
+            let _ = g.remove(&region_id);
+        }
     }
 
     pub fn set_inited_or_fallback(&self, region_id: u64, v: bool) -> RaftStoreResult<()> {
@@ -378,7 +375,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
             _ => {
                 error!(
-                    "fast path: ongoing {}:{}{}failed. fetch and replace error {:?}, fallback to normal",
+                    "fast path: ongoing {}:{} {} failed. fetch and replace error {:?}, fallback to normal",
                     self.store_id, region_id, new_peer_id, res
                 );
                 self.fallback_to_slow_path(region_id);
