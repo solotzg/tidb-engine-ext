@@ -21,7 +21,7 @@ pub use engine_traits::{
 };
 pub use kvproto::{
     raft_cmdpb::AdminCmdType,
-    raft_serverpb::{RaftApplyState, RaftLocalState, RegionLocalState},
+    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
 };
 pub use protobuf::Message;
 pub use tikv_util::{box_err, box_try, debug, error, info, warn};
