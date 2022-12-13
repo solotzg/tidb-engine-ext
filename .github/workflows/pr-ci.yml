@@ -27,7 +27,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Install dependencies (protocol buffers compiler)
-        uses: arduino/setup-protoc@v1.1.0
+        uses: arduino/setup-protoc@v1
         with:
           version: '3.8.0'
       - name: install rust
@@ -74,7 +74,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Install dependencies (protocol buffers compiler)
-        uses: arduino/setup-protoc@v1.1.0
+        uses: arduino/setup-protoc@v1
         with:
           version: '3.8.0'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
