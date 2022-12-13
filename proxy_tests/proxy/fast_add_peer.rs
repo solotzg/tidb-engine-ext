@@ -9,7 +9,7 @@ enum SourceType {
     InvalidSource,
 }
 
-fn simple_fast_add_peer(source_type: SourceType, block_wait: bool) {
+fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: bool) {
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
@@ -44,6 +44,9 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool) {
         _ => (),
     };
 
+    if pause {
+        fail::cfg("fi_fast_add_peer_pause", "pause").unwrap();
+    }
     pd_client.must_add_peer(1, new_learner_peer(3, 3));
     // std::thread::sleep(std::time::Duration::from_millis(2000));
     // match source_type {
@@ -78,6 +81,11 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool) {
         }
         _ => (),
     };
+
+    if pause {
+        std::thread::sleep(std::time::Duration::from_millis(3000));
+        fail::remove("fi_fast_add_peer_pause");
+    }
 
     match source_type {
         SourceType::DelayedLearner => {
@@ -122,7 +130,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool) {
 #[test]
 fn test_fast_add_peer_from_leader() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
-    simple_fast_add_peer(SourceType::Leader, false);
+    simple_fast_add_peer(SourceType::Leader, false, false);
     fail::remove("on_pre_persist_with_finish");
 }
 
@@ -130,7 +138,7 @@ fn test_fast_add_peer_from_leader() {
 #[test]
 fn test_fast_add_peer_from_learner() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
-    simple_fast_add_peer(SourceType::Learner, false);
+    simple_fast_add_peer(SourceType::Learner, false, false);
     fail::remove("on_pre_persist_with_finish");
 }
 
@@ -138,7 +146,7 @@ fn test_fast_add_peer_from_learner() {
 #[test]
 fn test_fast_add_peer_from_delayed_learner() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
-    simple_fast_add_peer(SourceType::DelayedLearner, false);
+    simple_fast_add_peer(SourceType::DelayedLearner, false, false);
     fail::remove("on_pre_persist_with_finish");
 }
 
@@ -146,20 +154,34 @@ fn test_fast_add_peer_from_delayed_learner() {
 /// normal.
 #[test]
 fn test_fast_add_peer_from_invalid_source() {
-    simple_fast_add_peer(SourceType::InvalidSource, false);
+    simple_fast_add_peer(SourceType::InvalidSource, false, false);
 }
 
 #[test]
 fn test_fast_add_peer_from_learner_blocked() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
-    simple_fast_add_peer(SourceType::Learner, true);
+    simple_fast_add_peer(SourceType::Learner, true, false);
     fail::remove("on_pre_persist_with_finish");
 }
 
 #[test]
 fn test_fast_add_peer_from_delayed_learner_blocked() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
-    simple_fast_add_peer(SourceType::DelayedLearner, true);
+    simple_fast_add_peer(SourceType::DelayedLearner, true, false);
+    fail::remove("on_pre_persist_with_finish");
+}
+
+#[test]
+fn test_fast_add_peer_from_learner_blocked_paused() {
+    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
+    simple_fast_add_peer(SourceType::Learner, true, true);
+    fail::remove("on_pre_persist_with_finish");
+}
+
+#[test]
+fn test_fast_add_peer_from_delayed_learner_blocked_paused() {
+    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
+    simple_fast_add_peer(SourceType::DelayedLearner, true, true);
     fail::remove("on_pre_persist_with_finish");
 }
 

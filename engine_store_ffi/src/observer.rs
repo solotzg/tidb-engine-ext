@@ -288,14 +288,15 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                     if is_first {
                         // TODO Maybe too much printing
-                        info!("fast path: ongoing {}:{}, skip MsgAppend", self.store_id, region_id;
-                            "to_peer_id" => msg.get_to_peer().get_id(),
-                            "from_peer_id" => msg.get_from_peer().get_id(),
-                            "inner_msg" => ?inner_msg,
-                            "is_replicated" => is_replicated,
-                            "has_already_inited" => has_already_inited,
-                            "is_first" => is_first,
-                        );
+                        // info!("fast path: ongoing {}:{}, skip MsgAppend",
+                        // self.store_id, region_id;
+                        //     "to_peer_id" => msg.get_to_peer().get_id(),
+                        //     "from_peer_id" => msg.get_from_peer().get_id(),
+                        //     "inner_msg" => ?inner_msg,
+                        //     "is_replicated" => is_replicated,
+                        //     "has_already_inited" => has_already_inited,
+                        //     "is_first" => is_first,
+                        // );
                     }
                 }
                 MapEntry::Vacant(v) => {
@@ -314,13 +315,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
         if !is_first {
             // TODO avoid too much log
-            info!(
-                "fast path: normal MsgAppend of {}:{}",
-                self.store_id, region_id;
-                "to_peer_id" => msg.get_to_peer().get_id(),
-                "from_peer_id" => msg.get_from_peer().get_id(),
-                "inner_msg" => ?inner_msg,
-            );
+            // info!(
+            //     "fast path: normal MsgAppend of {}:{}",
+            //     self.store_id, region_id;
+            //     "to_peer_id" => msg.get_to_peer().get_id(),
+            //     "from_peer_id" => msg.get_from_peer().get_id(),
+            //     "inner_msg" => ?inner_msg,
+            // );
             return false;
         }
 
@@ -342,6 +343,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             "from_peer_id" => msg.get_from_peer().get_id(),
         );
         fail::fail_point!("go_fast_path_not_allow", |e| { return false });
+        fail::fail_point!("fi_fast_add_peer_pause", |e| { return false });
         // Feed data
         let res = self
             .engine_store_server_helper
@@ -349,7 +351,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         match res.status {
             crate::FastAddPeerStatus::Ok => (),
             crate::FastAddPeerStatus::WaitForData => {
-                error!(
+                info!(
                     "fast path: ongoing {}:{}. remote peer preparing data, wait",
                     self.store_id, region_id
                 );
@@ -1310,7 +1312,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                     }
                 }
                 MapEntry::Vacant(_) => {
-                    panic!("unknown snapshot!");
+                    // Compat no fast add peer logic
+                    // panic!("unknown snapshot!");
                 }
             },
         ).is_err() {
