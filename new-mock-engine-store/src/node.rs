@@ -145,7 +145,7 @@ impl Transport for ChannelTransport {
                             SnapshotStatus::Finish,
                         ),
                         None => return Err(box_err!("Find no from_store {}", from_store)),
-                    };
+                    }?;
                 }
                 Ok(())
             }

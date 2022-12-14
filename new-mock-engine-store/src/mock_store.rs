@@ -21,7 +21,7 @@ pub use engine_traits::{
 };
 pub use kvproto::{
     raft_cmdpb::AdminCmdType,
-    raft_serverpb::{RaftApplyState, RaftLocalState, RegionLocalState},
+    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
 };
 pub use protobuf::Message;
 pub use tikv_util::{box_err, box_try, debug, error, info, warn};
@@ -75,6 +75,7 @@ impl Region {
 #[derive(Default)]
 pub struct RegionStats {
     pub pre_handle_count: AtomicU64,
+    pub fast_add_peer_count: AtomicU64,
 }
 
 pub struct EngineStoreServer {
@@ -1250,7 +1251,7 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
         Some(s) => {
             let len = s.len() as u64;
             let ptr = Box::into_raw(Box::new(s.clone())); // leak
-            let s = ffi_interfaces::CppStrWithView {
+            ffi_interfaces::CppStrWithView {
                 inner: ffi_interfaces::RawCppPtr {
                     ptr: ptr as RawVoidPtr,
                     type_: RawCppPtrTypeImpl::String.into(),
@@ -1259,8 +1260,7 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
                     data: (*ptr).as_ptr() as *const _,
                     len,
                 },
-            };
-            s
+            }
         }
         None => ffi_interfaces::CppStrWithView {
             inner: ffi_interfaces::RawCppPtr {
@@ -1283,6 +1283,9 @@ unsafe extern "C" fn ffi_fast_add_peer(
     let store = into_engine_store_server_wrap(arg1);
     let cluster = &*(store.cluster_ptr as *const mock_cluster::Cluster<NodeCluster>);
     let store_id = (*store.engine_store_server).id;
+    (*store.engine_store_server).mutate_region_states(region_id, |e: &mut RegionStats| {
+        e.fast_add_peer_count.fetch_add(1, Ordering::SeqCst);
+    });
 
     let failed_add_peer_res =
         |status: ffi_interfaces::FastAddPeerStatus| ffi_interfaces::FastAddPeerRes {
@@ -1335,18 +1338,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         };
 
         // TODO We must ask the remote peer to persist before get a snapshot.
-        // {
-        //     if let Some(s) = source_server.kvstore.get_mut(&region_id) {
-        //         write_to_db_data_by_engine(0, &source_engines.kv, s, "fast add
-        // peer".to_string());     } else {
-        //         error!("recover from remote peer: failed persist source region";
-        // "region_id" => region_id);         return ffi_interfaces::FastAddPeerRes
-        // {             status: ffi_interfaces::FastAddPeerStatus::BadData,
-        //             apply_state: create_cpp_str(None),
-        //             region: create_cpp_str(None),
-        //         };
-        //     }
-        // }
+
         let source_region = match source_server.kvstore.get(&region_id) {
             Some(s) => s,
             None => {
@@ -1360,7 +1352,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         ) {
             Some(x) => x,
             None => {
-                debug!("recover from remote peer: preparing from {} to {}, not region state {}", from_store, store_id, new_peer_id; "region_id" => region_id);
+                debug!("recover from remote peer: preparing from {} to {}:{}, not region state", from_store, store_id, new_peer_id; "region_id" => region_id);
                 // We don't return BadData here, since the data may not be persisted.
                 if block_wait {
                     continue;
@@ -1369,7 +1361,16 @@ unsafe extern "C" fn ffi_fast_add_peer(
             }
         };
         let new_region_meta = region_local_state.get_region();
+        let peer_state = region_local_state.get_state();
 
+        // Validation
+        match peer_state {
+            PeerState::Tombstone | PeerState::Applying => {
+                info!("recover from remote peer: preparing from {} to {}:{}, error peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
+                return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
+            }
+            _ => {}
+        };
         if !engine_store_ffi::observer::validate_remote_peer_region(
             new_region_meta,
             store_id,
@@ -1381,6 +1382,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
             }
             return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
         }
+        // TODO check commit_index and applied_index here
 
         debug!("recover from remote peer: preparing from {} to {}, check target", from_store, store_id; "region_id" => region_id);
         let new_region = make_new_region(
@@ -1431,6 +1433,9 @@ unsafe extern "C" fn ffi_fast_add_peer(
         let region_bytes = region_local_state.get_region().write_to_bytes().unwrap();
         let apply_state_ptr = create_cpp_str(Some(apply_state_bytes));
         let region_ptr = create_cpp_str(Some(region_bytes));
+
+        // Check if we have commit_index.
+
         debug!("recover from remote peer: ok from {} to {}", from_store, store_id; "region_id" => region_id);
         return ffi_interfaces::FastAddPeerRes {
             status: ffi_interfaces::FastAddPeerStatus::Ok,
@@ -1439,5 +1444,5 @@ unsafe extern "C" fn ffi_fast_add_peer(
         };
     }
     error!("recover from remote peer: failed after retry"; "region_id" => region_id);
-    return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
+    failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData)
 }
