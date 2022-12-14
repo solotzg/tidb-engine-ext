@@ -21,7 +21,7 @@ pub use engine_traits::{
 };
 pub use kvproto::{
     raft_cmdpb::AdminCmdType,
-    raft_serverpb::{RaftApplyState, RaftLocalState, RegionLocalState},
+    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
 };
 pub use protobuf::Message;
 pub use tikv_util::{box_err, box_try, debug, error, info, warn};
@@ -1293,6 +1293,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         });
         0
     })() != 0;
+
     debug!("recover from remote peer: enter from {} to {}", from_store, store_id; "region_id" => region_id);
 
     for retry in 0..300 {
@@ -1338,7 +1339,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         ) {
             Some(x) => x,
             None => {
-                debug!("recover from remote peer: preparing from {} to {}, not region state {}", from_store, store_id, new_peer_id; "region_id" => region_id);
+                debug!("recover from remote peer: preparing from {} to {}:{}, not region state", from_store, store_id, new_peer_id; "region_id" => region_id);
                 // We don't return BadData here, since the data may not be persisted.
                 if block_wait {
                     continue;
@@ -1347,7 +1348,17 @@ unsafe extern "C" fn ffi_fast_add_peer(
             }
         };
         let new_region_meta = region_local_state.get_region();
+        let peer_state = region_local_state.get_state();
 
+        // Validation
+        match peer_state {
+            PeerState::Tombstone | PeerState::Applying => {
+                // Note in real implementation, we will avoid selecting this peer.
+                error!("recover from remote peer: preparing from {} to {}:{}, error peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
+                return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
+            }
+            _ => (),
+        };
         if !engine_store_ffi::observer::validate_remote_peer_region(
             new_region_meta,
             store_id,
@@ -1359,6 +1370,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
             }
             return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
         }
+        // TODO check commit_index and applied_index here
 
         debug!("recover from remote peer: preparing from {} to {}, check target", from_store, store_id; "region_id" => region_id);
         let new_region = make_new_region(
