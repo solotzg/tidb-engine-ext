@@ -307,3 +307,49 @@ fn test_apply_snapshot() {
     fail::remove("ffi_fast_add_peer_from_id");
     fail::remove("before_tiflash_check_double_write");
 }
+
+#[test]
+fn test_split_merge() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+    pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
+    cluster.cfg.raft_store.right_derive_when_split = true;
+
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k1", b"v1");
+    cluster.must_put(b"k3", b"v3");
+
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1]));
+
+    let r1 = cluster.get_region(b"k1");
+    let r3 = cluster.get_region(b"k3");
+    assert_eq!(r1.get_id(), r3.get_id());
+
+    cluster.must_split(&r1, b"k2");
+    let r1_new = cluster.get_region(b"k1"); // 1000
+    let r3_new = cluster.get_region(b"k3"); // 1
+    debug!("r1_new {} r3_new {}", r1_new.get_id(), r3_new.get_id());
+
+    pd_client.must_add_peer(r1_new.get_id(), new_learner_peer(2, 2000));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![2]));
+    check_key(&cluster, b"k3", b"v3", Some(false), None, Some(vec![2]));
+    pd_client.must_add_peer(r3_new.get_id(), new_learner_peer(2, 2001));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    check_key(&cluster, b"k1", b"v1", Some(false), None, Some(vec![2]));
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![2]));
+
+    pd_client.must_merge(r1_new.get_id(), r3_new.get_id());
+    pd_client.must_add_peer(r3_new.get_id(), new_learner_peer(3, 3000));
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![3]));
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
+
+    fail::remove("on_can_apply_snapshot");
+    cluster.shutdown();
+}
