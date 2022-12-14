@@ -452,6 +452,9 @@ impl EngineStoreServerWrap {
                         // We don't handle MergeState and PeerState here
                     }
                     AdminCmdType::CommitMerge => {
+                        fail::fail_point!("ffi_before_commit_merge", |_| {
+                            return ffi_interfaces::EngineStoreApplyRes::Persist;
+                        });
                         let (target_id, source_id) =
                             { (region_id, req.get_commit_merge().get_source().get_id()) };
                         {
@@ -1370,7 +1373,9 @@ unsafe extern "C" fn ffi_fast_add_peer(
                 error!("recover from remote peer: preparing from {} to {}:{}, error peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
                 return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
             }
-            _ => (),
+            _ => {
+                info!("recover from remote peer: preparing from {} to {}:{}, ok peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
+            }
         };
         if !engine_store_ffi::observer::validate_remote_peer_region(
             new_region_meta,

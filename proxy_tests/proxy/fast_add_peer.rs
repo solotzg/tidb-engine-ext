@@ -334,21 +334,29 @@ fn test_split_merge() {
     cluster.must_split(&r1, b"k2");
     let r1_new = cluster.get_region(b"k1"); // 1000
     let r3_new = cluster.get_region(b"k3"); // 1
-    debug!("r1_new {} r3_new {}", r1_new.get_id(), r3_new.get_id());
 
-    pd_client.must_add_peer(r1_new.get_id(), new_learner_peer(2, 2000));
+    let r1_id = r1_new.get_id();
+    let r3_id = r3_new.get_id();
+    debug!("r1_new {} r3_new {}", r1_id, r3_id);
+
+    // Test add peer after split
+    pd_client.must_add_peer(r1_id, new_learner_peer(2, 2001));
     std::thread::sleep(std::time::Duration::from_millis(1000));
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![2]));
     check_key(&cluster, b"k3", b"v3", Some(false), None, Some(vec![2]));
-    pd_client.must_add_peer(r3_new.get_id(), new_learner_peer(2, 2001));
+    pd_client.must_add_peer(r3_id, new_learner_peer(2, 2003));
     std::thread::sleep(std::time::Duration::from_millis(1000));
     check_key(&cluster, b"k1", b"v1", Some(false), None, Some(vec![2]));
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![2]));
 
-    pd_client.must_merge(r1_new.get_id(), r3_new.get_id());
-    pd_client.must_add_peer(r3_new.get_id(), new_learner_peer(3, 3000));
-    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![3]));
+    // Test merge
+    pd_client.must_add_peer(r3_id, new_learner_peer(3, 3003));
+    pd_client.merge_region(r1_id, r3_id);
+    must_not_merged(pd_client.clone(), r1_id, Duration::from_millis(1000));
+    pd_client.must_add_peer(r1_id, new_learner_peer(3, 3001));
+    pd_client.must_merge(r1_id, r3_id);
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![3]));
 
     fail::remove("on_can_apply_snapshot");
     cluster.shutdown();
