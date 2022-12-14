@@ -220,23 +220,10 @@ fn delete_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8]) {
     data.remove(k);
 }
 
-unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
+unsafe fn load_data_from_db(store: &mut EngineStoreServer, region_id: u64) {
     let store_id = store.id;
     let engine = &mut store.engines.as_mut().unwrap().kv;
-    let apply_state: RaftApplyState = engine
-        .get_msg_cf(CF_RAFT, &keys::apply_state_key(region_id))
-        .unwrap()
-        .unwrap();
-    let region_state: RegionLocalState = engine
-        .get_msg_cf(CF_RAFT, &keys::region_state_key(region_id))
-        .unwrap()
-        .unwrap();
-
     let region = store.kvstore.get_mut(&region_id).unwrap();
-    region.apply_state = apply_state;
-    region.region = region_state.get_region().clone();
-    set_new_region_peer(region, store.id);
-
     for cf in 0..3 {
         let cf_name = cf_to_name(cf.into());
         region.data[cf].clear();
@@ -263,6 +250,19 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
             })
             .unwrap();
     }
+}
+
+unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
+    let engine = &mut store.engines.as_mut().unwrap().kv;
+    let apply_state: RaftApplyState = general_get_apply_state(engine, region_id).unwrap();
+    let region_state: RegionLocalState = general_get_region_local_state(engine, region_id).unwrap();
+
+    let region = store.kvstore.get_mut(&region_id).unwrap();
+    region.apply_state = apply_state;
+    region.region = region_state.get_region().clone();
+    set_new_region_peer(region, store.id);
+
+    load_data_from_db(store, region_id);
 }
 
 unsafe fn write_to_db_data(
@@ -417,6 +417,12 @@ impl EngineStoreServerWrap {
                                     .insert(region_meta.id, Box::new(new_region));
                             }
                         }
+                        {
+                            // Move data
+                            let region_ids =
+                                regions.iter().map(|r| r.get_id()).collect::<Vec<u64>>();
+                            move_data_from(engine_store_server, region_id, region_ids.as_slice());
+                        }
                     }
                     AdminCmdType::PrepareMerge => {
                         let tikv_region = resp.get_split().get_left();
@@ -445,11 +451,15 @@ impl EngineStoreServerWrap {
                         // We don't handle MergeState and PeerState here
                     }
                     AdminCmdType::CommitMerge => {
+                        fail::fail_point!("ffi_before_commit_merge", |_| {
+                            return ffi_interfaces::EngineStoreApplyRes::Persist;
+                        });
+                        let (target_id, source_id) =
+                            { (region_id, req.get_commit_merge().get_source().get_id()) };
                         {
-                            let tikv_target_region_meta = resp.get_split().get_left();
-
                             let target_region =
                                 &mut (engine_store_server.kvstore.get_mut(&region_id).unwrap());
+
                             let target_region_meta = &mut target_region.region;
                             let target_version =
                                 target_region_meta.get_region_epoch().get_version();
@@ -477,6 +487,8 @@ impl EngineStoreServerWrap {
                                     == std::cmp::Ordering::Equal
                             };
 
+                            // The validation of applied result on TiFlash's side.
+                            let tikv_target_region_meta = resp.get_split().get_left();
                             if source_at_left {
                                 target_region_meta
                                     .set_start_key(source_region.get_start_key().to_vec());
@@ -493,6 +505,9 @@ impl EngineStoreServerWrap {
                                 );
                             }
                             target_region.set_applied(header.index, header.term);
+                        }
+                        {
+                            move_data_from(engine_store_server, source_id, &[target_id]);
                         }
                         let to_remove = req.get_commit_merge().get_source().get_id();
                         engine_store_server.kvstore.remove(&to_remove);
@@ -1366,10 +1381,13 @@ unsafe extern "C" fn ffi_fast_add_peer(
         // Validation
         match peer_state {
             PeerState::Tombstone | PeerState::Applying => {
-                info!("recover from remote peer: preparing from {} to {}:{}, error peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
-                return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::WaitForData);
+                // Note in real implementation, we will avoid selecting this peer.
+                error!("recover from remote peer: preparing from {} to {}:{}, error peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
+                return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData);
             }
-            _ => {}
+            _ => {
+                info!("recover from remote peer: preparing from {} to {}:{}, ok peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
+            }
         };
         if !engine_store_ffi::observer::validate_remote_peer_region(
             new_region_meta,
@@ -1445,4 +1463,42 @@ unsafe extern "C" fn ffi_fast_add_peer(
     }
     error!("recover from remote peer: failed after retry"; "region_id" => region_id);
     failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData)
+}
+
+pub fn move_data_from(
+    engine_store_server: &mut EngineStoreServer,
+    old_region_id: u64,
+    new_region_ids: &[u64],
+) {
+    let kvs = {
+        let old_region = engine_store_server.kvstore.get_mut(&old_region_id).unwrap();
+        let res = old_region.data.clone();
+        old_region.data = Default::default();
+        res
+    };
+    for new_region_id in new_region_ids {
+        let new_region = engine_store_server.kvstore.get_mut(&new_region_id).unwrap();
+        let new_region_meta = new_region.region.clone();
+        let start_key = new_region_meta.get_start_key();
+        let end_key = new_region_meta.get_end_key();
+        for cf in &[ffi_interfaces::ColumnFamilyType::Default] {
+            let cf = (*cf) as usize;
+            for (k, v) in &kvs[cf] {
+                let k = k.as_slice();
+                let v = v.as_slice();
+                match k {
+                    keys::PREPARE_BOOTSTRAP_KEY | keys::STORE_IDENT_KEY => {}
+                    _ => {
+                        if k >= start_key && (end_key.is_empty() || k < end_key) {
+                            debug!(
+                                "move region data {:?} {:?} from {} to {}",
+                                k, v, old_region_id, new_region_id
+                            );
+                            write_kv_in_mem(new_region, cf, k, v);
+                        }
+                    }
+                };
+            }
+        }
+    }
 }

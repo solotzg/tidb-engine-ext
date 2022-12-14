@@ -412,6 +412,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             Ok(s) => {
                 match s {
                     crate::FastAddPeerStatus::Ok => {
+                        fail::fail_point!("go_fast_path_succeed", |_| { return false });
                         info!("fast path: ongoing {}:{} {}, finish build and send", self.store_id, region_id, new_peer_id;
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
@@ -539,13 +540,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
         // TODO The rest is test, please remove it after we can fetch the real data.
         pb_snapshot_metadata
-            .mut_conf_state()
-            .mut_voters()
-            .push(msg.get_from_peer().get_id());
-        pb_snapshot_metadata
-            .mut_conf_state()
-            .mut_learners()
-            .push(msg.get_to_peer().get_id());
+            .set_conf_state(raftstore::store::util::conf_state_from_region(&new_region));
         pb_snapshot_metadata.set_index(key.idx);
         pb_snapshot_metadata.set_term(key.term);
 

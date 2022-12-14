@@ -35,6 +35,7 @@ pub use new_mock_engine_store::{
     },
     write_kv_in_mem, Cluster, ProxyConfig, RegionStats, Simulator, TestPdClient,
 };
+pub use pd_client::PdClient;
 pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
 pub use test_raftstore::{new_learner_peer, new_peer};
@@ -652,4 +653,19 @@ pub fn restart_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
         );
     }
     cluster.run_node(node_id).unwrap();
+}
+
+pub fn must_not_merged(pd_client: Arc<TestPdClient>, from: u64, duration: Duration) {
+    let timer = tikv_util::time::Instant::now();
+    loop {
+        let region = futures::executor::block_on(pd_client.get_region_by_id(from)).unwrap();
+        if let Some(r) = region {
+            if timer.saturating_elapsed() > duration {
+                return;
+            }
+        } else {
+            panic!("region {} is merged.", from);
+        }
+        std::thread::sleep_ms(10);
+    }
 }
