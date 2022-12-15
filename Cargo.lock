@@ -1632,6 +1632,7 @@ dependencies = [
  "panic_hook",
  "parking_lot 0.12.0",
  "pd_client",
+ "portable-atomic",
  "prometheus",
  "prometheus-static-metric",
  "protobuf",
@@ -4103,6 +4104,12 @@ dependencies = [
  "winapi 0.2.8",
  "ws2_32-sys",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ef946e2f765276038550e74abfbda40c84d73278417c071e0f19f8af6ba100b"
 
 [[package]]
 name = "pprof"
