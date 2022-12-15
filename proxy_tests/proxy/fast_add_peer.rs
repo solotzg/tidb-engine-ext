@@ -140,6 +140,9 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
             );
         }
     };
+    must_wait_until_cond_node(&cluster, 1, Some(vec![3]), &|states: &States| -> bool {
+        find_peer_by_id(states.in_disk_region_state.get_region(), 3).is_some()
+    });
 
     match pause {
         PauseType::ApplySnapshot => {

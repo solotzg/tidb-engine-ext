@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU128, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex, RwLock,
     },
     time::SystemTime,
@@ -118,7 +118,7 @@ pub struct CachedRegionInfo {
     // NOTE If we want a fallback, then we must set inited_or_fallback to true,
     // Otherwise, a normal snapshot will be neglect in `post_apply_snapshot` and cause data loss.
     pub inited_or_fallback: AtomicBool,
-    pub snapshot_inflight: AtomicU128,
+    pub snapshot_inflight: portable_atomic::AtomicU128,
 }
 
 pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;
