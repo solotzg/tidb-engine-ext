@@ -1290,6 +1290,7 @@ unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
     }
 }
 
+#[allow(clippy::redundant_closure_call)]
 unsafe extern "C" fn ffi_fast_add_peer(
     arg1: *mut ffi_interfaces::EngineStoreServerWrap,
     region_id: u64,

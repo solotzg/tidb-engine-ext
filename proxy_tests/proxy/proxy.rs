@@ -98,14 +98,26 @@ pub fn maybe_collect_states(
                     Ok(Some(i)) => i,
                     _ => unreachable!(),
                 };
+                let apply_state = get_apply_state(&engine, region_id);
+                let region_state = get_region_local_state(&engine, region_id);
+                let raft_state = get_raft_local_state(raft_engine, region_id);
+                if apply_state.is_none() {
+                    return;
+                }
+                if region_state.is_none() {
+                    return;
+                }
+                if raft_state.is_none() {
+                    return;
+                }
                 prev_state.insert(
                     id,
                     States {
                         in_memory_apply_state: region.apply_state.clone(),
                         in_memory_applied_term: region.applied_term,
-                        in_disk_apply_state: get_apply_state(&engine, region_id).unwrap(),
-                        in_disk_region_state: get_region_local_state(&engine, region_id).unwrap(),
-                        in_disk_raft_state: get_raft_local_state(raft_engine, region_id).unwrap(),
+                        in_disk_apply_state: apply_state.unwrap(),
+                        in_disk_region_state: region_state.unwrap(),
+                        in_disk_raft_state: raft_state.unwrap(),
                         ident,
                     },
                 );
@@ -588,8 +600,12 @@ pub fn must_wait_until_cond_node(
         }
         let mut ok = true;
         for i in new_states.keys() {
-            let new = new_states.get(i).unwrap();
-            if !pred(new) {
+            if let Some(new) = new_states.get(i) {
+                if !pred(new) {
+                    ok = false;
+                    break;
+                }
+            } else {
                 ok = false;
                 break;
             }
