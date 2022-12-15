@@ -6,9 +6,10 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU128, AtomicU64, Ordering},
         mpsc, Arc, Mutex, RwLock,
     },
+    time::SystemTime,
 };
 
 use collections::HashMap;
@@ -117,6 +118,7 @@ pub struct CachedRegionInfo {
     // NOTE If we want a fallback, then we must set inited_or_fallback to true,
     // Otherwise, a normal snapshot will be neglect in `post_apply_snapshot` and cause data loss.
     pub inited_or_fallback: AtomicBool,
+    pub snapshot_inflight: AtomicU128,
 }
 
 pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;
@@ -246,6 +248,20 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         )
     }
 
+    pub fn set_snapshot_inflight(&self, region_id: u64, v: u128) -> RaftStoreResult<()> {
+        self.access_cached_region_info_mut(
+            region_id,
+            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                MapEntry::Occupied(mut o) => {
+                    o.get_mut().snapshot_inflight.store(v, Ordering::SeqCst);
+                }
+                MapEntry::Vacant(_) => {
+                    tikv_util::safe_panic!("not inited!");
+                }
+            },
+        )
+    }
+
     fn fallback_to_slow_path(&self, region_id: u64) {
         // TODO clean local, and prepare to request snapshot from TiKV as a trivial
         // procedure.
@@ -282,6 +298,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let mut is_first = false;
         let mut is_replicated = false;
         let mut has_already_inited = None;
+        let mut early_skip = false;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
             match info {
                 MapEntry::Occupied(mut o) => {
@@ -302,17 +319,35 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                     if is_first {
-                        // TODO Maybe too much printing
-                        // info!("fast path: ongoing {}:{}, skip MsgAppend",
-                        //     self.store_id, region_id;
-                        //         "to_peer_id" => msg.get_to_peer().get_id(),
-                        //         "from_peer_id" =>
-                        // msg.get_from_peer().get_id(),
-                        //         "inner_msg" => ?inner_msg,
-                        //         "is_replicated" => is_replicated,
-                        //         "has_already_inited" => has_already_inited,
-                        //         "is_first" => is_first,
-                        // );
+                        #[cfg(any(test, feature = "testexport"))]
+                        {
+                            info!("fast path: ongoing {}:{} {}, MsgAppend skipped",
+                                self.store_id, region_id, new_peer_id;
+                                    "to_peer_id" => msg.get_to_peer().get_id(),
+                                    "from_peer_id" => msg.get_from_peer().get_id(),
+                                    "inner_msg" => ?inner_msg,
+                                    "is_replicated" => is_replicated,
+                                    "has_already_inited" => has_already_inited,
+                                    "is_first" => is_first,
+                            );
+                        }
+                    }
+                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                    if last != 0 {
+                        let current = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap();
+                        info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
+                            self.store_id, region_id, new_peer_id;
+                                "to_peer_id" => msg.get_to_peer().get_id(),
+                                "from_peer_id" => msg.get_from_peer().get_id(),
+                                "inner_msg" => ?inner_msg,
+                                "is_replicated" => is_replicated,
+                                "has_already_inited" => has_already_inited,
+                                "is_first" => is_first,
+                                "elapsed" => current.as_millis() - last,
+                        );
+                        early_skip = true;
                     }
                 }
                 MapEntry::Vacant(v) => {
@@ -330,15 +365,21 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         self.access_cached_region_info_mut(region_id, f).unwrap();
 
         if !is_first {
-            // TODO avoid too much log
-            // info!(
-            //     "fast path: normal MsgAppend of {}:{} {}",
-            //     self.store_id, region_id, new_peer_id;
-            //     "to_peer_id" => msg.get_to_peer().get_id(),
-            //     "from_peer_id" => msg.get_from_peer().get_id(),
-            //     "inner_msg" => ?inner_msg,
-            // );
+            #[cfg(any(test, feature = "testexport"))]
+            {
+                info!(
+                    "fast path: normal MsgAppend of {}:{} {}",
+                    self.store_id, region_id, new_peer_id;
+                    "to_peer_id" => msg.get_to_peer().get_id(),
+                    "from_peer_id" => msg.get_from_peer().get_id(),
+                    "inner_msg" => ?inner_msg,
+                );
+            }
             return false;
+        }
+
+        if early_skip {
+            return true;
         }
 
         {
@@ -553,18 +594,32 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         response.set_region_id(region_id);
         response.set_from_peer(msg.get_from_peer().clone());
         response.set_to_peer(msg.get_to_peer().clone());
-        response
-            .mut_message()
-            .set_msg_type(MessageType::MsgSnapshot);
-        response.mut_message().set_term(inner_msg.get_term());
-        response.mut_message().set_snapshot(pb_snapshot);
+
+        let message = response.mut_message();
+        message.set_msg_type(MessageType::MsgSnapshot);
+        message.set_term(inner_msg.get_term());
+        message.set_snapshot(pb_snapshot);
+        // If no set, will result in a MsgResponse to peer 0.
+        message.set_from(msg.get_from_peer().get_id());
+        message.set_to(msg.get_to_peer().get_id());
         debug!(
-            "!!!! send snapshot key {} raft message {:?} snap data {:?} apply_state {:?}",
-            key, response, snap_data, apply_state
+            "!!!! send snapshot to {} key {} raft message {:?} snap data {:?} apply_state {:?}",
+            msg.get_to_peer().get_id(),
+            key,
+            response,
+            snap_data,
+            apply_state
         );
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
-                Ok(_) | Err(RaftStoreError::RegionNotFound(_)) => (),
+                Ok(_) => {
+                    let current = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap();
+                    self.set_snapshot_inflight(region_id, current.as_millis())
+                        .unwrap();
+                }
+                Err(RaftStoreError::RegionNotFound(_)) => (),
                 _ => return Ok(crate::FastAddPeerStatus::OtherError),
             },
             Err(e) => return Err(box_err!("send snapshot meets error {:?}", e)),
@@ -1331,6 +1386,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                                 "snap_key" => ?snap_key,
                             );
                             should_skip = true;
+                            o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
                             o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                         }
                     }
