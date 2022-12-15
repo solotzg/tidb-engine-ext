@@ -4620,8 +4620,6 @@ where
                 "there is a pending conf change, try later";
                 "region_id" => self.region_id,
                 "peer_id" => self.peer.get_id(),
-                "!!!! conf_index" => self.raft_group.raft.pending_conf_index,
-                "!!!! applied_index" => self.get_store().applied_index(),
             );
             return Err(box_err!(
                 "{} there is a pending conf change, try later",
