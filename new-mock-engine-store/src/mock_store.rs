@@ -15,6 +15,7 @@ pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     RawCppPtr, RawVoidPtr, UnwrapExternCFunc,
 };
+use engine_traits::RaftEngineReadOnly;
 pub use engine_traits::{
     Engines, Iterable, KvEngine, Mutable, Peekable, RaftEngine, RaftLogBatch, SyncMutable,
     WriteBatch, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
@@ -209,6 +210,7 @@ pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8])
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];
     pending_delete.remove(k);
+    debug!("write into {} k {:?} v {:?}", region.region.get_id(), k, v);
     data.insert(k.to_vec(), v.to_vec());
     pending_write.insert(k.to_vec(), v.to_vec());
 }
@@ -1310,7 +1312,13 @@ unsafe extern "C" fn ffi_fast_add_peer(
         });
         0
     })() != 0;
-
+    let fail_after_write: bool = (|| {
+        fail::fail_point!("ffi_fast_add_peer_fail_after_write", |t| {
+            let t = t.unwrap().parse::<u64>().unwrap();
+            t
+        });
+        0
+    })() != 0;
     debug!("recover from remote peer: enter from {} to {}", from_store, store_id; "region_id" => region_id);
 
     for retry in 0..300 {
@@ -1322,7 +1330,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         let mut guard = match lock {
             Ok(e) => e,
             Err(_) => {
-                error!("ffi_debug_func failed to lock");
+                error!("ffi_fast_add_peer failed to lock");
                 return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::OtherError);
             }
         };
@@ -1426,6 +1434,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
         };
 
         debug!("recover from remote peer: data from {} to {}", from_store, store_id; "region_id" => region_id);
+        // TODO In TiFlash we should take care of write batch size
         if let Err(e) = copy_data_from(
             &source_engines,
             &target_engines,
@@ -1434,6 +1443,28 @@ unsafe extern "C" fn ffi_fast_add_peer(
         ) {
             error!("recover from remote peer: inject error {:?}", e; "region_id" => region_id);
             return failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::FailedInject);
+        }
+
+        if fail_after_write {
+            let mut raft_wb = target_engines.raft.log_batch(1024);
+            let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
+            target_engines
+                .raft
+                .get_all_entries_to(region_id, &mut entries)
+                .unwrap();
+
+            let l = entries.len();
+            // Manually delete one raft log
+            // let from = entries.get(l - 2).unwrap().get_index();
+            let from = 7;
+            let to = entries.get(l - 1).unwrap().get_index() + 1;
+            debug!("recover from remote peer: simulate error from {} to {}", from_store, store_id;
+                "region_id" => region_id,
+                "from" => from,
+                "to" => to,
+            );
+            raft_wb.cut_logs(region_id, from, to);
+            target_engines.raft.consume(&mut raft_wb, true).unwrap();
         }
 
         let apply_state_bytes = apply_state.write_to_bytes().unwrap();

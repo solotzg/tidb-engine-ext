@@ -266,6 +266,7 @@ fn test_fast_add_peer_from_delayed_learner_blocked() {
     fail::remove("fallback_to_slow_path_not_allow");
 }
 
+// Delay when fetch and build data
 #[test]
 fn test_fast_add_peer_from_learner_blocked_paused_build() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
@@ -280,6 +281,9 @@ fn test_fast_add_peer_from_delayed_learner_blocked_paused_build() {
     fail::remove("fallback_to_slow_path_not_allow");
 }
 
+// Delay when applying snapshot
+// This test is origianlly aimed to test multiple MsgSnapshot.
+// However,
 #[test]
 fn test_fast_add_peer_from_learner_blocked_paused_apply() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
@@ -323,6 +327,7 @@ fn test_existing_peer() {
     fail::remove("before_tiflash_check_double_write");
 }
 
+// We will reject remote peer in Applying state.
 #[test]
 fn test_apply_snapshot() {
     fail::cfg("before_tiflash_check_double_write", "return").unwrap();
@@ -431,5 +436,36 @@ fn test_split_merge() {
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![3]));
 
     fail::remove("on_can_apply_snapshot");
+    cluster.shutdown();
+}
+
+#[test]
+fn test_fall_back_to_slow_path() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
+    pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    fail::cfg("ffi_fast_add_peer_fail_after_write", "return(1)").unwrap();
+    fail::cfg("go_fast_path_succeed", "panic").unwrap();
+
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    cluster.must_put(b"k2", b"v2");
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    check_key(&cluster, b"k2", b"v2", Some(true), None, Some(vec![1, 2]));
+    must_wait_until_cond_node(&cluster, 1, Some(vec![2]), &|states: &States| -> bool {
+        find_peer_by_id(states.in_disk_region_state.get_region(), 2).is_some()
+    });
+
+    fail::remove("ffi_fast_add_peer_fail_after_write");
+    fail::remove("on_can_apply_snapshot");
+    fail::remove("on_pre_persist_with_finish");
+    fail::remove("go_fast_path_succeed");
     cluster.shutdown();
 }

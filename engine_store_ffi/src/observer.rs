@@ -287,7 +287,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // fast path not enabled
             return false;
         }
-        // TODO Need to recover all region infomation from restart.
+        // TODO We don't need to recover all region infomation from restart,
+        // since we have `has_already_inited`.
         let inner_msg = msg.get_message();
         if inner_msg.get_msg_type() != MessageType::MsgAppend {
             // we only handles the first MsgAppend
@@ -305,9 +306,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     (is_first, has_already_inited) =
                         if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
                             // If `has_already_inited` is true, usually means we recover from a
-                            // restart. So we have data in disk, but not
-                            // in memory. TODO maybe only check once, or
-                            // we can remove apply snapshot.
+                            // restart. So we have data in disk, but not in memory.
+                            // TODO Maybe only check once if we are not from recover.
+                            // If we do not, we can then remove logics in apply snapshot.
+                            // This is because if the next maybe_fast_path after apply snapshot
+                            // will have has_already_inited == true, which leads to normal
+                            // MsgAppend.
                             let has_already_inited = self.is_initialized(region_id);
                             if has_already_inited {
                                 o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
@@ -579,7 +583,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             snap_data.set_meta(snapshot_meta);
         }
 
-        // TODO The rest is test, please remove it after we can fetch the real data.
         pb_snapshot_metadata
             .set_conf_state(raftstore::store::util::conf_state_from_region(&new_region));
         pb_snapshot_metadata.set_index(key.idx);

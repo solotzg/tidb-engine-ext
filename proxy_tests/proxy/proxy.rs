@@ -594,19 +594,20 @@ pub fn must_wait_until_cond_node(
     let mut retry = 0;
     loop {
         let new_states = maybe_collect_states(&cluster, region_id, store_ids.clone());
-        if let Some(ref e) = store_ids {
-            assert_eq!(e.len(), new_states.len());
-        }
         let mut ok = true;
-        for i in new_states.keys() {
-            if let Some(new) = new_states.get(i) {
-                if !pred(new) {
-                    ok = false;
-                    break;
+        if let Some(ref e) = store_ids {
+            if e.len() == new_states.len() {
+                for i in new_states.keys() {
+                    if let Some(new) = new_states.get(i) {
+                        if !pred(new) {
+                            ok = false;
+                            break;
+                        }
+                    } else {
+                        ok = false;
+                        break;
+                    }
                 }
-            } else {
-                ok = false;
-                break;
             }
         }
         if ok {
