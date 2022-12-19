@@ -1464,7 +1464,7 @@ where
             }
 
             write_peer_state(
-                &mut kv_wb,
+                &mut raft_wb,
                 &region,
                 PeerState::Tombstone,
                 // Only persist the `merge_state` if the merge is known to be succeeded

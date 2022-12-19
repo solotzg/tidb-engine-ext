@@ -116,6 +116,15 @@ impl RaftEngine for PanicEngine {
         panic!()
     }
 
+    fn put_region_state(&self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
+        panic!()
+    }
+
+    fn put_apply_state(&self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+        panic!()
+    }
+
+
     fn gc(&self, raft_group_id: u64, mut from: u64, to: u64) -> Result<usize> {
         panic!()
     }
@@ -152,10 +161,9 @@ impl RaftEngine for PanicEngine {
         panic!()
     }
 
-    fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
+    fn for_each_raft_group<F>(&self, f: &mut F)
     where
-        F: FnMut(u64) -> std::result::Result<(), E>,
-        E: From<Error>,
+        F: FnMut(u64, &[u8]),
     {
         panic!()
     }
@@ -175,6 +183,9 @@ impl RaftLogBatch for PanicWriteBatch {
     }
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        panic!()
+    }
+    fn remove_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
         panic!()
     }
 
@@ -205,8 +216,25 @@ impl RaftLogBatch for PanicWriteBatch {
     fn put_region_state(&mut self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
         panic!()
     }
+    fn remove_region_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
 
     fn put_apply_state(&mut self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+        panic!()
+    }
+    fn remove_apply_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
+
+    fn put_snapshot_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        panic!()
+    }
+    fn remove_snapshot_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
+
+    fn write_to(&mut self) {
         panic!()
     }
 }

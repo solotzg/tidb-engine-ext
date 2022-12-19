@@ -156,10 +156,6 @@ impl RaftLogBatch for PSEngineWriteBatch {
         // }
     }
 
-    fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
-        self.put_msg(&keys::raft_state_key(raft_group_id), state)
-    }
-
     fn persist_size(&self) -> usize {
         self.data_size()
     }
@@ -187,12 +183,42 @@ impl RaftLogBatch for PSEngineWriteBatch {
         self.del_page(keys::PREPARE_BOOTSTRAP_KEY)
     }
 
+    fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        self.put_msg(&keys::raft_state_key(raft_group_id), state)
+    }
+
+    fn remove_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        self.del_page(&keys::raft_state_key(raft_group_id))
+    }
+
     fn put_region_state(&mut self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
         self.put_msg(&keys::region_state_key(raft_group_id), state)
     }
 
+    fn remove_region_state(&mut self, raft_group_id: u64) -> Result<()> {
+        self.del_page(&keys::region_state_key(raft_group_id))
+    }
+
     fn put_apply_state(&mut self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
         self.put_msg(&keys::apply_state_key(raft_group_id), state)
+    }
+
+    fn remove_apply_state(&mut self, raft_group_id: u64) -> Result<()> {
+        self.del_page(&keys::apply_state_key(raft_group_id))
+    }
+
+    fn put_snapshot_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        self.put_msg(&keys::snapshot_raft_state_key(raft_group_id), state)
+
+    }
+    fn remove_snapshot_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        self.del_page(&keys::snapshot_raft_state_key(raft_group_id))
+    }
+
+    fn write_to(&mut self) {
+        let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
+        helper.consume_write_batch(self.raw_write_batch.ptr);
+        helper.write_batch_clear(self.raw_write_batch.ptr);
     }
 }
 
@@ -268,8 +294,8 @@ impl PSEngine {
         let values = helper.scan_page(start_key.into(), end_key.into());
         for i in 0..values.len {
             let value = unsafe { &*values.inner.offset(i as isize) };
-            if value.view.len != 0 {
-                if !f(&[], &value.view.to_slice().to_vec())? {
+            if value.page_view.len != 0 {
+                if !f(&value.key_view.to_slice().to_vec(), &value.page_view.to_slice().to_vec())? {
                     break;
                 }
             }
@@ -449,8 +475,7 @@ impl RaftEngine for PSEngine {
         if first_index == 0 {
             let start_key = keys::raft_log_key(raft_group_id, 0);
             let prefix = keys::raft_log_prefix(raft_group_id);
-            // TODO: make sure the seek can skip other raft related key and to the first log
-            // key
+            // TODO: make sure the seek can skip other raft related key and to the first log key
             match self.seek(&start_key) {
                 Some(target_key) if target_key.starts_with(&prefix) => {
                     first_index = box_try!(keys::raft_log_index(&target_key))
@@ -493,6 +518,20 @@ impl RaftEngine for PSEngine {
         Ok(())
     }
 
+    fn put_region_state(&self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
+        let mut wb = self.log_batch(0);
+        wb.put_msg(&keys::region_state_key(raft_group_id), state);
+        self.consume(&mut wb, false);
+        Ok(())
+    }
+
+    fn put_apply_state(&self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+        let mut wb = self.log_batch(0);
+        wb.put_msg(&keys::apply_state_key(raft_group_id), state);
+        self.consume(&mut wb, false);
+        Ok(())
+    }
+
     fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize> {
         self.gc_impl(raft_group_id, from, to)
     }
@@ -528,32 +567,20 @@ impl RaftEngine for PSEngine {
         Ok(())
     }
 
-    fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
+    fn for_each_raft_group<F>(&self, f: &mut F)
     where
-        F: FnMut(u64) -> std::result::Result<(), E>,
-        E: From<Error>,
+        F: FnMut(u64, &[u8]),
     {
         let start_key = keys::REGION_META_MIN_KEY;
         let end_key = keys::REGION_META_MAX_KEY;
-        let mut err = None;
-        self.scan(start_key, end_key, |key, _| {
+        self.scan(start_key, end_key, |key, value| {
             let (region_id, suffix) = box_try!(keys::decode_region_meta_key(key));
             if suffix != keys::REGION_STATE_SUFFIX {
                 return Ok(true);
             }
-
-            match f(region_id) {
-                Ok(()) => Ok(true),
-                Err(e) => {
-                    err = Some(e);
-                    Ok(false)
-                }
-            }
-        })?;
-        match err {
-            None => Ok(()),
-            Some(e) => Err(e),
-        }
+            f(region_id, value);
+            Ok(true)
+        });
     }
 
     fn put_recover_state(&self, state: &StoreRecoverState) -> Result<()> {

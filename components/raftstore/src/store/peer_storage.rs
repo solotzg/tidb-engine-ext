@@ -194,8 +194,8 @@ fn init_apply_state<EK: KvEngine, ER: RaftEngine>(
 ) -> Result<RaftApplyState> {
     Ok(
         match engines
-            .kv
-            .get_msg_cf(CF_RAFT, &keys::apply_state_key(region.get_id()))?
+            .raft
+            .get_apply_state(region.get_id())?
         {
             Some(s) => s,
             None => {
@@ -391,12 +391,8 @@ where
     }
 
     #[inline]
-    pub fn save_apply_state_to(&self, kv_wb: &mut impl Mutable) -> Result<()> {
-        kv_wb.put_msg_cf(
-            CF_RAFT,
-            &keys::apply_state_key(self.region.get_id()),
-            self.apply_state(),
-        )?;
+    pub fn save_apply_state_to(&self, raft_wb: &mut impl RaftLogBatch) -> Result<()> {
+        raft_wb.put_apply_state(self.region.get_id(), self.apply_state())?;
         Ok(())
     }
 
@@ -619,7 +615,7 @@ where
         }
         // Write its source peers' `RegionLocalState` together with itself for atomicity
         for r in destroy_regions {
-            write_peer_state(kv_wb, r, PeerState::Tombstone, None)?;
+            write_peer_state(raft_wb, r, PeerState::Tombstone, None)?;
         }
 
         // Witness snapshot is applied atomically as no async applying operation to
@@ -629,7 +625,7 @@ where
         } else {
             PeerState::Applying
         };
-        write_peer_state(kv_wb, &region, state, None)?;
+        write_peer_state(raft_wb, &region, state, None)?;
 
         let snap_index = snap.get_metadata().get_index();
         let snap_term = snap.get_metadata().get_term();
@@ -933,7 +929,7 @@ where
                 ready.snapshot().get_metadata().get_index(),
                 write_task.extra_write.v1_mut().unwrap(),
             )?;
-            self.save_apply_state_to(write_task.extra_write.v1_mut().unwrap())?;
+            self.save_apply_state_to(write_task.raft_wb.as_mut().unwrap())?;
         }
 
         if !write_task.has_data() {
@@ -1007,8 +1003,8 @@ where
     ER: RaftEngine,
 {
     let t = Instant::now();
-    box_try!(kv_wb.delete_cf(CF_RAFT, &keys::region_state_key(region_id)));
-    box_try!(kv_wb.delete_cf(CF_RAFT, &keys::apply_state_key(region_id)));
+    box_try!(raft_wb.remove_region_state(region_id));
+    box_try!(raft_wb.remove_apply_state(region_id));
     box_try!(
         engines
             .raft
@@ -1113,7 +1109,7 @@ pub fn write_initial_raft_state<W: RaftLogBatch>(raft_wb: &mut W, region_id: u64
 
 // When we bootstrap the region or handling split new region, we must
 // call this to initialize region apply state first.
-pub fn write_initial_apply_state<T: Mutable>(kv_wb: &mut T, region_id: u64) -> Result<()> {
+pub fn write_initial_apply_state<T: RaftLogBatch>(raft_wb: &mut T, region_id: u64) -> Result<()> {
     let mut apply_state = RaftApplyState::default();
     apply_state.set_applied_index(RAFT_INIT_LOG_INDEX);
     apply_state
@@ -1123,12 +1119,12 @@ pub fn write_initial_apply_state<T: Mutable>(kv_wb: &mut T, region_id: u64) -> R
         .mut_truncated_state()
         .set_term(RAFT_INIT_LOG_TERM);
 
-    kv_wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+    raft_wb.put_apply_state(region_id, &apply_state)?;
     Ok(())
 }
 
-pub fn write_peer_state<T: Mutable>(
-    kv_wb: &mut T,
+pub fn write_peer_state<T: RaftLogBatch>(
+    raft_wb: &mut T,
     region: &metapb::Region,
     state: PeerState,
     merge_state: Option<MergeState>,
@@ -1146,7 +1142,7 @@ pub fn write_peer_state<T: Mutable>(
         "region_id" => region_id,
         "state" => ?region_state,
     );
-    kv_wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &region_state)?;
+    raft_wb.put_region_state(region_id, &region_state)?;
     Ok(())
 }
 
@@ -1165,7 +1161,7 @@ pub mod tests {
     };
     use engine_traits::{
         Engines, Iterable, RaftEngineDebug, RaftEngineReadOnly, SyncMutable, WriteBatch,
-        WriteBatchExt, ALL_CFS, CF_DEFAULT,
+        WriteBatchExt, ALL_CFS, CF_DEFAULT, CF_RAFT,
     };
     use kvproto::raft_serverpb::RaftSnapshotData;
     use metapb::{Peer, Store, StoreLabel};
@@ -1337,12 +1333,11 @@ pub mod tests {
         );
         store
             .engines
-            .kv
-            .scan(CF_RAFT, &meta_start, &meta_end, false, |_, _| {
+            .raft
+            .for_each_raft_group(|_, _| {
                 count += 1;
                 Ok(true)
-            })
-            .unwrap();
+            });
 
         let (raft_start, raft_end) = (
             keys::region_raft_prefix(region_id),
@@ -1350,12 +1345,11 @@ pub mod tests {
         );
         store
             .engines
-            .kv
-            .scan(CF_RAFT, &raft_start, &raft_end, false, |_, _| {
+            .raft
+            .for_each_raft_group(|_, _| {
                 count += 1;
                 Ok(true)
-            })
-            .unwrap();
+            });
 
         store
             .engines
@@ -1563,8 +1557,8 @@ pub mod tests {
         sched: &Scheduler<RegionTask<KvTestSnapshot>>,
     ) -> Result<()> {
         let apply_state: RaftApplyState = engines
-            .kv
-            .get_msg_cf(CF_RAFT, &keys::apply_state_key(gen_task.region_id))
+            .raft
+            .get_apply_state(gen_task.region_id)
             .unwrap()
             .unwrap();
         let idx = apply_state.get_applied_index();
@@ -1826,8 +1820,8 @@ pub mod tests {
         r.mut_peers().push(new_peer(2, 2));
         r.mut_peers().push(new_witness_peer(3, 3));
 
-        let mut kv_wb = s.engines.kv.write_batch();
-        write_peer_state(&mut kv_wb, &r, PeerState::Normal, None).unwrap();
+        let mut raft_wb = s.engines.raft.log_batch(100);
+        write_peer_state(&mut raft_wb, &r, PeerState::Normal, None).unwrap();
         kv_wb.write().unwrap();
         s.set_region(r);
 
@@ -2113,8 +2107,8 @@ pub mod tests {
             .set_term(RAFT_INIT_LOG_TERM);
         let apply_state_key = keys::apply_state_key(1);
         engines
-            .kv
-            .put_msg_cf(CF_RAFT, &apply_state_key, &apply_state)
+            .raft
+            .put_apply_state(region_id, &apply_state)
             .unwrap();
         assert!(build_storage().is_err());
 
@@ -2123,8 +2117,8 @@ pub mod tests {
         apply_state.set_commit_index(14);
         apply_state.set_commit_term(RAFT_INIT_LOG_TERM);
         engines
-            .kv
-            .put_msg_cf(CF_RAFT, &apply_state_key, &apply_state)
+            .raft
+            .put_apply_state(region_id, &apply_state)
             .unwrap();
         assert!(build_storage().is_err());
 

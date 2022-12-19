@@ -297,6 +297,15 @@ impl RaftEngine for RocksEngine {
         self.put_msg(&keys::raft_state_key(raft_group_id), state)
     }
 
+    fn put_region_state(&self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
+        panic!()
+    }
+
+    fn put_apply_state(&self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+        panic!()
+    }
+
+
     fn batch_gc(&self, groups: Vec<RaftLogGcTask>) -> Result<usize> {
         let mut total = 0;
         let mut raft_wb = self.write_batch_with_cap(4 * 1024);
@@ -347,32 +356,20 @@ impl RaftEngine for RocksEngine {
         self.put_msg(keys::STORE_IDENT_KEY, ident)
     }
 
-    fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
+    fn for_each_raft_group<F>(&self, f: &mut F)
     where
-        F: FnMut(u64) -> std::result::Result<(), E>,
-        E: From<Error>,
+        F: FnMut(u64, &[u8]),
     {
         let start_key = keys::REGION_META_MIN_KEY;
         let end_key = keys::REGION_META_MAX_KEY;
-        let mut err = None;
         self.scan(CF_DEFAULT, start_key, end_key, false, |key, _| {
             let (region_id, suffix) = box_try!(keys::decode_region_meta_key(key));
             if suffix != keys::REGION_STATE_SUFFIX {
                 return Ok(true);
             }
-
-            match f(region_id) {
-                Ok(()) => Ok(true),
-                Err(e) => {
-                    err = Some(e);
-                    Ok(false)
-                }
-            }
-        })?;
-        match err {
-            None => Ok(()),
-            Some(e) => Err(e),
-        }
+            f(region_id, &[]);
+            Ok(true)
+        });
     }
 
     fn put_recover_state(&self, state: &StoreRecoverState) -> Result<()> {
@@ -398,6 +395,25 @@ impl RaftLogBatch for RocksWriteBatchVec {
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
         self.put_msg(&keys::raft_state_key(raft_group_id), state)
+    }
+
+    fn remove_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
+
+    fn remove_region_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
+
+    fn remove_apply_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
+    }
+
+    fn put_snapshot_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        panic!()
+    }
+    fn remove_snapshot_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        panic!()
     }
 
     fn persist_size(&self) -> usize {
@@ -430,6 +446,10 @@ impl RaftLogBatch for RocksWriteBatchVec {
 
     fn put_apply_state(&mut self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
         self.put_msg(&keys::apply_state_key(raft_group_id), state)
+    }
+
+    fn write_to(&mut self) {
+        panic!()
     }
 }
 

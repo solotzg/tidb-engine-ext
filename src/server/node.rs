@@ -322,8 +322,8 @@ where
     // returns error.
     fn check_api_version(&self, engines: &Engines<EK, ER>) -> Result<()> {
         let ident = engines
-            .kv
-            .get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)?
+            .raft
+            .get_store_ident()?
             .expect("Store should have bootstrapped");
         // API version is not written into `StoreIdent` in legacy TiKV, thus it will be
         // V1 in `StoreIdent` regardless of `storage.enable_ttl`. To allow upgrading

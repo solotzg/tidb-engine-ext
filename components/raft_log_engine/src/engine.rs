@@ -366,6 +366,24 @@ impl RaftLogBatchTrait for RaftLogBatch {
             .put_message(raft_group_id, RAFT_LOG_STATE_KEY.to_vec(), state)
             .map_err(transfer_error)
     }
+    fn remove_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        todo!()
+    }
+
+    fn remove_region_state(&mut self, raft_group_id: u64) -> Result<()> {
+        todo!()
+    }
+
+    fn remove_apply_state(&mut self, raft_group_id: u64) -> Result<()> {
+        todo!()
+    }
+
+    fn put_snapshot_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
+        todo!()
+    }
+    fn remove_snapshot_raft_state(&mut self, raft_group_id: u64) -> Result<()> {
+        todo!()
+    }
 
     fn persist_size(&self) -> usize {
         self.0.approximate_size()
@@ -411,6 +429,10 @@ impl RaftLogBatchTrait for RaftLogBatch {
         self.0
             .put_message(raft_group_id, APPLY_STATE_KEY.to_vec(), state)
             .map_err(transfer_error)
+    }
+
+    fn write_to(&mut self) {
+        todo!()
     }
 }
 
@@ -567,6 +589,15 @@ impl RaftEngine for RaftLogEngine {
         Ok(())
     }
 
+    fn put_region_state(&self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
+        panic!()
+    }
+
+    fn put_apply_state(&self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+        panic!()
+    }
+
+
     fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize> {
         self.batch_gc(vec![RaftLogGcTask {
             raft_group_id,
@@ -623,17 +654,15 @@ impl RaftEngine for RaftLogEngine {
         self.path()
     }
 
-    fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
+    fn for_each_raft_group<F>(&self, f: &mut F)
     where
-        F: FnMut(u64) -> std::result::Result<(), E>,
-        E: From<engine_traits::Error>,
+        F: FnMut(u64, &[u8]),
     {
         for id in self.0.raft_groups() {
             if id != STORE_STATE_ID {
-                f(id)?;
+                f(id, &[]);
             }
         }
-        Ok(())
     }
 
     fn put_recover_state(&self, state: &StoreRecoverState) -> Result<()> {

@@ -18,7 +18,7 @@ use std::{
 
 use batch_system::{BasicMailbox, Fsm};
 use collections::{HashMap, HashSet};
-use engine_traits::{Engines, KvEngine, RaftEngine, SstMetaInfo, WriteBatchExt, CF_LOCK, CF_RAFT};
+use engine_traits::{Engines, KvEngine, RaftEngine, SstMetaInfo, WriteBatchExt, CF_LOCK};
 use error_code::ErrorCodeExt;
 use fail::fail_point;
 use futures::channel::mpsc::UnboundedSender;
@@ -4111,12 +4111,11 @@ where
             .unwrap()
             .get_id();
 
-        let state_key = keys::region_state_key(target_region_id);
         if let Some(target_state) = self
             .ctx
             .engines
-            .kv
-            .get_msg_cf::<RegionLocalState>(CF_RAFT, &state_key)?
+            .raft
+            .get_region_state(target_region_id)?
         {
             let state_epoch = target_state.get_region().get_region_epoch();
             if util::is_epoch_stale(target_region.get_region_epoch(), state_epoch) {
