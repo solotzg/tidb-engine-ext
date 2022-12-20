@@ -212,7 +212,6 @@ pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8])
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];
     pending_delete.remove(k);
-    debug!("write into {} k {:?} v {:?}", region.region.get_id(), k, v);
     data.insert(k.to_vec(), v.to_vec());
     pending_write.insert(k.to_vec(), v.to_vec());
 }
