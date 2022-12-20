@@ -6,7 +6,10 @@ use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
 use engine_traits::{IterOptions, Iterator, RefIterable, SstReader};
 
 pub use crate::interfaces::root::DB::{BaseBuffView, ColumnFamilyType};
-use crate::{LockCFFileReader, RaftStoreProxyPtr, RawVoidPtr, SSTReaderPtr, SSTView, SSTViewVec};
+use crate::{
+    interfaces::root::DB::SSTReaderInterfaces, LockCFFileReader, RaftStoreProxyPtr, RawVoidPtr,
+    SSTReaderPtr, SSTView, SSTViewVec,
+};
 
 #[allow(clippy::clone_on_copy)]
 impl Clone for SSTReaderInterfaces {

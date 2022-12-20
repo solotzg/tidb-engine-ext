@@ -5,6 +5,8 @@
 pub mod interfaces;
 
 pub mod basic_ffi_impls;
+pub mod domain_impls;
+pub mod encryption_impls;
 mod lock_cf_reader;
 pub mod observer;
 mod read_index_helper;
@@ -21,11 +23,10 @@ use std::{
 };
 
 pub use basic_ffi_impls::*;
+pub use domain_impls::*;
 use encryption::DataKeyManager;
-use engine_traits::{
-    EncryptionKeyManager, EncryptionMethod, FileEncryptionInfo, Peekable, CF_DEFAULT, CF_LOCK,
-    CF_WRITE,
-};
+pub use encryption_impls::*;
+use engine_traits::{Peekable, CF_LOCK, CF_WRITE};
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
 use protobuf::Message;
@@ -39,9 +40,8 @@ pub use self::interfaces::root::DB::{
     RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
-    ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
-    SSTReaderInterfaces, SSTView, SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER,
-    RAFT_STORE_PROXY_VERSION,
+    ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
+    SSTViewVec, RAFT_STORE_PROXY_MAGIC_NUMBER, RAFT_STORE_PROXY_VERSION,
 };
 use crate::lock_cf_reader::LockCFFileReader;
 
@@ -186,23 +186,6 @@ pub extern "C" fn ffi_handle_get_proxy_status(proxy_ptr: RaftStoreProxyPtr) -> R
     }
 }
 
-pub extern "C" fn ffi_is_encryption_enabled(proxy_ptr: RaftStoreProxyPtr) -> u8 {
-    unsafe { proxy_ptr.as_ref().key_manager.is_some().into() }
-}
-
-pub extern "C" fn ffi_encryption_method(
-    proxy_ptr: RaftStoreProxyPtr,
-) -> interfaces::root::DB::EncryptionMethod {
-    unsafe {
-        proxy_ptr
-            .as_ref()
-            .key_manager
-            .as_ref()
-            .map_or(EncryptionMethod::Plaintext, |x| x.encryption_method())
-            .into()
-    }
-}
-
 pub extern "C" fn ffi_batch_read_index(
     proxy_ptr: RaftStoreProxyPtr,
     view: CppStrVecView,
@@ -241,66 +224,6 @@ pub extern "C" fn ffi_batch_read_index(
             let r = ProtoMsgBaseBuff::new(r);
             (fn_insert_batch_read_index_resp.into_inner())(res, Pin::new(&r).into(), *region_id)
         }
-    }
-}
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum RawRustPtrType {
-    None = 0,
-    ReadIndexTask = 1,
-    ArcFutureWaker = 2,
-    TimerTask = 3,
-}
-
-impl From<u32> for RawRustPtrType {
-    fn from(x: u32) -> Self {
-        unsafe { std::mem::transmute(x) }
-    }
-}
-
-// TODO remove this warn.
-#[allow(clippy::from_over_into)]
-impl Into<u32> for RawRustPtrType {
-    fn into(self) -> u32 {
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-pub extern "C" fn ffi_gc_rust_ptr(
-    data: RawVoidPtr,
-    type_: self::interfaces::root::DB::RawRustPtrType,
-) {
-    if data.is_null() {
-        return;
-    }
-    let type_: RawRustPtrType = type_.into();
-    match type_ {
-        RawRustPtrType::ReadIndexTask => unsafe {
-            drop(Box::from_raw(data as *mut read_index_helper::ReadIndexTask));
-        },
-        RawRustPtrType::ArcFutureWaker => unsafe {
-            drop(Box::from_raw(data as *mut utils::ArcNotifyWaker));
-        },
-        RawRustPtrType::TimerTask => unsafe {
-            drop(Box::from_raw(data as *mut utils::TimerTask));
-        },
-        _ => unreachable!(),
-    }
-}
-
-impl Default for RawRustPtr {
-    fn default() -> Self {
-        Self {
-            ptr: std::ptr::null_mut(),
-            type_: RawRustPtrType::None.into(),
-        }
-    }
-}
-
-impl RawRustPtr {
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_null()
     }
 }
 
@@ -394,145 +317,6 @@ pub extern "C" fn ffi_poll_read_index_task(
     }
 }
 
-impl From<EncryptionMethod> for interfaces::root::DB::EncryptionMethod {
-    fn from(o: EncryptionMethod) -> Self {
-        unsafe { std::mem::transmute(o) }
-    }
-}
-
-impl FileEncryptionInfoRaw {
-    fn new(res: FileEncryptionRes) -> Self {
-        FileEncryptionInfoRaw {
-            res,
-            method: EncryptionMethod::Unknown.into(),
-            key: std::ptr::null_mut(),
-            iv: std::ptr::null_mut(),
-            error_msg: std::ptr::null_mut(),
-        }
-    }
-
-    fn error(error_msg: RawCppStringPtr) -> Self {
-        FileEncryptionInfoRaw {
-            res: FileEncryptionRes::Error,
-            method: EncryptionMethod::Unknown.into(),
-            key: std::ptr::null_mut(),
-            iv: std::ptr::null_mut(),
-            error_msg,
-        }
-    }
-
-    fn from(f: FileEncryptionInfo) -> Self {
-        FileEncryptionInfoRaw {
-            res: FileEncryptionRes::Ok,
-            method: f.method.into(),
-            key: get_engine_store_server_helper().gen_cpp_string(&f.key),
-            iv: get_engine_store_server_helper().gen_cpp_string(&f.iv),
-            error_msg: std::ptr::null_mut(),
-        }
-    }
-}
-
-pub extern "C" fn ffi_handle_get_file(
-    proxy_ptr: RaftStoreProxyPtr,
-    name: BaseBuffView,
-) -> FileEncryptionInfoRaw {
-    unsafe {
-        proxy_ptr.as_ref().key_manager.as_ref().map_or(
-            FileEncryptionInfoRaw::new(FileEncryptionRes::Disabled),
-            |key_manager| {
-                let p = key_manager.get_file(std::str::from_utf8_unchecked(name.to_slice()));
-                p.map_or_else(
-                    |e| {
-                        FileEncryptionInfoRaw::error(
-                            get_engine_store_server_helper().gen_cpp_string(
-                                format!("Encryption key manager get file failure: {}", e).as_ref(),
-                            ),
-                        )
-                    },
-                    FileEncryptionInfoRaw::from,
-                )
-            },
-        )
-    }
-}
-
-pub extern "C" fn ffi_handle_new_file(
-    proxy_ptr: RaftStoreProxyPtr,
-    name: BaseBuffView,
-) -> FileEncryptionInfoRaw {
-    unsafe {
-        proxy_ptr.as_ref().key_manager.as_ref().map_or(
-            FileEncryptionInfoRaw::new(FileEncryptionRes::Disabled),
-            |key_manager| {
-                let p = key_manager.new_file(std::str::from_utf8_unchecked(name.to_slice()));
-                p.map_or_else(
-                    |e| {
-                        FileEncryptionInfoRaw::error(
-                            get_engine_store_server_helper().gen_cpp_string(
-                                format!("Encryption key manager new file failure: {}", e).as_ref(),
-                            ),
-                        )
-                    },
-                    FileEncryptionInfoRaw::from,
-                )
-            },
-        )
-    }
-}
-
-pub extern "C" fn ffi_handle_delete_file(
-    proxy_ptr: RaftStoreProxyPtr,
-    name: BaseBuffView,
-) -> FileEncryptionInfoRaw {
-    unsafe {
-        proxy_ptr.as_ref().key_manager.as_ref().map_or(
-            FileEncryptionInfoRaw::new(FileEncryptionRes::Disabled),
-            |key_manager| {
-                let p = key_manager.delete_file(std::str::from_utf8_unchecked(name.to_slice()));
-                p.map_or_else(
-                    |e| {
-                        FileEncryptionInfoRaw::error(
-                            get_engine_store_server_helper().gen_cpp_string(
-                                format!("Encryption key manager delete file failure: {}", e)
-                                    .as_ref(),
-                            ),
-                        )
-                    },
-                    |_| FileEncryptionInfoRaw::new(FileEncryptionRes::Ok),
-                )
-            },
-        )
-    }
-}
-
-pub extern "C" fn ffi_handle_link_file(
-    proxy_ptr: RaftStoreProxyPtr,
-    src: BaseBuffView,
-    dst: BaseBuffView,
-) -> FileEncryptionInfoRaw {
-    unsafe {
-        proxy_ptr.as_ref().key_manager.as_ref().map_or(
-            FileEncryptionInfoRaw::new(FileEncryptionRes::Disabled),
-            |key_manager| {
-                let p = key_manager.link_file(
-                    std::str::from_utf8_unchecked(src.to_slice()),
-                    std::str::from_utf8_unchecked(dst.to_slice()),
-                );
-                p.map_or_else(
-                    |e| {
-                        FileEncryptionInfoRaw::error(
-                            get_engine_store_server_helper().gen_cpp_string(
-                                format!("Encryption key manager link file failure: {}", e).as_ref(),
-                            ),
-                        )
-                    },
-                    |_| FileEncryptionInfoRaw::new(FileEncryptionRes::Ok),
-                )
-            },
-        )
-    }
-}
-
 impl RaftStoreProxyFFIHelper {
     pub fn new(proxy: &RaftStoreProxy) -> Self {
         RaftStoreProxyFFIHelper {
@@ -561,78 +345,6 @@ impl RaftStoreProxyFFIHelper {
             fn_make_timer_task: Some(ffi_make_timer_task),
             fn_poll_timer_task: Some(ffi_poll_timer_task),
             fn_get_region_local_state: Some(ffi_get_region_local_state),
-        }
-    }
-}
-
-pub fn name_to_cf(cf: &str) -> ColumnFamilyType {
-    if cf.is_empty() {
-        return ColumnFamilyType::Default;
-    }
-    if cf == CF_LOCK {
-        ColumnFamilyType::Lock
-    } else if cf == CF_WRITE {
-        ColumnFamilyType::Write
-    } else if cf == CF_DEFAULT {
-        ColumnFamilyType::Default
-    } else {
-        unreachable!()
-    }
-}
-
-#[derive(Default)]
-pub struct WriteCmds {
-    keys: Vec<BaseBuffView>,
-    vals: Vec<BaseBuffView>,
-    cmd_type: Vec<WriteCmdType>,
-    cf: Vec<ColumnFamilyType>,
-}
-
-impl WriteCmds {
-    pub fn with_capacity(cap: usize) -> WriteCmds {
-        WriteCmds {
-            keys: Vec::<BaseBuffView>::with_capacity(cap),
-            vals: Vec::<BaseBuffView>::with_capacity(cap),
-            cmd_type: Vec::<WriteCmdType>::with_capacity(cap),
-            cf: Vec::<ColumnFamilyType>::with_capacity(cap),
-        }
-    }
-
-    pub fn new() -> WriteCmds {
-        WriteCmds::default()
-    }
-
-    pub fn push(&mut self, key: &[u8], val: &[u8], cmd_type: WriteCmdType, cf: ColumnFamilyType) {
-        self.keys.push(key.into());
-        self.vals.push(val.into());
-        self.cmd_type.push(cmd_type);
-        self.cf.push(cf);
-    }
-
-    pub fn len(&self) -> usize {
-        self.cmd_type.len()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    fn gen_view(&self) -> WriteCmdsView {
-        WriteCmdsView {
-            keys: self.keys.as_ptr(),
-            vals: self.vals.as_ptr(),
-            cmd_types: self.cmd_type.as_ptr(),
-            cmd_cf: self.cf.as_ptr(),
-            len: self.cmd_type.len() as u64,
-        }
-    }
-}
-
-impl RaftCmdHeader {
-    pub fn new(region_id: u64, index: u64, term: u64) -> Self {
-        RaftCmdHeader {
-            region_id,
-            index,
-            term,
         }
     }
 }
