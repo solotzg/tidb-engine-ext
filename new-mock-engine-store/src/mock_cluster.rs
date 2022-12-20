@@ -93,7 +93,7 @@ pub struct TestData {
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
     // Helper to set ffi_helper_set.
     pub ffi_helper_lst: Vec<FFIHelperSet>,
-    pub ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
+    ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
 
     pub cfg: Config,
     leaders: HashMap<u64, metapb::Peer>,
@@ -251,6 +251,16 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 }
                 Err(_) => std::process::exit(1),
             }
+        }
+    }
+
+    pub fn access_ffi_helpers(&self, f: &mut dyn FnMut(&mut HashMap<u64, FFIHelperSet>)) {
+        let lock = self.ffi_helper_set.lock();
+        match lock {
+            Ok(mut l) => {
+                f(&mut l);
+            }
+            Err(_) => std::process::exit(1),
         }
     }
 
