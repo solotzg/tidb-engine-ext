@@ -1141,13 +1141,13 @@ pub fn get_raft_msg_or_default<M: protobuf::Message + Default>(
         Ok((region_id, suffix)) => {
             match suffix {
                 keys::RAFT_STATE_SUFFIX => {
-                    engines.raft.get_raft_state(key).unwrap().unwrap_or_default()
+                    engines.raft.get_raft_state(region_id).unwrap().unwrap_or_default()
                 }
                 keys::APPLY_STATE_SUFFIX => {
-                    engines.raft.get_apply_state(key).unwrap().unwrap_or_default()
+                    engines.raft.get_apply_state(region_id).unwrap().unwrap_or_default()
                 }
                 keys::REGION_STATE_SUFFIX => {
-                    engines.raft.get_region_state(key).unwrap().unwrap_or_default()
+                    engines.raft.get_region_state(region_id).unwrap().unwrap_or_default()
                 }
                 _ => unreachable!("There is only 3 types of keys in raft"),
             }

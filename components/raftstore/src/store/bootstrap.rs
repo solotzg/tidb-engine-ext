@@ -107,8 +107,9 @@ pub fn clear_prepare_bootstrap_cluster(
 pub fn clear_prepare_bootstrap_key(
     engines: &Engines<impl KvEngine, impl RaftEngine>,
 ) -> Result<()> {
-    box_try!(engines.kv.delete(keys::PREPARE_BOOTSTRAP_KEY));
-    engines.sync_kv()?;
+    let mut raft_wb = engines.raft.log_batch(1024);
+    raft_wb.remove_prepare_bootstrap_region();
+    engines.raft.consume(&mut raft_wb, true);
     Ok(())
 }
 

@@ -295,7 +295,7 @@ where
     // check store, return store id for the engine.
     // If the store is not bootstrapped, use INVALID_ID.
     fn check_store(&self, engines: &Engines<EK, ER>) -> Result<u64> {
-        let res = engines.kv.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)?;
+        let res = engines.raft.get_store_ident()?;
         if res.is_none() {
             return Ok(INVALID_ID);
         }
@@ -426,7 +426,7 @@ where
         engines: &Engines<EK, ER>,
         store_id: u64,
     ) -> Result<Option<metapb::Region>> {
-        if let Some(first_region) = engines.kv.get_msg(keys::PREPARE_BOOTSTRAP_KEY)? {
+        if let Some(first_region) = engines.raft.get_prepare_bootstrap_region()? {
             Ok(Some(first_region))
         } else if self.check_cluster_bootstrapped()? {
             Ok(None)
