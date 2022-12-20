@@ -91,8 +91,15 @@ struct PageWithView {
   BaseBuffView view;
 };
 
-struct PageWithViewVec {
-  PageWithView *inner;
+struct PageAndCppStrWithView {
+  RawCppPtr page;
+  RawCppPtr key;
+  BaseBuffView page_view;
+  BaseBuffView key_view;
+};
+
+struct PageAndCppStrWithViewVec {
+  PageAndCppStrWithView *inner;
   const uint64_t len;
 };
 
@@ -225,9 +232,9 @@ struct EngineStoreServerHelper {
   void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
   PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
                                       BaseBuffView);
-  PageWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
+  PageAndCppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
                                          BaseBuffView, BaseBuffView);
-  void (*fn_gc_page_with_view_vec)(PageWithView *inner, uint64_t len);
+  void (*fn_gc_page_and_cpp_str_with_view_vec)(PageAndCppStrWithView *, uint64_t);
   void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
   CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *,
                                           BaseBuffView);

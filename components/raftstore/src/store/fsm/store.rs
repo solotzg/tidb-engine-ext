@@ -25,7 +25,7 @@ use concurrency_manager::ConcurrencyManager;
 use crossbeam::channel::{unbounded, TryRecvError, TrySendError};
 use engine_traits::{
     CompactedEvent, DeleteStrategy, Engines, KvEngine, Mutable, PerfContextKind, RaftEngine,
-    RaftLogBatch, Range, WriteBatch, WriteOptions, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+    RaftLogBatch, Range, WriteBatch, WriteOptions, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use fail::fail_point;
 use futures::{compat::Future01CompatExt, FutureExt};
@@ -1135,45 +1135,40 @@ impl<EK: KvEngine, ER: RaftEngine, T> RaftPollerBuilder<EK, ER, T> {
         let mut merging_count = 0;
         let mut meta = self.store_meta.lock().unwrap();
         let mut replication_state = self.global_replication_state.lock().unwrap();
-        kv_engine.scan(CF_RAFT, start_key, end_key, false, |key, value| {
-            let (region_id, suffix) = box_try!(keys::decode_region_meta_key(key));
-            if suffix != keys::REGION_STATE_SUFFIX {
-                return Ok(true);
-            }
-
+        self.engines.raft.for_each_raft_group(&mut |region_id, value| {
             total_count += 1;
 
             let mut local_state = RegionLocalState::default();
-            local_state.merge_from_bytes(value)?;
+            local_state.merge_from_bytes(value);
 
             let region = local_state.get_region();
             if local_state.get_state() == PeerState::Tombstone {
                 tombstone_count += 1;
                 debug!("region is tombstone"; "region" => ?region, "store_id" => store_id);
                 self.clear_stale_meta(&mut kv_wb, &mut raft_wb, &local_state);
-                return Ok(true);
+                return;
             }
             if local_state.get_state() == PeerState::Applying {
                 // in case of restart happen when we just write region state to Applying,
                 // but not write raft_local_state to raft rocksdb in time.
-                box_try!(peer_storage::recover_from_applying_state(
+               peer_storage::recover_from_applying_state(
                     &self.engines,
                     &mut raft_wb,
                     region_id
-                ));
+                );
                 applying_count += 1;
                 applying_regions.push(region.clone());
-                return Ok(true);
+                return;
             }
 
-            let (tx, mut peer) = box_try!(PeerFsm::create(
+            let (tx, mut peer) = PeerFsm::create(
                 store_id,
                 &self.cfg.value(),
                 self.region_scheduler.clone(),
                 self.raftlog_fetch_scheduler.clone(),
                 self.engines.clone(),
                 region,
-            ));
+            ).unwrap();
             peer.peer.init_replication_mode(&mut replication_state);
             if local_state.get_state() == PeerState::Merging {
                 info!("region is merging"; "region" => ?region, "store_id" => store_id);
@@ -1192,8 +1187,7 @@ impl<EK: KvEngine, ER: RaftEngine, T> RaftPollerBuilder<EK, ER, T> {
                 RegionChangeEvent::Create,
                 StateRole::Follower,
             );
-            Ok(true)
-        })?;
+        });
 
         if !kv_wb.is_empty() {
             kv_wb.write().unwrap();
@@ -1252,8 +1246,7 @@ impl<EK: KvEngine, ER: RaftEngine, T> RaftPollerBuilder<EK, ER, T> {
             Some(value) => value,
         };
         peer_storage::clear_meta(&self.engines, kv_wb, raft_wb, rid, 0, &raft_state).unwrap();
-        let key = keys::region_state_key(rid);
-        kv_wb.put_msg_cf(CF_RAFT, &key, origin_state).unwrap();
+        raft_wb.put_region_state(rid, origin_state).unwrap();
     }
 
     /// `clear_stale_data` clean up all possible garbage data.
@@ -1526,6 +1519,7 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
         mgr.init()?;
         let region_runner = RegionRunner::new(
             engines.kv.clone(),
+            engines.raft.clone(),
             mgr.clone(),
             cfg.clone(),
             workers.coprocessor_host.clone(),
@@ -1640,7 +1634,7 @@ impl<EK: KvEngine, ER: RaftEngine> RaftBatchSystem<EK, ER> {
         let cfg = builder.cfg.value().clone();
         let store = builder.store.clone();
 
-        let apply_poller_builder = ApplyPollerBuilder::<EK>::new(
+        let apply_poller_builder = ApplyPollerBuilder::<EK, ER>::new(
             &builder,
             Box::new(self.router.clone()),
             self.apply_router.clone(),
@@ -1802,9 +1796,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         let to_peer_id = msg.get_to_peer().get_id();
 
         // Check if the target peer is tombstone.
-        let state_key = keys::region_state_key(region_id);
         let local_state: RegionLocalState =
-            match self.ctx.engines.kv.get_msg_cf(CF_RAFT, &state_key)? {
+            match self.ctx.engines.raft.get_region_state(region_id)? {
                 Some(state) => state,
                 None => return Ok(CheckMsgStatus::NewPeerFirst),
             };
@@ -2094,8 +2087,8 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
             && self
                 .ctx
                 .engines
-                .kv
-                .get_value_cf(CF_RAFT, &keys::region_state_key(region_id))?
+                .raft
+                .get_region_state(region_id)?
                 .is_some()
         {
             return Ok(false);
@@ -2936,19 +2929,11 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
                 region, e,
             );
         }
-        let mut kv_wb = self.ctx.engines.kv.write_batch();
-        if let Err(e) = peer_storage::write_peer_state(&mut kv_wb, &region, PeerState::Normal, None)
+        let mut raft_wb = self.ctx.engines.raft.log_batch(100);
+        if let Err(e) = peer_storage::write_peer_state(&mut raft_wb, &region, PeerState::Normal, None)
         {
             panic!(
                 "Unsafe recovery, fail to add peer state for {:?} into write batch, the error is {:?}",
-                region, e,
-            );
-        }
-        let mut write_opts = WriteOptions::new();
-        write_opts.set_sync(true);
-        if let Err(e) = kv_wb.write_opt(&write_opts) {
-            panic!(
-                "Unsafe recovery, fail to write to disk while creating peer {:?}, the error is {:?}",
                 region, e,
             );
         }

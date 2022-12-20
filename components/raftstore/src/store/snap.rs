@@ -2011,7 +2011,7 @@ pub mod tests {
     };
     use engine_traits::{
         Engines, ExternalSstFileInfo, KvEngine, RaftEngine, Snapshot as EngineSnapshot, SstExt,
-        SstWriter, SstWriterBuilder, SyncMutable, ALL_CFS, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+        SstWriter, SstWriterBuilder, SyncMutable, ALL_CFS, CF_DEFAULT, CF_LOCK, CF_WRITE,
     };
     use kvproto::{
         encryptionpb::EncryptionMethod,
@@ -2126,14 +2126,14 @@ pub mod tests {
             apply_entry.set_index(10);
             apply_entry.set_term(0);
             apply_state.mut_truncated_state().set_index(10);
-            kv.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+            raft.put_apply_state(region_id, &apply_state);
             raft.append(region_id, vec![apply_entry])?;
 
             // Put region info into kv engine.
             let region = gen_test_region(region_id, 1, 1);
             let mut region_state = RegionLocalState::default();
             region_state.set_region(region);
-            kv.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &region_state)?;
+            raft.put_region_state(region_id, &region_state);
         }
         Ok(Engines::new(kv, raft))
     }
@@ -2382,7 +2382,7 @@ pub mod tests {
             .unwrap();
         let dst_db_path = dst_db_dir.path().to_str().unwrap();
         // Change arbitrarily the cf order of ALL_CFS at destination db.
-        let dst_cfs = [CF_WRITE, CF_DEFAULT, CF_LOCK, CF_RAFT];
+        let dst_cfs = [CF_WRITE, CF_DEFAULT, CF_LOCK];
         let dst_db = engine_test::kv::new_engine(dst_db_path, &dst_cfs).unwrap();
         let options = ApplyOptions {
             db: dst_db.clone(),

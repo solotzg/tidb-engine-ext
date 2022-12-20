@@ -3,7 +3,7 @@
 use std::{cell::RefCell, error::Error as StdError, result, thread::JoinHandle};
 
 use engine_rocks::RocksEngine;
-use engine_traits::{Engines, Iterable, Peekable, RaftEngine, CF_RAFT};
+use engine_traits::{Engines, Iterable, Peekable, RaftEngine};
 use futures::channel::mpsc::UnboundedSender;
 use kvproto::{
     raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
@@ -89,18 +89,16 @@ impl<ER: RaftEngine> CollectWorker<ER> {
     fn get_local_region(&self, region_id: u64) -> Result<LocalRegion> {
         let raft_state = box_try!(self.engines.raft.get_raft_state(region_id));
 
-        let apply_state_key = keys::apply_state_key(region_id);
         let apply_state = box_try!(
             self.engines
-                .kv
-                .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
+                .raft
+                .get_apply_state(region_id)
         );
 
-        let region_state_key = keys::region_state_key(region_id);
         let region_state = box_try!(
             self.engines
-                .kv
-                .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+                .raft
+                .get_region_state(region_id)
         );
 
         match (raft_state, apply_state, region_state) {
@@ -113,19 +111,11 @@ impl<ER: RaftEngine> CollectWorker<ER> {
 
     /// collect all region and report to br
     pub fn collect_report(&self) -> Result<bool> {
-        let db = &self.engines.kv;
-        let cf = CF_RAFT;
-        let start_key = keys::REGION_META_MIN_KEY;
-        let end_key = keys::REGION_META_MAX_KEY;
         let mut regions = Vec::with_capacity(1024);
-        box_try!(db.scan(cf, start_key, end_key, false, |key, _| {
-            let (id, suffix) = box_try!(keys::decode_region_meta_key(key));
-            if suffix != keys::REGION_STATE_SUFFIX {
-                return Ok(true);
-            }
-            regions.push(id);
-            Ok(true)
-        }));
+
+        self.engines.raft.for_each_raft_group(&mut |region_id, _| {
+            regions.push(region_id);
+        });
 
         for region_id in regions {
             let region_state = self.get_local_region(region_id)?;

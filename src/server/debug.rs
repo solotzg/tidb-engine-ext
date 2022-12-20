@@ -16,8 +16,8 @@ use engine_rocks::{
 };
 use engine_traits::{
     Engines, IterOptions, Iterable, Iterator as EngineIterator, Mutable, MvccProperties, Peekable,
-    RaftEngine, Range, RangePropertiesExt, SyncMutable, WriteBatch, WriteBatchExt, WriteOptions,
-    CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+    RaftEngine, Range, RangePropertiesExt, SyncMutable, WriteBatch, WriteBatchExt, WriteOptions, RaftLogBatch,
+    CF_DEFAULT, CF_LOCK, CF_WRITE
 };
 use kvproto::{
     debugpb::{self, Db as DbType},
@@ -170,19 +170,10 @@ impl<ER: RaftEngine> Debugger<ER> {
 
     /// Get all regions holding region meta data from raft CF in KV storage.
     pub fn get_all_regions_in_store(&self) -> Result<Vec<u64>> {
-        let db = &self.engines.kv;
-        let cf = CF_RAFT;
-        let start_key = keys::REGION_META_MIN_KEY;
-        let end_key = keys::REGION_META_MAX_KEY;
         let mut regions = Vec::with_capacity(128);
-        box_try!(db.scan(cf, start_key, end_key, false, |key, _| {
-            let (id, suffix) = box_try!(keys::decode_region_meta_key(key));
-            if suffix != keys::REGION_STATE_SUFFIX {
-                return Ok(true);
-            }
-            regions.push(id);
-            Ok(true)
-        }));
+        self.engines.raft.for_each_raft_group(&mut |region_id, _| {
+            regions.push(region_id);
+        });
         regions.sort_unstable();
         Ok(regions)
     }
@@ -213,18 +204,16 @@ impl<ER: RaftEngine> Debugger<ER> {
     pub fn region_info(&self, region_id: u64) -> Result<RegionInfo> {
         let raft_state = box_try!(self.engines.raft.get_raft_state(region_id));
 
-        let apply_state_key = keys::apply_state_key(region_id);
         let apply_state = box_try!(
             self.engines
-                .kv
-                .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
+                .raft
+                .get_apply_state(region_id)
         );
 
-        let region_state_key = keys::region_state_key(region_id);
         let region_state = box_try!(
             self.engines
-                .kv
-                .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+                .raft
+                .get_region_state(region_id)
         );
 
         match (raft_state, apply_state, region_state) {
@@ -240,11 +229,10 @@ impl<ER: RaftEngine> Debugger<ER> {
         region_id: u64,
         cfs: Vec<T>,
     ) -> Result<Vec<(T, usize)>> {
-        let region_state_key = keys::region_state_key(region_id);
         match self
             .engines
-            .kv
-            .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+            .raft
+            .get_region_state(region_id)
         {
             Ok(Some(region_state)) => {
                 let region = region_state.get_region();
@@ -354,32 +342,29 @@ impl<ER: RaftEngine> Debugger<ER> {
     /// normally.
     pub fn set_region_tombstone(&self, regions: Vec<Region>) -> Result<Vec<(u64, Error)>> {
         let store_id = self.get_store_ident()?.get_store_id();
-        let db = &self.engines.kv;
-        let mut wb = db.write_batch();
+        let db = &self.engines.raft;
+        let mut raft_wb = db.log_batch(100);
 
         let mut errors = Vec::with_capacity(regions.len());
         for region in regions {
             let region_id = region.get_id();
-            if let Err(e) = set_region_tombstone(db, store_id, region, &mut wb) {
+            if let Err(e) = set_region_tombstone(db, store_id, region, &mut raft_wb) {
                 errors.push((region_id, e));
             }
         }
 
         if errors.is_empty() {
-            let mut write_opts = WriteOptions::new();
-            write_opts.set_sync(true);
-            box_try!(wb.write_opt(&write_opts));
+            db.consume(&mut raft_wb, true);
         }
         Ok(errors)
     }
 
     pub fn set_region_tombstone_by_id(&self, regions: Vec<u64>) -> Result<Vec<(u64, Error)>> {
-        let db = &self.engines.kv;
-        let mut wb = db.write_batch();
+        let db = &self.engines.raft;
+        let mut wb = db.log_batch(100);
         let mut errors = Vec::with_capacity(regions.len());
         for region_id in regions {
-            let key = keys::region_state_key(region_id);
-            let region_state = match db.get_msg_cf::<RegionLocalState>(CF_RAFT, &key) {
+            let region_state = match db.get_region_state(region_id) {
                 Ok(Some(state)) => state,
                 Ok(None) => {
                     let error = box_err!("{} region local state not exists", region_id);
@@ -400,9 +385,7 @@ impl<ER: RaftEngine> Debugger<ER> {
             write_peer_state(&mut wb, region, PeerState::Tombstone, None).unwrap();
         }
 
-        let mut write_opts = WriteOptions::new();
-        write_opts.set_sync(true);
-        wb.write_opt(&write_opts).unwrap();
+        db.consume(&mut wb, true);
         Ok(errors)
     }
 
@@ -495,16 +478,6 @@ impl<ER: RaftEngine> Debugger<ER> {
     pub fn bad_regions(&self) -> Result<Vec<(u64, Error)>> {
         let mut res = Vec::new();
 
-        let from = keys::REGION_META_MIN_KEY.to_owned();
-        let to = keys::REGION_META_MAX_KEY.to_owned();
-        let readopts = IterOptions::new(
-            Some(KeyBuilder::from_vec(from.clone(), 0, 0)),
-            Some(KeyBuilder::from_vec(to, 0, 0)),
-            false,
-        );
-        let mut iter = box_try!(self.engines.kv.iterator_opt(CF_RAFT, readopts));
-        iter.seek(&from).unwrap();
-
         let fake_snap_worker = Worker::new("fake-snap-worker").lazy_build("fake-snap");
         let fake_raftlog_fetch_worker =
             Worker::new("fake-raftlog-fetch-worker").lazy_build("fake-raftlog-fetch");
@@ -556,19 +529,13 @@ impl<ER: RaftEngine> Debugger<ER> {
             Ok(())
         };
 
-        while box_try!(iter.valid()) {
-            let (key, value) = (iter.key(), iter.value());
-            if let Ok((region_id, suffix)) = keys::decode_region_meta_key(key) {
-                if suffix != keys::REGION_STATE_SUFFIX {
-                    box_try!(iter.next());
-                    continue;
-                }
-                if let Err(e) = check_value(value) {
-                    res.push((region_id, e));
-                }
-            }
-            box_try!(iter.next());
-        }
+        // FIXME: check bad region
+        // self.engines.raft.for_each_raft_group(&mut |region_id, value| {
+        //     if let Err(e) = check_value(value) {
+        //         res.push((region_id, e));
+        //     }
+        // });
+
         Ok(res)
     }
 
@@ -583,20 +550,15 @@ impl<ER: RaftEngine> Debugger<ER> {
             let msg = format!("Store {} in the failed list", store_id);
             return Err(Error::Other(msg.into()));
         }
-        let mut wb = self.engines.kv.write_batch();
+        let mut log_wb = self.engines.raft.log_batch(100);
         let store_ids = HashSet::<u64>::from_iter(store_ids);
 
         {
-            let remove_stores = |key: &[u8], value: &[u8], kv_wb: &mut RocksWriteBatchVec| {
-                let (_, suffix_type) = box_try!(keys::decode_region_meta_key(key));
-                if suffix_type != keys::REGION_STATE_SUFFIX {
-                    return Ok(());
-                }
-
+            let remove_stores = |r_id: u64, value: &[u8], log_wb: &mut ER::LogBatch| {
                 let mut region_state = RegionLocalState::default();
                 box_try!(region_state.merge_from_bytes(value));
                 if region_state.get_state() == PeerState::Tombstone {
-                    return Ok(());
+                    return Ok::<(), Error>(());
                 }
 
                 let mut new_peers = region_state.get_region().get_peers().to_owned();
@@ -649,40 +611,31 @@ impl<ER: RaftEngine> Debugger<ER> {
                 );
                 // We need to leave epoch untouched to avoid inconsistency.
                 region_state.mut_region().set_peers(new_peers.into());
-                box_try!(kv_wb.put_msg_cf(CF_RAFT, key, &region_state));
+                log_wb.put_region_state(region_id, &region_state);
                 Ok(())
             };
 
             if let Some(region_ids) = region_ids {
-                let kv = &self.engines.kv;
                 for region_id in region_ids {
-                    let key = keys::region_state_key(region_id);
-                    if let Some(value) = box_try!(kv.get_value_cf(CF_RAFT, &key)) {
-                        box_try!(remove_stores(&key, &value, &mut wb));
+                    if let Some(value) = box_try!(self.engines.raft.get_region_state(region_id)) {
+                        remove_stores(region_id, &value.write_to_bytes().unwrap(), &mut log_wb);
                     } else {
                         let msg = format!("No such region {} on the store", region_id);
                         return Err(Error::Other(msg.into()));
                     }
                 }
             } else {
-                box_try!(self.engines.kv.scan(
-                    CF_RAFT,
-                    keys::REGION_META_MIN_KEY,
-                    keys::REGION_META_MAX_KEY,
-                    false,
-                    |key, value| remove_stores(key, value, &mut wb).map(|_| true)
-                ));
+                self.engines.raft.for_each_raft_group(&mut |region_id, value| {
+                    remove_stores(region_id, value, &mut log_wb);
+                });
             }
         }
 
-        let mut write_opts = WriteOptions::new();
-        write_opts.set_sync(true);
-        box_try!(wb.write_opt(&write_opts));
+        self.engines.raft.consume(&mut log_wb, true);
         Ok(())
     }
 
     pub fn drop_unapplied_raftlog(&self, region_ids: Option<Vec<u64>>) -> Result<()> {
-        let kv = &self.engines.kv;
         let raft = &self.engines.raft;
 
         let region_ids = region_ids.unwrap_or(self.get_all_regions_in_store()?);
@@ -730,15 +683,15 @@ impl<ER: RaftEngine> Debugger<ER> {
             );
 
             // flush the changes
-            box_try!(kv.put_msg_cf(
-                CF_RAFT,
-                &keys::apply_state_key(region_id),
-                &new_raft_apply_state
-            ));
+            let mut log_wb = raft.log_batch(100);
+            log_wb.put_apply_state(region_id, &new_raft_apply_state);
+
+            box_try!(
+                raft.consume(&mut log_wb, true)
+            );
             box_try!(raft.put_raft_state(region_id, &new_raft_local_state));
             let deleted_logs = box_try!(raft.gc(region_id, applied_index + 1, last_index + 1));
             raft.sync().unwrap();
-            kv.sync().unwrap();
 
             info!(
                 "dropped unapplied raft log";
@@ -756,66 +709,51 @@ impl<ER: RaftEngine> Debugger<ER> {
 
     pub fn recreate_region(&self, region: Region) -> Result<()> {
         let region_id = region.get_id();
-        let kv = &self.engines.kv;
         let raft = &self.engines.raft;
 
-        let mut kv_wb = self.engines.kv.write_batch();
         let mut raft_wb = self.engines.raft.log_batch(0);
 
         if region.get_start_key() >= region.get_end_key() && !region.get_end_key().is_empty() {
             return Err(box_err!("Bad region: {:?}", region));
         }
 
-        box_try!(self.engines.kv.scan(
-            CF_RAFT,
-            keys::REGION_META_MIN_KEY,
-            keys::REGION_META_MAX_KEY,
-            false,
-            |key, value| {
-                let (_, suffix_type) = box_try!(keys::decode_region_meta_key(key));
-                if suffix_type != keys::REGION_STATE_SUFFIX {
-                    return Ok(true);
-                }
+        self.engines.raft.for_each_raft_group(&mut |_, value| {
+            let mut region_state = RegionLocalState::default();
+            region_state.merge_from_bytes(value).unwrap();
+            if region_state.get_state() == PeerState::Tombstone {
+                return;
+            }
+            let exists_region = region_state.get_region();
 
-                let mut region_state = RegionLocalState::default();
-                box_try!(region_state.merge_from_bytes(value));
-                if region_state.get_state() == PeerState::Tombstone {
-                    return Ok(true);
-                }
-                let exists_region = region_state.get_region();
+            if !region_overlap(exists_region, &region) {
+                return;
+            }
 
-                if !region_overlap(exists_region, &region) {
-                    return Ok(true);
-                }
-
-                if exists_region.get_start_key() == region.get_start_key()
-                    && exists_region.get_end_key() == region.get_end_key()
-                {
-                    Err(box_err!("region still exists {:?}", region))
-                } else {
-                    Err(box_err!("region overlap with {:?}", exists_region))
-                }
-            },
-        ));
+            if exists_region.get_start_key() == region.get_start_key()
+                && exists_region.get_end_key() == region.get_end_key()
+            {
+                panic!("region still exists {:?}", region)
+            } else {
+                panic!("region overlap with {:?}", exists_region)
+            }
+        });
 
         // RegionLocalState.
         let mut region_state = RegionLocalState::default();
         region_state.set_state(PeerState::Normal);
         region_state.set_region(region);
-        let key = keys::region_state_key(region_id);
-        if box_try!(kv.get_msg_cf::<RegionLocalState>(CF_RAFT, &key)).is_some() {
+        if box_try!(raft.get_region_state(region_id)).is_some() {
             return Err(Error::Other(
                 "Store already has the RegionLocalState".into(),
             ));
         }
-        box_try!(kv_wb.put_msg_cf(CF_RAFT, &key, &region_state));
+        box_try!(raft_wb.put_region_state(region_id, &region_state));
 
         // RaftApplyState.
-        let key = keys::apply_state_key(region_id);
-        if box_try!(kv.get_msg_cf::<RaftApplyState>(CF_RAFT, &key)).is_some() {
+        if box_try!(raft.get_apply_state(region_id)).is_some() {
             return Err(Error::Other("Store already has the RaftApplyState".into()));
         }
-        box_try!(write_initial_apply_state(&mut kv_wb, region_id));
+        box_try!(write_initial_apply_state(&mut raft_wb, region_id));
 
         // RaftLocalState.
         if box_try!(raft.get_raft_state(region_id)).is_some() {
@@ -823,16 +761,13 @@ impl<ER: RaftEngine> Debugger<ER> {
         }
         box_try!(write_initial_raft_state(&mut raft_wb, region_id));
 
-        let mut write_opts = WriteOptions::new();
-        write_opts.set_sync(true);
-        box_try!(kv_wb.write_opt(&write_opts));
         box_try!(self.engines.raft.consume(&mut raft_wb, true));
         Ok(())
     }
 
     pub fn get_store_ident(&self) -> Result<StoreIdent> {
-        let db = &self.engines.kv;
-        db.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)
+        let db = &self.engines.raft;
+        db.get_store_ident()
             .map_err(|e| box_err!(e))
             .and_then(|ident| match ident {
                 Some(ident) => Ok(ident),
@@ -850,11 +785,10 @@ impl<ER: RaftEngine> Debugger<ER> {
     }
 
     fn get_region_state(&self, region_id: u64) -> Result<RegionLocalState> {
-        let region_state_key = keys::region_state_key(region_id);
         let region_state = box_try!(
             self.engines
-                .kv
-                .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+                .raft
+                .get_region_state(region_id)
         );
         match region_state {
             Some(v) => Ok(v),
@@ -1327,7 +1261,6 @@ fn validate_db_and_cf(db: DbType, cf: &str) -> Result<()> {
         (DbType::Kv, CF_DEFAULT)
         | (DbType::Kv, CF_WRITE)
         | (DbType::Kv, CF_LOCK)
-        | (DbType::Kv, CF_RAFT)
         | (DbType::Raft, CF_DEFAULT) => Ok(()),
         _ => Err(Error::InvalidArgument(format!(
             "invalid cf {:?} for db {:?}",
@@ -1336,17 +1269,16 @@ fn validate_db_and_cf(db: DbType, cf: &str) -> Result<()> {
     }
 }
 
-fn set_region_tombstone(
-    db: &RocksEngine,
+fn set_region_tombstone<ER: RaftEngine>(
+    db: &ER,
     store_id: u64,
     region: Region,
-    wb: &mut RocksWriteBatchVec,
+    raft_wb: &mut ER::LogBatch,
 ) -> Result<()> {
     let id = region.get_id();
-    let key = keys::region_state_key(id);
 
     let region_state = db
-        .get_msg_cf::<RegionLocalState>(CF_RAFT, &key)
+        .get_region_state(id)
         .map_err(|e| box_err!(e))
         .and_then(|s| s.ok_or_else(|| Error::Other("Can't find RegionLocalState".into())))?;
     if region_state.get_state() == PeerState::Tombstone {
@@ -1380,7 +1312,7 @@ fn set_region_tombstone(
         return Err(box_err!("The peer is still in target peers"));
     }
 
-    box_try!(write_peer_state(wb, &region, PeerState::Tombstone, None));
+    box_try!(write_peer_state(raft_wb, &region, PeerState::Tombstone, None));
     Ok(())
 }
 
@@ -1397,7 +1329,7 @@ fn divide_db(db: &RocksEngine, parts: usize) -> raftstore::Result<Vec<Vec<u8>>> 
 #[cfg(test)]
 mod tests {
     use engine_rocks::{util::new_engine_opt, RocksCfOptions, RocksDbOptions, RocksEngine};
-    use engine_traits::{Mutable, SyncMutable, ALL_CFS, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE};
+    use engine_traits::{Mutable, SyncMutable, ALL_CFS, CF_DEFAULT, CF_LOCK, CF_WRITE, RaftEngineReadOnly};
     use kvproto::{
         kvrpcpb::ApiVersion,
         metapb::{Peer, PeerRole, Region},
@@ -1429,8 +1361,7 @@ mod tests {
         let mut region_state = RegionLocalState::default();
         region_state.set_state(PeerState::Normal);
         region_state.set_region(region.clone());
-        let key = keys::region_state_key(region_id);
-        engine.put_msg_cf(CF_RAFT, &key, &region_state).unwrap();
+        engine.put_region_state(region_id, &region_state).unwrap();
         region
     }
 
@@ -1442,24 +1373,22 @@ mod tests {
         commit_index: u64,
         applied_index: u64,
     ) {
-        let apply_state_key = keys::apply_state_key(region_id);
         let mut apply_state = RaftApplyState::default();
         apply_state.set_applied_index(applied_index);
         apply_state.set_commit_index(commit_index);
-        kv_engine
-            .put_msg_cf(CF_RAFT, &apply_state_key, &apply_state)
+        let raft_wb = raft_engine.log_batch();
+        raft_engine
+            .put_apply_state(region_id, &apply_state)
             .unwrap();
 
-        let raft_state_key = keys::raft_state_key(region_id);
         let mut raft_state = RaftLocalState::default();
         raft_state.set_last_index(last_index);
-        raft_engine.put_msg(&raft_state_key, &raft_state).unwrap();
+        raft_engine.put_raft_state(region_id, &raft_state).unwrap();
     }
 
-    fn get_region_state(engine: &RocksEngine, region_id: u64) -> RegionLocalState {
-        let key = keys::region_state_key(region_id);
+    fn get_region_state(engine: &RaftEngine, region_id: u64) -> RegionLocalState {
         engine
-            .get_msg_cf::<RegionLocalState>(CF_RAFT, &key)
+            .get_region_state(region_id)
             .unwrap()
             .unwrap()
     }
@@ -1512,7 +1441,6 @@ mod tests {
             (DbType::Kv, CF_DEFAULT),
             (DbType::Kv, CF_WRITE),
             (DbType::Kv, CF_LOCK),
-            (DbType::Kv, CF_RAFT),
             (DbType::Raft, CF_DEFAULT),
         ];
         for (db, cf) in valid_cases {
@@ -1522,7 +1450,6 @@ mod tests {
         let invalid_cases = vec![
             (DbType::Raft, CF_WRITE),
             (DbType::Raft, CF_LOCK),
-            (DbType::Raft, CF_RAFT),
             (DbType::Invalid, CF_DEFAULT),
             (DbType::Invalid, "BAD_CF"),
         ];
@@ -1620,15 +1547,14 @@ mod tests {
             raft_state
         );
 
-        let apply_state_key = keys::apply_state_key(region_id);
         let mut apply_state = RaftApplyState::default();
         apply_state.set_applied_index(42);
-        kv_engine
-            .put_msg_cf(CF_RAFT, &apply_state_key, &apply_state)
-            .unwrap();
+        let mut raft_wb = raft_engine.log_batch();
+        raft_wb.put_apply_state(region_id, &apply_state);
+        raft_engine.consume(raft_wb);
         assert_eq!(
-            kv_engine
-                .get_msg_cf::<RaftApplyState>(CF_RAFT, &apply_state_key)
+            raft_engine
+                .get_apply_state(region_id)
                 .unwrap()
                 .unwrap(),
             apply_state
@@ -1637,12 +1563,12 @@ mod tests {
         let region_state_key = keys::region_state_key(region_id);
         let mut region_state = RegionLocalState::default();
         region_state.set_state(PeerState::Tombstone);
-        kv_engine
-            .put_msg_cf(CF_RAFT, &region_state_key, &region_state)
-            .unwrap();
+        let mut raft_wb = raft_engine.log_batch();
+        raft_wb.put_region_state(region_id, &region_state);
+        raft_engine.consume(raft_wb);
         assert_eq!(
             kv_engine
-                .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+                .get_region_state(region_id)
                 .unwrap()
                 .unwrap(),
             region_state
@@ -1661,7 +1587,7 @@ mod tests {
     #[test]
     fn test_region_size() {
         let debugger = new_debugger();
-        let engine = &debugger.engines.kv;
+        let engine = &debugger.engines.raft;
 
         let region_id = 1;
         let region_state_key = keys::region_state_key(region_id);
@@ -1671,11 +1597,11 @@ mod tests {
         region.set_end_key(b"zz".to_vec());
         let mut state = RegionLocalState::default();
         state.set_region(region);
-        engine
-            .put_msg_cf(CF_RAFT, &region_state_key, &state)
-            .unwrap();
+        let mut raft_wb = engine.log_batch();
+        raft_wb.put_region_state(region_id, &state);
+        engine.consume(raft_wb);
 
-        let cfs = vec![CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE];
+        let cfs = vec![CF_DEFAULT, CF_LOCK, CF_WRITE];
         let (k, v) = (keys::data_key(b"k"), b"v");
         for cf in &cfs {
             engine.put_cf(cf, k.as_slice(), v).unwrap();
@@ -1891,19 +1817,16 @@ mod tests {
     #[test]
     fn test_bad_regions() {
         let debugger = new_debugger();
-        let kv_engine = &debugger.engines.kv;
         let raft_engine = &debugger.engines.raft;
         let store_id = 1; // It's a fake id.
 
-        let mut wb1 = raft_engine.write_batch();
+        let mut wb1 = raft_engine.log_batch();
         let cf1 = CF_DEFAULT;
 
-        let mut wb2 = kv_engine.write_batch();
-        let cf2 = CF_RAFT;
+        let mut wb2 = raft_engine.log_batch();
 
         {
-            let mock_region_state = |wb: &mut RocksWriteBatchVec, region_id: u64, peers: &[u64]| {
-                let region_state_key = keys::region_state_key(region_id);
+            let mock_region_state = |raft_wb: &mut RaftLogBatch, region_id: u64, peers: &[u64]| {
                 let mut region_state = RegionLocalState::default();
                 region_state.set_state(PeerState::Normal);
                 {
@@ -1920,25 +1843,23 @@ mod tests {
                         .collect::<Vec<_>>();
                     region.set_peers(peers.into());
                 }
-                wb.put_msg_cf(cf2, &region_state_key, &region_state)
-                    .unwrap();
+                raft_wb.put_region_state(region_id, &region_state);
             };
-            let mock_raft_state = |wb: &mut RocksWriteBatchVec,
+            let mock_raft_state = |raft_wb: &mut RaftLogBatch,
                                    region_id: u64,
                                    last_index: u64,
                                    commit_index: u64| {
-                let raft_state_key = keys::raft_state_key(region_id);
                 let mut raft_state = RaftLocalState::default();
                 raft_state.set_last_index(last_index);
                 raft_state.mut_hard_state().set_commit(commit_index);
-                wb.put_msg_cf(cf1, &raft_state_key, &raft_state).unwrap();
+                raft_wb.put_raft_state(region_id, &raft_state);
             };
             let mock_apply_state =
-                |wb: &mut RocksWriteBatchVec, region_id: u64, apply_index: u64| {
+                |raft_wb: &mut RaftLogBatch, region_id: u64, apply_index: u64| {
                     let raft_apply_key = keys::apply_state_key(region_id);
                     let mut apply_state = RaftApplyState::default();
                     apply_state.set_applied_index(apply_index);
-                    wb.put_msg_cf(cf2, &raft_apply_key, &apply_state).unwrap();
+                    raft_wb.put_apply_state(region_id, &apply_state);
                 };
 
             for &region_id in &[10, 11, 12] {
@@ -1959,8 +1880,8 @@ mod tests {
             mock_region_state(&mut wb2, 13, &[]);
         }
 
-        wb1.write_opt(&WriteOptions::new()).unwrap();
-        wb2.write_opt(&WriteOptions::new()).unwrap();
+        raft_engine.consume(wb1);
+        raft_engine.consume(wb2);
 
         let bad_regions = debugger.bad_regions().unwrap();
         assert_eq!(bad_regions.len(), 4);

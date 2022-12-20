@@ -31,7 +31,7 @@ use crossbeam::channel::{TryRecvError, TrySendError};
 use engine_traits::{
     util::SequenceNumber, DeleteStrategy, KvEngine, Mutable, PerfContext, PerfContextKind,
     RaftEngine, RaftEngineReadOnly, Range as EngineRange, Snapshot, SstMetaInfo, WriteBatch,
-    ALL_CFS, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
+    RaftLogBatch, ALL_CFS, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use fail::fail_point;
 use kvproto::{
@@ -349,9 +349,10 @@ pub trait Notifier<EK: KvEngine>: Send {
     fn clone_box(&self) -> Box<dyn Notifier<EK>>;
 }
 
-struct ApplyContext<EK>
+struct ApplyContext<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine
 {
     tag: String,
     timer: Option<Instant>,
@@ -361,6 +362,7 @@ where
     router: ApplyRouter<EK>,
     notifier: Box<dyn Notifier<EK>>,
     engine: EK,
+    raft_engine: ER,
     applied_batch: ApplyCallbackBatch<EK::Snapshot>,
     apply_res: Vec<ApplyRes<EK::Snapshot>>,
     exec_log_index: u64,
@@ -369,6 +371,8 @@ where
     kv_wb: EK::WriteBatch,
     kv_wb_last_bytes: u64,
     kv_wb_last_keys: u64,
+
+    raft_wb: ER::LogBatch,
 
     committed_count: usize,
 
@@ -430,9 +434,10 @@ where
     uncommitted_res_count: usize,
 }
 
-impl<EK> ApplyContext<EK>
+impl<EK, ER> ApplyContext<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine,
 {
     pub fn new(
         tag: String,
@@ -440,14 +445,16 @@ where
         importer: Arc<SstImporter>,
         region_scheduler: Scheduler<RegionTask<EK::Snapshot>>,
         engine: EK,
+        raft_engine: ER,
         router: ApplyRouter<EK>,
         notifier: Box<dyn Notifier<EK>>,
         cfg: &Config,
         store_id: u64,
         pending_create_peers: Arc<Mutex<HashMap<u64, (u64, bool)>>>,
         priority: Priority,
-    ) -> ApplyContext<EK> {
+    ) -> ApplyContext<EK, ER> {
         let kv_wb = engine.write_batch_with_cap(DEFAULT_APPLY_WB_SIZE);
+        let raft_wb = raft_engine.log_batch(DEFAULT_APPLY_WB_SIZE);
 
         ApplyContext {
             tag,
@@ -456,9 +463,11 @@ where
             importer,
             region_scheduler,
             engine: engine.clone(),
+            raft_engine: raft_engine.clone(),
             router,
             notifier,
             kv_wb,
+            raft_wb,
             applied_batch: ApplyCallbackBatch::new(),
             apply_res: vec![],
             exec_log_index: 0,
@@ -579,6 +588,9 @@ where
             self.kv_wb_last_bytes = 0;
             self.kv_wb_last_keys = 0;
         }
+        if !self.raft_wb_mut().is_empty() {
+            self.raft_wb_mut().write_to();
+        }
         if !self.delete_ssts.is_empty() {
             let tag = self.tag.clone();
             for sst in self.delete_ssts.drain(..) {
@@ -666,6 +678,11 @@ where
     #[inline]
     pub fn kv_wb_mut(&mut self) -> &mut EK::WriteBatch {
         &mut self.kv_wb
+    }
+
+    #[inline]
+    pub fn raft_wb_mut(&mut self) -> &mut ER::LogBatch {
+        &mut self.raft_wb
     }
 
     /// Flush all pending writes to engines.
@@ -1050,9 +1067,9 @@ where
 
     /// Handles all the committed_entries, namely, applies the committed
     /// entries.
-    fn handle_raft_committed_entries(
+    fn handle_raft_committed_entries<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         mut committed_entries_drainer: Drain<'_, Entry>,
     ) {
         if committed_entries_drainer.len() == 0 {
@@ -1123,35 +1140,31 @@ where
         }
     }
 
-    fn update_metrics(&mut self, apply_ctx: &ApplyContext<EK>) {
+    fn update_metrics<ER: RaftEngine>(&mut self, apply_ctx: &ApplyContext<EK, ER>) {
         self.metrics.written_bytes += apply_ctx.delta_bytes();
         self.metrics.written_keys += apply_ctx.delta_keys();
     }
 
-    fn write_apply_state(&self, wb: &mut EK::WriteBatch) {
-        wb.put_msg_cf(
-            CF_RAFT,
-            &keys::apply_state_key(self.region.get_id()),
-            &self.apply_state,
-        )
-        .unwrap_or_else(|e| {
-            panic!(
-                "{} failed to save apply state to write batch, error: {:?}",
-                self.tag, e
-            );
-        });
+    fn write_apply_state<ER: RaftEngine>(&self, raft_wb: &mut ER::LogBatch) {
+        raft_wb.put_apply_state(self.region.get_id(), &self.apply_state)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to save apply state to write batch, error: {:?}",
+                    self.tag, e
+                );
+            });
     }
 
-    fn maybe_write_apply_state(&self, apply_ctx: &mut ApplyContext<EK>) {
+    fn maybe_write_apply_state<ER: RaftEngine>(&self, apply_ctx: &mut ApplyContext<EK, ER>) {
         let can_write = apply_ctx.host.pre_write_apply_state(&self.region);
         if can_write {
-            self.write_apply_state(apply_ctx.kv_wb_mut());
+            self.write_apply_state::<ER>(apply_ctx.raft_wb_mut());
         }
     }
 
-    fn handle_raft_entry_normal(
+    fn handle_raft_entry_normal<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         entry: &Entry,
     ) -> ApplyResult<EK::Snapshot> {
         fail_point!(
@@ -1222,9 +1235,9 @@ where
         ApplyResult::None
     }
 
-    fn handle_raft_entry_conf_change(
+    fn handle_raft_entry_conf_change<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         entry: &Entry,
     ) -> ApplyResult<EK::Snapshot> {
         // Although conf change can't yield in normal case, it is convenient to
@@ -1299,9 +1312,9 @@ where
         None
     }
 
-    fn process_raft_cmd(
+    fn process_raft_cmd<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         index: u64,
         term: u64,
         req: RaftCmdRequest,
@@ -1339,7 +1352,7 @@ where
         if should_write {
             // An observer shall prevent a write_apply_state here by not return true
             // when `post_exec`.
-            self.write_apply_state(apply_ctx.kv_wb_mut());
+            self.write_apply_state::<ER>(apply_ctx.raft_wb_mut());
             apply_ctx.commit(self);
         }
         exec_result
@@ -1355,9 +1368,9 @@ where
     ///     case we should try to apply the entry again or panic. Considering
     ///     that this usually due to disk operation fail, which is rare, so just
     ///     panic is ok.
-    fn apply_raft_cmd(
+    fn apply_raft_cmd<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         index: u64,
         term: u64,
         req: RaftCmdRequest,
@@ -1535,7 +1548,7 @@ where
         (cmd, exec_result, should_write)
     }
 
-    fn destroy(&mut self, apply_ctx: &mut ApplyContext<EK>) {
+    fn destroy<ER: RaftEngine>(&mut self, apply_ctx: &mut ApplyContext<EK, ER>) {
         self.stopped = true;
         apply_ctx.router.close(self.region_id());
         let id = self.id();
@@ -1579,9 +1592,9 @@ where
     EK: KvEngine,
 {
     // Only errors that will also occur on all other stores should be returned.
-    fn exec_raft_cmd(
+    fn exec_raft_cmd<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &RaftCmdRequest,
     ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
         // Include region for epoch not match after merge may cause key not in range.
@@ -1596,9 +1609,9 @@ where
         }
     }
 
-    fn exec_admin_cmd(
+    fn exec_admin_cmd<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &RaftCmdRequest,
     ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
         let request = req.get_admin_request();
@@ -1643,9 +1656,9 @@ where
         Ok((resp, exec_result))
     }
 
-    fn exec_write_cmd(
+    fn exec_write_cmd<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &RaftCmdRequest,
     ) -> Result<(RaftCmdResponse, ApplyResult<EK::Snapshot>)> {
         fail_point!(
@@ -1721,7 +1734,7 @@ impl<EK> ApplyDelegate<EK>
 where
     EK: KvEngine,
 {
-    fn handle_put(&mut self, ctx: &mut ApplyContext<EK>, req: &Request) -> Result<()> {
+    fn handle_put<ER: RaftEngine>(&mut self, ctx: &mut ApplyContext<EK, ER>, req: &Request) -> Result<()> {
         PEER_WRITE_CMD_COUNTER.put.inc();
         let (key, value) = (req.get_put().get_key(), req.get_put().get_value());
         // region key range has no data prefix, so we must use origin key to check.
@@ -1767,7 +1780,7 @@ where
         Ok(())
     }
 
-    fn handle_delete(&mut self, ctx: &mut ApplyContext<EK>, req: &Request) -> Result<()> {
+    fn handle_delete<ER: RaftEngine>(&mut self, ctx: &mut ApplyContext<EK, ER>, req: &Request) -> Result<()> {
         PEER_WRITE_CMD_COUNTER.delete.inc();
         let key = req.get_delete().get_key();
         // region key range has no data prefix, so we must use origin key to check.
@@ -1888,9 +1901,9 @@ where
         Ok(())
     }
 
-    fn handle_ingest_sst(
+    fn handle_ingest_sst<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &Request,
         ssts: &mut Vec<SstMetaInfo>,
     ) -> Result<()> {
@@ -1988,9 +2001,9 @@ where
 {
     // Legacy code for compatibility. All new conf changes are dispatched by
     // ChangePeerV2 now.
-    fn exec_change_peer(
+    fn exec_change_peer<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         request: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         assert!(request.has_change_peer());
@@ -2170,7 +2183,7 @@ where
         } else {
             PeerState::Normal
         };
-        if let Err(e) = write_peer_state(ctx.kv_wb_mut(), &region, state, None) {
+        if let Err(e) = write_peer_state(ctx.raft_wb_mut(), &region, state, None) {
             panic!("{} failed to update region state: {:?}", self.tag, e);
         }
 
@@ -2188,9 +2201,9 @@ where
         ))
     }
 
-    fn exec_change_peer_v2(
+    fn exec_change_peer_v2<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         request: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         assert!(request.has_change_peer_v2());
@@ -2215,7 +2228,7 @@ where
             PeerState::Normal
         };
 
-        if let Err(e) = write_peer_state(ctx.kv_wb_mut(), &region, state, None) {
+        if let Err(e) = write_peer_state(ctx.raft_wb_mut(), &region, state, None) {
             panic!("{} failed to update region state: {:?}", self.tag, e);
         }
 
@@ -2416,9 +2429,9 @@ where
         Ok(region)
     }
 
-    fn exec_split(
+    fn exec_split<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         info!(
@@ -2438,9 +2451,9 @@ where
         self.exec_batch_split(ctx, &admin_req)
     }
 
-    fn exec_batch_split(
+    fn exec_batch_split<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         fail_point!("apply_before_split");
@@ -2556,10 +2569,9 @@ where
         // region_id -> peer_id
         let mut already_exist_regions = Vec::new();
         for (region_id, new_split_peer) in new_split_regions.iter_mut() {
-            let region_state_key = keys::region_state_key(*region_id);
             match ctx
-                .engine
-                .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+                .raft_engine
+                .get_region_state(*region_id)
             {
                 Ok(None) => (),
                 Ok(Some(state)) => {
@@ -2594,7 +2606,7 @@ where
             }
         }
 
-        let kv_wb_mut = ctx.kv_wb_mut();
+        let raft_wb_mut = ctx.raft_wb_mut();
         for new_region in &regions {
             if new_region.get_id() == derived.get_id() {
                 continue;
@@ -2611,8 +2623,8 @@ where
                 );
                 continue;
             }
-            write_peer_state(kv_wb_mut, new_region, PeerState::Normal, None)
-                .and_then(|_| write_initial_apply_state(kv_wb_mut, new_region.get_id()))
+            write_peer_state(raft_wb_mut, new_region, PeerState::Normal, None)
+                .and_then(|_| write_initial_apply_state(raft_wb_mut, new_region.get_id()))
                 .unwrap_or_else(|e| {
                     panic!(
                         "{} fails to save split region {:?}: {:?}",
@@ -2620,7 +2632,7 @@ where
                     )
                 });
         }
-        write_peer_state(kv_wb_mut, &derived, PeerState::Normal, None).unwrap_or_else(|e| {
+        write_peer_state(raft_wb_mut, &derived, PeerState::Normal, None).unwrap_or_else(|e| {
             panic!("{} fails to update region {:?}: {:?}", self.tag, derived, e)
         });
         let mut resp = AdminResponse::default();
@@ -2643,9 +2655,9 @@ where
         ))
     }
 
-    fn exec_prepare_merge(
+    fn exec_prepare_merge<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         fail_point!("apply_before_prepare_merge");
@@ -2683,7 +2695,7 @@ where
         merging_state.set_target(prepare_merge.get_target().to_owned());
         merging_state.set_commit(ctx.exec_log_index);
         write_peer_state(
-            ctx.kv_wb_mut(),
+            ctx.raft_wb_mut(),
             &region,
             PeerState::Merging,
             Some(merging_state.clone()),
@@ -2723,9 +2735,9 @@ where
     // - `on_ready_commit_merge` in target peer fsm and send `MergeResult` to source
     //   peer fsm
     // - `on_merge_result` in source peer fsm (destroy itself)
-    fn exec_commit_merge(
+    fn exec_commit_merge<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         {
@@ -2791,8 +2803,7 @@ where
 
         self.ready_source_region_id = 0;
 
-        let region_state_key = keys::region_state_key(source_region_id);
-        let state: RegionLocalState = match ctx.engine.get_msg_cf(CF_RAFT, &region_state_key) {
+        let state: RegionLocalState = match ctx.raft_engine.get_region_state(source_region_id) {
             Ok(Some(s)) => s,
             e => panic!(
                 "{} failed to get regions state of {:?}: {:?}",
@@ -2824,14 +2835,14 @@ where
         } else {
             region.set_start_key(source_region.get_start_key().to_vec());
         }
-        let kv_wb_mut = ctx.kv_wb_mut();
-        write_peer_state(kv_wb_mut, &region, PeerState::Normal, None)
+        let raft_wb_mut = ctx.raft_wb_mut();
+        write_peer_state(raft_wb_mut, &region, PeerState::Normal, None)
             .and_then(|_| {
                 // TODO: maybe all information needs to be filled?
                 let mut merging_state = MergeState::default();
                 merging_state.set_target(self.region.clone());
                 write_peer_state(
-                    kv_wb_mut,
+                    raft_wb_mut,
                     source_region,
                     PeerState::Tombstone,
                     Some(merging_state),
@@ -2857,16 +2868,15 @@ where
         ))
     }
 
-    fn exec_rollback_merge(
+    fn exec_rollback_merge<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         fail_point!("apply_before_rollback_merge");
 
         PEER_ADMIN_CMD_COUNTER.rollback_merge.all.inc();
-        let region_state_key = keys::region_state_key(self.region_id());
-        let state: RegionLocalState = match ctx.engine.get_msg_cf(CF_RAFT, &region_state_key) {
+        let state: RegionLocalState = match ctx.raft_engine.get_region_state(self.region_id()) {
             Ok(Some(s)) => s,
             e => panic!("{} failed to get regions state: {:?}", self.tag, e),
         };
@@ -2882,7 +2892,7 @@ where
         let version = region.get_region_epoch().get_version();
         // Update version to avoid duplicated rollback requests.
         region.mut_region_epoch().set_version(version + 1);
-        write_peer_state(ctx.kv_wb_mut(), &region, PeerState::Normal, None).unwrap_or_else(|e| {
+        write_peer_state(ctx.raft_wb_mut(), &region, PeerState::Normal, None).unwrap_or_else(|e| {
             panic!(
                 "{} failed to rollback merge {:?}: {:?}",
                 self.tag, rollback, e
@@ -2900,9 +2910,9 @@ where
         ))
     }
 
-    fn exec_flashback(
+    fn exec_flashback<ER: RaftEngine>(
         &self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         let is_in_flashback = req.get_cmd_type() == AdminCmdType::PrepareFlashback;
@@ -2910,7 +2920,7 @@ where
         let mut region = self.region.clone();
         region.set_is_in_flashback(is_in_flashback);
         // Modify the `RegionLocalState` persisted in disk.
-        write_peer_state(ctx.kv_wb_mut(), &region, PeerState::Normal, None).unwrap_or_else(|e| {
+        write_peer_state(ctx.raft_wb_mut(), &region, PeerState::Normal, None).unwrap_or_else(|e| {
             panic!(
                 "{} failed to change the flashback state to {} for region {:?}: {:?}",
                 self.tag, is_in_flashback, region, e
@@ -3012,9 +3022,9 @@ where
         }
     }
 
-    fn exec_compute_hash(
+    fn exec_compute_hash<ER: RaftEngine>(
         &self,
-        ctx: &ApplyContext<EK>,
+        ctx: &ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         let resp = AdminResponse::default();
@@ -3033,9 +3043,9 @@ where
         ))
     }
 
-    fn exec_verify_hash(
+    fn exec_verify_hash<ER: RaftEngine>(
         &self,
-        _: &ApplyContext<EK>,
+        _: &ApplyContext<EK, ER>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         let verify_req = req.get_verify_hash();
@@ -3589,9 +3599,9 @@ where
 
     /// Handles apply tasks, and uses the apply delegate to handle the committed
     /// entries.
-    fn handle_apply(
+    fn handle_apply<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         mut apply: Apply<Callback<EK::Snapshot>>,
     ) {
         if apply_ctx.timer.is_none() {
@@ -3695,7 +3705,7 @@ where
         APPLY_PROPOSAL.observe(propose_num as f64);
     }
 
-    fn destroy(&mut self, ctx: &mut ApplyContext<EK>) {
+    fn destroy<ER: RaftEngine>(&mut self, ctx: &mut ApplyContext<EK, ER>) {
         let region_id = self.delegate.region_id();
         if ctx.apply_res.iter().any(|res| res.region_id == region_id) {
             // Flush before destroying to avoid reordering messages.
@@ -3716,7 +3726,7 @@ where
 
     /// Handles peer destroy. When a peer is destroyed, the corresponding apply
     /// delegate should be removed too.
-    fn handle_destroy(&mut self, ctx: &mut ApplyContext<EK>, d: Destroy) {
+    fn handle_destroy<ER: RaftEngine>(&mut self, ctx: &mut ApplyContext<EK, ER>, d: Destroy) {
         assert_eq!(d.region_id, self.delegate.region_id());
         if d.merge_from_snapshot {
             assert_eq!(self.delegate.stopped, false);
@@ -3736,7 +3746,7 @@ where
         }
     }
 
-    fn resume_pending(&mut self, ctx: &mut ApplyContext<EK>) {
+    fn resume_pending<ER: RaftEngine>(&mut self, ctx: &mut ApplyContext<EK, ER>) {
         if let Some(ref state) = self.delegate.wait_merge_state {
             let source_region_id = state.logs_up_to_date.load(Ordering::SeqCst);
             if source_region_id == 0 {
@@ -3768,9 +3778,9 @@ where
         }
     }
 
-    fn logs_up_to_date_for_merge(
+    fn logs_up_to_date_for_merge<ER: RaftEngine>(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &mut ApplyContext<EK, ER>,
         catch_up_logs: CatchUpLogs,
     ) {
         fail_point!("after_handle_catch_up_logs_for_merge", |_| {});
@@ -3805,7 +3815,7 @@ where
         }
     }
 
-    fn handle_snapshot(&mut self, apply_ctx: &mut ApplyContext<EK>, snap_task: GenSnapTask) {
+    fn handle_snapshot<ER: RaftEngine>(&mut self, apply_ctx: &mut ApplyContext<EK, ER>, snap_task: GenSnapTask) {
         if self.delegate.pending_remove || self.delegate.stopped {
             return;
         }
@@ -3861,9 +3871,9 @@ where
         );
     }
 
-    fn handle_change(
+    fn handle_change<ER: RaftEngine>(
         &mut self,
-        apply_ctx: &mut ApplyContext<EK>,
+        apply_ctx: &mut ApplyContext<EK, ER>,
         cmd: ChangeObserver,
         region_epoch: RegionEpoch,
         cb: Callback<EK::Snapshot>,
@@ -3942,7 +3952,7 @@ where
         cb.invoke_read(resp);
     }
 
-    fn handle_tasks(&mut self, apply_ctx: &mut ApplyContext<EK>, msgs: &mut Vec<Msg<EK>>) {
+    fn handle_tasks<ER: RaftEngine>(&mut self, apply_ctx: &mut ApplyContext<EK, ER>, msgs: &mut Vec<Msg<EK>>) {
         let mut drainer = msgs.drain(..);
         let mut batch_apply = None;
         loop {
@@ -4122,21 +4132,23 @@ impl Fsm for ControlFsm {
     }
 }
 
-pub struct ApplyPoller<EK>
+pub struct ApplyPoller<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine,
 {
     msg_buf: Vec<Msg<EK>>,
-    apply_ctx: ApplyContext<EK>,
+    apply_ctx: ApplyContext<EK, ER>,
     messages_per_tick: usize,
     cfg_tracker: Tracker<Config>,
 
     trace_event: TraceEvent,
 }
 
-impl<EK> PollHandler<ApplyFsm<EK>, ControlFsm> for ApplyPoller<EK>
+impl<EK, ER> PollHandler<ApplyFsm<EK>, ControlFsm> for ApplyPoller<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine,
 {
     fn begin<F>(&mut self, _batch_size: usize, update_cfg: F)
     where
@@ -4240,25 +4252,26 @@ where
     }
 }
 
-pub struct Builder<EK: KvEngine> {
+pub struct Builder<EK: KvEngine, ER: RaftEngine> {
     tag: String,
     cfg: Arc<VersionTrack<Config>>,
     coprocessor_host: CoprocessorHost<EK>,
     importer: Arc<SstImporter>,
     region_scheduler: Scheduler<RegionTask<<EK as KvEngine>::Snapshot>>,
     engine: EK,
+    raft_engine: ER,
     sender: Box<dyn Notifier<EK>>,
     router: ApplyRouter<EK>,
     store_id: u64,
     pending_create_peers: Arc<Mutex<HashMap<u64, (u64, bool)>>>,
 }
 
-impl<EK: KvEngine> Builder<EK> {
-    pub fn new<T, ER: RaftEngine>(
+impl<EK: KvEngine, ER: RaftEngine> Builder<EK, ER> {
+    pub fn new<T>(
         builder: &RaftPollerBuilder<EK, ER, T>,
         sender: Box<dyn Notifier<EK>>,
         router: ApplyRouter<EK>,
-    ) -> Builder<EK> {
+    ) -> Builder<EK, ER> {
         Builder {
             tag: format!("[store {}]", builder.store.get_id()),
             cfg: builder.cfg.clone(),
@@ -4266,6 +4279,7 @@ impl<EK: KvEngine> Builder<EK> {
             importer: builder.importer.clone(),
             region_scheduler: builder.region_scheduler.clone(),
             engine: builder.engines.kv.clone(),
+            raft_engine: builder.engines.raft.clone(),
             sender,
             router,
             store_id: builder.store.get_id(),
@@ -4274,13 +4288,14 @@ impl<EK: KvEngine> Builder<EK> {
     }
 }
 
-impl<EK> HandlerBuilder<ApplyFsm<EK>, ControlFsm> for Builder<EK>
+impl<EK, ER> HandlerBuilder<ApplyFsm<EK>, ControlFsm> for Builder<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine,
 {
-    type Handler = ApplyPoller<EK>;
+    type Handler = ApplyPoller<EK, ER>;
 
-    fn build(&mut self, priority: Priority) -> ApplyPoller<EK> {
+    fn build(&mut self, priority: Priority) -> ApplyPoller<EK, ER> {
         let cfg = self.cfg.value();
         ApplyPoller {
             msg_buf: Vec::with_capacity(cfg.messages_per_tick),
@@ -4290,6 +4305,7 @@ where
                 self.importer.clone(),
                 self.region_scheduler.clone(),
                 self.engine.clone(),
+                self.raft_engine.clone(),
                 self.router.clone(),
                 self.sender.clone_box(),
                 &cfg,
@@ -4304,9 +4320,10 @@ where
     }
 }
 
-impl<EK> Clone for Builder<EK>
+impl<EK, ER> Clone for Builder<EK, ER>
 where
     EK: KvEngine,
+    ER: RaftEngine,
 {
     fn clone(&self) -> Self {
         Builder {
@@ -4316,6 +4333,7 @@ where
             importer: self.importer.clone(),
             region_scheduler: self.region_scheduler.clone(),
             engine: self.engine.clone(),
+            raft_engine: self.raft_engine.clone(),
             sender: self.sender.clone_box(),
             router: self.router.clone(),
             store_id: self.store_id,
@@ -6496,22 +6514,25 @@ mod tests {
         req
     }
 
-    struct SplitResultChecker<'a, E>
+    struct SplitResultChecker<'a, E, R>
     where
         E: KvEngine,
+        R: RaftEngine,
     {
         engine: E,
+        raft_engine: R,
         origin_peers: &'a [metapb::Peer],
         epoch: Rc<RefCell<RegionEpoch>>,
     }
 
-    impl<'a, E> SplitResultChecker<'a, E>
+    impl<'a, E, R> SplitResultChecker<'a, E, R>
     where
         E: KvEngine,
+        R: RaftEngine,
     {
         fn check(&self, start: &[u8], end: &[u8], id: u64, children: &[u64], check_initial: bool) {
             let key = keys::region_state_key(id);
-            let state: RegionLocalState = self.engine.get_msg_cf(CF_RAFT, &key).unwrap().unwrap();
+            let state: RegionLocalState = self.raft_engine.get_region_state(id).unwrap().unwrap();
             assert_eq!(state.get_state(), PeerState::Normal);
             assert_eq!(state.get_region().get_id(), id);
             assert_eq!(state.get_region().get_start_key(), start);
@@ -6533,9 +6554,8 @@ mod tests {
             if !check_initial {
                 return;
             }
-            let key = keys::apply_state_key(id);
             let initial_state: RaftApplyState =
-                self.engine.get_msg_cf(CF_RAFT, &key).unwrap().unwrap();
+                self.raft_engine.get_apply_state(id).unwrap().unwrap();
             assert_eq!(initial_state.get_applied_index(), RAFT_INIT_LOG_INDEX);
             assert_eq!(
                 initial_state.get_truncated_state().get_index(),

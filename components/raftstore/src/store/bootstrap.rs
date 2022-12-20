@@ -1,6 +1,6 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_traits::{Engines, KvEngine, Mutable, RaftEngine, WriteBatch, CF_DEFAULT, CF_RAFT};
+use engine_traits::{Engines, KvEngine, Mutable, RaftEngine, WriteBatch, RaftLogBatch, CF_DEFAULT};
 use kvproto::{
     metapb,
     raft_serverpb::{RaftLocalState, RegionLocalState, StoreIdent},
@@ -60,8 +60,7 @@ where
     ident.set_cluster_id(cluster_id);
     ident.set_store_id(store_id);
 
-    engines.kv.put_msg(keys::STORE_IDENT_KEY, &ident)?;
-    engines.sync_kv()?;
+    engines.raft.put_store_ident(&ident)?;
     Ok(())
 }
 
@@ -75,14 +74,11 @@ pub fn prepare_bootstrap_cluster(
     let mut state = RegionLocalState::default();
     state.set_region(region.clone());
 
-    let mut wb = engines.kv.write_batch();
-    box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, region));
-    box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region.get_id()), &state));
-    write_initial_apply_state(&mut wb, region.get_id())?;
-    wb.write()?;
-    engines.sync_kv()?;
-
     let mut raft_wb = engines.raft.log_batch(1024);
+    box_try!(raft_wb.put_prepare_bootstrap_region(region));
+    box_try!(raft_wb.put_region_state(region.get_id(), &state));
+    write_initial_apply_state(&mut raft_wb, region.get_id())?;
+
     write_initial_raft_state(&mut raft_wb, region.get_id())?;
     box_try!(engines.raft.consume(&mut raft_wb, true));
     Ok(())
@@ -99,15 +95,11 @@ pub fn clear_prepare_bootstrap_cluster(
             .raft
             .clean(region_id, 0, &RaftLocalState::default(), &mut wb)
     );
+    wb.remove_prepare_bootstrap_region();
+    wb.remove_region_state(region_id);
+    wb.remove_apply_state(region_id);
     box_try!(engines.raft.consume(&mut wb, true));
 
-    let mut wb = engines.kv.write_batch();
-    box_try!(wb.delete(keys::PREPARE_BOOTSTRAP_KEY));
-    // should clear raft initial state too.
-    box_try!(wb.delete_cf(CF_RAFT, &keys::region_state_key(region_id)));
-    box_try!(wb.delete_cf(CF_RAFT, &keys::apply_state_key(region_id)));
-    wb.write()?;
-    engines.sync_kv()?;
     Ok(())
 }
 
@@ -115,8 +107,9 @@ pub fn clear_prepare_bootstrap_cluster(
 pub fn clear_prepare_bootstrap_key(
     engines: &Engines<impl KvEngine, impl RaftEngine>,
 ) -> Result<()> {
-    box_try!(engines.kv.delete(keys::PREPARE_BOOTSTRAP_KEY));
-    engines.sync_kv()?;
+    let mut raft_wb = engines.raft.log_batch(1024);
+    raft_wb.remove_prepare_bootstrap_region();
+    engines.raft.consume(&mut raft_wb, true);
     Ok(())
 }
 
@@ -134,7 +127,7 @@ mod tests {
         let path = Builder::new().prefix("var").tempdir().unwrap();
         let raft_path = path.path().join("raft");
         let kv_engine =
-            engine_test::kv::new_engine(path.path().to_str().unwrap(), &[CF_DEFAULT, CF_RAFT])
+            engine_test::kv::new_engine(path.path().to_str().unwrap(), &[CF_DEFAULT])
                 .unwrap();
         let raft_engine = engine_test::raft::new_engine(raft_path.to_str().unwrap(), None).unwrap();
         let engines = Engines::new(kv_engine.clone(), raft_engine.clone());
@@ -145,20 +138,20 @@ mod tests {
 
         prepare_bootstrap_cluster(&engines, &region).unwrap();
         assert!(
-            kv_engine
-                .get_value(keys::PREPARE_BOOTSTRAP_KEY)
+            raft_engine
+                .get_prepare_bootstrap_region()
                 .unwrap()
                 .is_some()
         );
         assert!(
-            kv_engine
-                .get_value_cf(CF_RAFT, &keys::region_state_key(1))
+            raft_engine
+                .get_region_state(1)
                 .unwrap()
                 .is_some()
         );
         assert!(
-            kv_engine
-                .get_value_cf(CF_RAFT, &keys::apply_state_key(1))
+            raft_engine
+                .get_apply_state(1)
                 .unwrap()
                 .is_some()
         );
@@ -166,15 +159,6 @@ mod tests {
 
         clear_prepare_bootstrap_key(&engines).unwrap();
         clear_prepare_bootstrap_cluster(&engines, 1).unwrap();
-        assert!(
-            is_range_empty(
-                &kv_engine,
-                CF_RAFT,
-                &keys::region_meta_prefix(1),
-                &keys::region_meta_prefix(2)
-            )
-            .unwrap()
-        );
         assert!(RaftLogBatch::is_empty(&raft_engine.dump_all_data(1)));
     }
 }

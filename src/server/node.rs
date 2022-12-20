@@ -295,7 +295,7 @@ where
     // check store, return store id for the engine.
     // If the store is not bootstrapped, use INVALID_ID.
     fn check_store(&self, engines: &Engines<EK, ER>) -> Result<u64> {
-        let res = engines.kv.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)?;
+        let res = engines.raft.get_store_ident()?;
         if res.is_none() {
             return Ok(INVALID_ID);
         }
@@ -322,8 +322,8 @@ where
     // returns error.
     fn check_api_version(&self, engines: &Engines<EK, ER>) -> Result<()> {
         let ident = engines
-            .kv
-            .get_msg::<StoreIdent>(keys::STORE_IDENT_KEY)?
+            .raft
+            .get_store_ident()?
             .expect("Store should have bootstrapped");
         // API version is not written into `StoreIdent` in legacy TiKV, thus it will be
         // V1 in `StoreIdent` regardless of `storage.enable_ttl`. To allow upgrading
@@ -426,7 +426,7 @@ where
         engines: &Engines<EK, ER>,
         store_id: u64,
     ) -> Result<Option<metapb::Region>> {
-        if let Some(first_region) = engines.kv.get_msg(keys::PREPARE_BOOTSTRAP_KEY)? {
+        if let Some(first_region) = engines.raft.get_prepare_bootstrap_region()? {
             Ok(Some(first_region))
         } else if self.check_cluster_bootstrapped()? {
             Ok(None)

@@ -282,32 +282,28 @@ impl<EK: KvEngine, ER: RaftEngine, T> StorePollerBuilder<EK, ER, T> {
         let cfg = self.cfg.value();
         let mut meta = self.store_meta.lock().unwrap();
         self.engine
-            .for_each_raft_group::<Error, _>(&mut |region_id| {
+            .for_each_raft_group(&mut |region_id, _| {
                 assert_ne!(region_id, INVALID_ID);
-                let storage = match Storage::new(
+                let storage = Storage::new(
                     region_id,
                     self.store_id,
                     self.engine.clone(),
                     self.read_scheduler.clone(),
                     &self.logger,
-                )? {
-                    Some(p) => p,
-                    None => return Ok(()),
-                };
+                )?;
                 let (sender, peer_fsm) = PeerFsm::new(&cfg, &*self.tablet_factory, storage)?;
                 meta.region_read_progress
                     .insert(region_id, peer_fsm.as_ref().peer().read_progress().clone());
 
                 let prev = regions.insert(region_id, (sender, peer_fsm));
                 if let Some((_, p)) = prev {
-                    return Err(box_err!(
+                    panic!(
                         "duplicate region {:?} vs {:?}",
                         p.logger().list(),
                         regions[&region_id].1.logger().list()
-                    ));
+                    );
                 }
-                Ok(())
-            })?;
+            });
         self.clean_up_tablets(&regions)?;
         Ok(regions)
     }

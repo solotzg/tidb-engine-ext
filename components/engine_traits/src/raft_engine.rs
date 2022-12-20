@@ -107,6 +107,10 @@ pub trait RaftEngine: RaftEngineReadOnly + PerfContextExt + Clone + Sync + Send 
 
     fn put_raft_state(&self, raft_group_id: u64, state: &RaftLocalState) -> Result<()>;
 
+    fn put_region_state(&self, raft_group_id: u64, state: &RegionLocalState) -> Result<()>;
+
+    fn put_apply_state(&self, raft_group_id: u64, state: &RaftApplyState) -> Result<()>;
+
     /// Like `cut_logs` but the range could be very large. Return the deleted
     /// count. Generally, `from` can be passed in `0`.
     fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize>;
@@ -145,12 +149,9 @@ pub trait RaftEngine: RaftEngineReadOnly + PerfContextExt + Clone + Sync + Send 
     fn get_engine_path(&self) -> &str;
 
     /// Visit all available raft groups.
-    ///
-    /// If any error is returned, the iteration will stop.
-    fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
+    fn for_each_raft_group<F>(&self, f: &mut F)
     where
-        F: FnMut(u64) -> std::result::Result<(), E>,
-        E: From<Error>;
+        F: FnMut(u64, &[u8]);
 
     /// Indicate whether region states should be recovered from raftdb and
     /// replay raft logs.
@@ -172,8 +173,17 @@ pub trait RaftLogBatch: Send {
     fn remove_prepare_bootstrap_region(&mut self) -> Result<()>;
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()>;
+    fn remove_raft_state(&mut self, raft_group_id: u64) -> Result<()>;
+
     fn put_region_state(&mut self, raft_group_id: u64, state: &RegionLocalState) -> Result<()>;
+    fn remove_region_state(&mut self, raft_group_id: u64) -> Result<()>;
+
     fn put_apply_state(&mut self, raft_group_id: u64, state: &RaftApplyState) -> Result<()>;
+    fn remove_apply_state(&mut self, raft_group_id: u64) -> Result<()>;
+
+    // FIXME: wrong state type
+    fn put_snapshot_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()>;
+    fn remove_snapshot_raft_state(&mut self, raft_group_id: u64) -> Result<()>;
 
     /// The data size of this RaftLogBatch.
     fn persist_size(&self) -> usize;
@@ -183,6 +193,8 @@ pub trait RaftLogBatch: Send {
 
     /// Merge another RaftLogBatch to itself.
     fn merge(&mut self, _: Self) -> Result<()>;
+
+    fn write_to(&mut self);
 }
 
 #[derive(Clone, Copy, Default)]

@@ -17,7 +17,7 @@ use engine_rocks::{config::BlobRunMode, RocksEngine, RocksSnapshot};
 use engine_test::raft::RaftTestEngine;
 use engine_traits::{
     Engines, Iterable, Peekable, RaftEngineDebug, RaftEngineReadOnly, TabletFactory, ALL_CFS,
-    CF_DEFAULT, CF_RAFT,
+    CF_DEFAULT,
 };
 use file_system::IoRateLimiter;
 use futures::executor::block_on;
@@ -97,8 +97,7 @@ pub fn must_get_cf_none(engine: &RocksEngine, cf: &str, key: &[u8]) {
 
 pub fn must_region_cleared(engine: &Engines<RocksEngine, RaftTestEngine>, region: &metapb::Region) {
     let id = region.get_id();
-    let state_key = keys::region_state_key(id);
-    let state: RegionLocalState = engine.kv.get_msg_cf(CF_RAFT, &state_key).unwrap().unwrap();
+    let state: RegionLocalState = engine.raft.get_region_state(id).unwrap().unwrap();
     assert_eq!(state.get_state(), PeerState::Tombstone, "{:?}", state);
     let start_key = keys::data_key(region.get_start_key());
     let end_key = keys::data_key(region.get_end_key());
@@ -1136,11 +1135,26 @@ pub fn get_raft_msg_or_default<M: protobuf::Message + Default>(
     engines: &Engines<RocksEngine, RaftTestEngine>,
     key: &[u8],
 ) -> M {
-    engines
-        .kv
-        .get_msg_cf(CF_RAFT, key)
-        .unwrap()
-        .unwrap_or_default()
+    // TODO: avoid decode key
+    let res = keys::decode_raft_key(key);
+    match res {
+        Ok((region_id, suffix)) => {
+            match suffix {
+                keys::RAFT_STATE_SUFFIX => {
+                    engines.raft.get_raft_state(region_id).unwrap().unwrap_or_default()
+                }
+                keys::APPLY_STATE_SUFFIX => {
+                    engines.raft.get_apply_state(region_id).unwrap().unwrap_or_default()
+                }
+                keys::REGION_STATE_SUFFIX => {
+                    engines.raft.get_region_state(region_id).unwrap().unwrap_or_default()
+                }
+                _ => unreachable!("There is only 3 types of keys in raft"),
+            }
+        }
+        Err(_) => unreachable!("invalid key"),
+    }
+
 }
 
 pub fn check_compacted(

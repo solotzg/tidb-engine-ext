@@ -16,7 +16,7 @@ use std::{
     u64,
 };
 
-use engine_traits::{DeleteStrategy, KvEngine, Mutable, Range, WriteBatch, CF_LOCK, CF_RAFT};
+use engine_traits::{DeleteStrategy, KvEngine, RaftEngine, Mutable, Range, WriteBatch, RaftLogBatch, CF_LOCK};
 use fail::fail_point;
 use file_system::{IoType, WithIoType};
 use kvproto::raft_serverpb::{PeerState, RaftApplyState, RegionLocalState};
@@ -337,9 +337,10 @@ where
     }
 }
 
-pub struct Runner<EK, R, T>
+pub struct Runner<EK, ER, R, T>
 where
     EK: KvEngine,
+    ER: RaftEngine,
     T: PdClient + 'static,
 {
     batch_size: usize,
@@ -363,6 +364,7 @@ where
     pending_delete_ranges: PendingDeleteRanges,
 
     engine: EK,
+    raft_engine: ER,
     mgr: SnapManager,
     coprocessor_host: CoprocessorHost<EK>,
     router: R,
@@ -370,20 +372,22 @@ where
     pool: ThreadPool<TaskCell>,
 }
 
-impl<EK, R, T> Runner<EK, R, T>
+impl<EK, ER, R, T> Runner<EK, ER, R, T>
 where
     EK: KvEngine,
+    ER: RaftEngine,
     R: CasualRouter<EK>,
     T: PdClient + 'static,
 {
     pub fn new(
         engine: EK,
+        raft_engine: ER,
         mgr: SnapManager,
         cfg: Arc<VersionTrack<Config>>,
         coprocessor_host: CoprocessorHost<EK>,
         router: R,
         pd_client: Option<Arc<T>>,
-    ) -> Runner<EK, R, T> {
+    ) -> Runner<EK, ER, R, T> {
         Runner {
             batch_size: cfg.value().snap_apply_batch_size.0 as usize,
             use_delete_range: cfg.value().use_delete_range,
@@ -396,6 +400,7 @@ where
             pending_applies: VecDeque::new(),
             pending_delete_ranges: PendingDeleteRanges::default(),
             engine,
+            raft_engine,
             mgr,
             coprocessor_host,
             router,
@@ -407,14 +412,13 @@ where
     }
 
     fn region_state(&self, region_id: u64) -> Result<RegionLocalState> {
-        let region_key = keys::region_state_key(region_id);
         let region_state: RegionLocalState =
-            match box_try!(self.engine.get_msg_cf(CF_RAFT, &region_key)) {
+            match box_try!(self.raft_engine.get_region_state(region_id)) {
                 Some(state) => state,
                 None => {
                     return Err(box_err!(
                         "failed to get region_state from {}",
-                        log_wrappers::Value::key(&region_key)
+                        region_id
                     ));
                 }
             };
@@ -422,14 +426,13 @@ where
     }
 
     fn apply_state(&self, region_id: u64) -> Result<RaftApplyState> {
-        let state_key = keys::apply_state_key(region_id);
         let apply_state: RaftApplyState =
-            match box_try!(self.engine.get_msg_cf(CF_RAFT, &state_key)) {
+            match box_try!(self.raft_engine.get_apply_state(region_id)) {
                 Some(state) => state,
                 None => {
                     return Err(box_err!(
                         "failed to get apply_state from {}",
-                        log_wrappers::Value::key(&state_key)
+                        region_id
                     ));
                 }
             };
@@ -478,13 +481,11 @@ where
             .post_apply_snapshot(&region, peer_id, &snap_key, Some(&s));
 
         // delete snapshot state.
-        let mut wb = self.engine.write_batch();
+        let mut raft_wb = self.raft_engine.log_batch(100);
         region_state.set_state(PeerState::Normal);
-        box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &region_state));
-        box_try!(wb.delete_cf(CF_RAFT, &keys::snapshot_raft_state_key(region_id)));
-        wb.write().unwrap_or_else(|e| {
-            panic!("{} failed to save apply_snap result: {:?}", region_id, e);
-        });
+        box_try!(raft_wb.put_region_state(region_id, &region_state));
+        box_try!(raft_wb.remove_snapshot_raft_state(region_id));
+        self.raft_engine.consume(&mut raft_wb, true);
         info!(
             "apply new data";
             "region_id" => region_id,
@@ -771,9 +772,10 @@ where
     }
 }
 
-impl<EK, R, T> Runnable for Runner<EK, R, T>
+impl<EK, ER, R, T> Runnable for Runner<EK, ER, R, T>
 where
     EK: KvEngine,
+    ER: RaftEngine,
     R: CasualRouter<EK> + Send + Clone + 'static,
     T: PdClient,
 {
@@ -870,9 +872,10 @@ where
     }
 }
 
-impl<EK, R, T> RunnableWithTimer for Runner<EK, R, T>
+impl<EK, ER, R, T> RunnableWithTimer for Runner<EK, ER, R, T>
 where
     EK: KvEngine,
+    ER: RaftEngine,
     R: CasualRouter<EK> + Send + Clone + 'static,
     T: PdClient + 'static,
 {
