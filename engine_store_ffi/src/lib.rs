@@ -26,7 +26,7 @@ pub use basic_ffi_impls::*;
 pub use domain_impls::*;
 use encryption::DataKeyManager;
 pub use encryption_impls::*;
-use engine_traits::{Peekable, CF_LOCK, CF_WRITE};
+use engine_traits::{Peekable, CF_LOCK};
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
 use protobuf::Message;
