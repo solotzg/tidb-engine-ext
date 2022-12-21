@@ -37,9 +37,10 @@ pub use sst_reader_impls::*;
 pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, EngineStoreApplyRes,
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
-    FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus, PageWithView,
-    PageWithViewVec, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
-    RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
+    PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
+    WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -377,11 +378,11 @@ impl Drop for RawCppPtr {
     }
 }
 
-impl Drop for PageWithViewVec {
+impl Drop for PageAndCppStrWithViewVec {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
             let helper = get_engine_store_server_helper();
-            helper.gc_page_with_view_vec(self.inner, self.len);
+            helper.gc_page_and_cpp_str_with_view_vec(self.inner, self.len);
             self.inner = std::ptr::null_mut();
             self.len = 0;
         }
@@ -570,14 +571,14 @@ impl EngineStoreServerHelper {
         &self,
         start_page_id: BaseBuffView,
         end_page_id: BaseBuffView,
-    ) -> PageWithViewVec {
+    ) -> PageAndCppStrWithViewVec {
         debug_assert!(self.fn_handle_scan_page.is_some());
         unsafe { (self.fn_handle_scan_page.into_inner())(self.inner, start_page_id, end_page_id) }
     }
 
-    pub fn gc_page_with_view_vec(&self, arg1: *mut PageWithView, arg2: u64) {
-        debug_assert!(self.fn_gc_page_with_view_vec.is_some());
-        unsafe { (self.fn_gc_page_with_view_vec.into_inner())(arg1, arg2) }
+    pub fn gc_page_and_cpp_str_with_view_vec(&self, arg1: *mut PageAndCppStrWithView, arg2: u64) {
+        debug_assert!(self.fn_gc_page_and_cpp_str_with_view_vec.is_some());
+        unsafe { (self.fn_gc_page_and_cpp_str_with_view_vec.into_inner())(arg1, arg2) }
     }
 
     pub fn purge_pagestorage(&self) {
