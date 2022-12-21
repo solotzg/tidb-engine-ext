@@ -1,6 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::sync::Arc;
 pub use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -1468,7 +1467,6 @@ unsafe extern "C" fn ffi_fast_add_peer(
                 apply_state: apply_state_ptr,
                 region: region_ptr,
             });
-            return;
         });
         if let Some(r) = ret {
             match r.status {
@@ -1487,6 +1485,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
     failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData)
 }
 
+#[allow(clippy::single_element_loop)]
 pub fn move_data_from(
     engine_store_server: &mut EngineStoreServer,
     old_region_id: u64,
