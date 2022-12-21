@@ -23,14 +23,11 @@ pub use kvproto::{
     raft_cmdpb::AdminCmdType,
     raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
 };
-pub use protobuf::Message;
-pub use tikv_util::{box_err, box_try, debug, error, info, warn};
 
 use crate::node::NodeCluster;
 pub use crate::{
     config::MockConfig,
-    copy_data_from, copy_meta_from, general_get_apply_state, general_get_region_local_state,
-    get_apply_state, get_raft_local_state, get_region_local_state, mock_cluster,
+    mock_cluster,
     mock_cluster::{
         must_get_equal, must_get_none, Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine,
     },

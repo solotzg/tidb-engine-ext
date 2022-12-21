@@ -255,6 +255,55 @@ pub fn must_put_and_check_key(
     );
 }
 
+pub fn must_put_and_check_key_with_generator<F: Fn(u64) -> (String, String)>(
+    cluster: &mut Cluster<NodeCluster>,
+    gen: F,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    for i in from..to {
+        let (k, v) = gen(i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+    for i in from..to {
+        let (k, v) = gen(i);
+        check_key(
+            &cluster,
+            k.as_bytes(),
+            v.as_bytes(),
+            in_mem,
+            in_disk,
+            engines.clone(),
+        );
+    }
+}
+
+pub fn must_put_and_check_key(
+    cluster: &mut Cluster<NodeCluster>,
+    from: u64,
+    to: u64,
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    must_put_and_check_key_with_generator(
+        cluster,
+        |i: u64| {
+            let k = format!("k{}", i);
+            let v = format!("v{}", i);
+            (k, v)
+        },
+        from,
+        to,
+        in_mem,
+        in_disk,
+        engines.clone(),
+    );
+}
+
 pub fn check_key(
     cluster: &Cluster<NodeCluster>,
     k: &[u8],
@@ -595,19 +644,20 @@ pub fn must_wait_until_cond_node(
     let mut retry = 0;
     loop {
         let new_states = maybe_collect_states(&cluster, region_id, store_ids.clone());
-        if let Some(ref e) = store_ids {
-            assert_eq!(e.len(), new_states.len());
-        }
         let mut ok = true;
-        for i in new_states.keys() {
-            if let Some(new) = new_states.get(i) {
-                if !pred(new) {
-                    ok = false;
-                    break;
+        if let Some(ref e) = store_ids {
+            if e.len() == new_states.len() {
+                for i in new_states.keys() {
+                    if let Some(new) = new_states.get(i) {
+                        if !pred(new) {
+                            ok = false;
+                            break;
+                        }
+                    } else {
+                        ok = false;
+                        break;
+                    }
                 }
-            } else {
-                ok = false;
-                break;
             }
         }
         if ok {
