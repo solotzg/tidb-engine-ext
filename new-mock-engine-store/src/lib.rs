@@ -74,7 +74,6 @@ pub fn copy_data_from(
     // kv data in memory
     for cf in 0..3 {
         for (k, v) in &source.data[cf] {
-            debug!("copy_data_from region {} {:?} {:?}", region_id, k, v);
             write_kv_in_mem(target, cf, k.as_slice(), v.as_slice());
         }
     }
