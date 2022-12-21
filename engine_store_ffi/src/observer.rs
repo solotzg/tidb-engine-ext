@@ -162,7 +162,7 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     }
 }
 
-pub struct PtrWrapper(ffi_interfaces::RawCppPtr);
+pub struct PtrWrapper(RawCppPtr);
 
 unsafe impl Send for PtrWrapper {}
 unsafe impl Sync for PtrWrapper {}

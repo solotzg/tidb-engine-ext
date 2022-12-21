@@ -92,15 +92,15 @@ struct PageWithView {
 };
 
 struct PageAndCppStrWithView {
-    RawCppPtr page;
-    RawCppPtr key;
-    BaseBuffView page_view;
-    BaseBuffView key_view;
+  RawCppPtr page;
+  RawCppPtr key;
+  BaseBuffView page_view;
+  BaseBuffView key_view;
 };
 
 struct PageAndCppStrWithViewVec {
-    PageAndCppStrWithView *inner;
-    const uint64_t len;
+  PageAndCppStrWithView *inner;
+  const uint64_t len;
 };
 
 enum class HttpRequestStatus : uint8_t {
@@ -233,8 +233,9 @@ struct EngineStoreServerHelper {
   PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
                                       BaseBuffView);
   PageAndCppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
-                                         BaseBuffView, BaseBuffView);
-  void (*fn_gc_page_and_cpp_str_with_view_vec)(PageAndCppStrWithView *, uint64_t);
+                                                  BaseBuffView, BaseBuffView);
+  void (*fn_gc_page_and_cpp_str_with_view_vec)(PageAndCppStrWithView *,
+                                               uint64_t);
   void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
   CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *,
                                           BaseBuffView);

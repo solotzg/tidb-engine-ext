@@ -217,6 +217,7 @@ impl KvEngine for RocksEngine {
 impl Iterable for RocksEngine {
     type Iterator = RocksEngineIterator;
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn scan<F>(
         &self,
         cf: &str,
@@ -272,8 +273,28 @@ impl<'a> PartialEq<&'a [u8]> for PsDbVector {
 }
 
 impl Peekable for RocksEngine {
+    #[cfg(any(test, feature = "testexport"))]
+    type DbVector = RocksDbVector;
+
+    #[cfg(any(test, feature = "testexport"))]
+    fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<RocksDbVector>> {
+        self.rocks.get_value_opt(opts, key)
+    }
+
+    #[cfg(any(test, feature = "testexport"))]
+    fn get_value_cf_opt(
+        &self,
+        opts: &ReadOptions,
+        cf: &str,
+        key: &[u8],
+    ) -> Result<Option<RocksDbVector>> {
+        self.rocks.get_value_cf_opt(opts, cf, key)
+    }
+
+    #[cfg(not(any(test, feature = "testexport")))]
     type DbVector = PsDbVector;
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<PsDbVector>> {
         let result = self.ffi_hub.as_ref().unwrap().read_page(key);
         return match result {
@@ -282,6 +303,7 @@ impl Peekable for RocksEngine {
         };
     }
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn get_value_cf_opt(
         &self,
         opts: &ReadOptions,
@@ -299,6 +321,47 @@ impl RocksEngine {
 }
 
 impl SyncMutable for RocksEngine {
+    #[cfg(any(test, feature = "testexport"))]
+    fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        if self.do_write(engine_traits::CF_DEFAULT, key) {
+            return self.rocks.get_sync_db().put(key, value).map_err(r2e);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testexport"))]
+    fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
+        if self.do_write(cf, key) {
+            let db = self.rocks.get_sync_db();
+            let handle = get_cf_handle(&db, cf)?;
+            return self
+                .rocks
+                .get_sync_db()
+                .put_cf(handle, key, value)
+                .map_err(r2e);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testexport"))]
+    fn delete(&self, key: &[u8]) -> Result<()> {
+        if self.do_write(engine_traits::CF_DEFAULT, key) {
+            return self.rocks.get_sync_db().delete(key).map_err(r2e);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testexport"))]
+    fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
+        if self.do_write(cf, key) {
+            let db = self.rocks.get_sync_db();
+            let handle = get_cf_handle(&db, cf)?;
+            return self.rocks.get_sync_db().delete_cf(handle, key).map_err(r2e);
+        }
+        Ok(())
+    }
+
+    #[cfg(not(any(test, feature = "testexport")))]
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
@@ -314,6 +377,7 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
@@ -329,6 +393,7 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn delete(&self, key: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
@@ -344,6 +409,7 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
+    #[cfg(not(any(test, feature = "testexport")))]
     fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
