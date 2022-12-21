@@ -723,7 +723,7 @@ pub fn gen_engine_store_server_helper(
         fn_write_batch_clear: None,
         fn_consume_write_batch: None,
         fn_handle_read_page: None,
-        fn_gc_page_with_view_vec: None,
+        fn_gc_page_and_cpp_str_with_view_vec: None,
         fn_handle_purge_pagestorage: None,
         fn_handle_scan_page: None,
         fn_handle_seek_ps_key: None,
