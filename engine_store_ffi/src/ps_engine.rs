@@ -269,7 +269,10 @@ impl PSEngine {
         for i in 0..values.len {
             let value = unsafe { &*values.inner.offset(i as isize) };
             if value.page_view.len != 0 {
-                if !f(&value.key_view.to_slice().to_vec(), &value.page_view.to_slice().to_vec())? {
+                if !f(
+                    &value.key_view.to_slice().to_vec(),
+                    &value.page_view.to_slice().to_vec(),
+                )? {
                     break;
                 }
             }

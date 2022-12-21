@@ -5,8 +5,10 @@ use std::sync::Arc;
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use rocksdb::{Writable, WriteBatch as RawWriteBatch, DB};
 
-use crate::{engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle,
-            FFIHubInner, RawPSWriteBatchWrapper};
+use crate::{
+    engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle, FFIHubInner,
+    RawPSWriteBatchWrapper,
+};
 
 const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
@@ -28,9 +30,11 @@ impl WriteBatchExt for RocksEngine {
     }
 
     fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::with_unit_capacity(self,
-                                               self.ffi_hub.as_ref().unwrap().create_write_batch(),
-                                               cap)
+        RocksWriteBatchVec::with_unit_capacity(
+            self,
+            self.ffi_hub.as_ref().unwrap().create_write_batch(),
+            cap,
+        )
     }
 }
 
@@ -56,7 +60,10 @@ pub struct RocksWriteBatchVec {
 impl Drop for RocksWriteBatchVec {
     fn drop(&mut self) {
         if !self.ps_wb.ptr.is_null() {
-            self.ffi_hub.as_ref().unwrap().destroy_write_batch(&self.ps_wb);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .destroy_write_batch(&self.ps_wb);
         }
         self.ps_wb.ptr = std::ptr::null_mut();
     }
@@ -84,7 +91,11 @@ impl RocksWriteBatchVec {
         }
     }
 
-    pub fn with_unit_capacity(engine: &RocksEngine, ps_wb: RawPSWriteBatchWrapper, cap: usize) -> RocksWriteBatchVec {
+    pub fn with_unit_capacity(
+        engine: &RocksEngine,
+        ps_wb: RawPSWriteBatchWrapper,
+        cap: usize,
+    ) -> RocksWriteBatchVec {
         Self::new(
             engine.as_inner().clone(),
             engine.ffi_hub.clone(),
@@ -123,12 +134,22 @@ impl RocksWriteBatchVec {
 impl engine_traits::WriteBatch for RocksWriteBatchVec {
     fn write_opt(&mut self, opts: &WriteOptions) -> Result<u64> {
         // write into ps
-        self.ffi_hub.as_ref().unwrap().consume_write_batch(self.ps_wb.ptr);
-        Ok(self.ffi_hub.as_ref().unwrap().write_batch_size(self.ps_wb.ptr) as u64)
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .consume_write_batch(self.ps_wb.ptr);
+        Ok(self
+            .ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_size(self.ps_wb.ptr) as u64)
     }
 
     fn data_size(&self) -> usize {
-        self.ffi_hub.as_ref().unwrap().write_batch_size(self.ps_wb.ptr)
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_size(self.ps_wb.ptr)
     }
 
     fn count(&self) -> usize {
@@ -137,7 +158,10 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn is_empty(&self) -> bool {
-        self.ffi_hub.as_ref().unwrap().write_batch_is_empty(self.ps_wb.ptr)
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_is_empty(self.ps_wb.ptr)
     }
 
     fn should_write_to_engine(&self) -> bool {
@@ -146,7 +170,10 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn clear(&mut self) {
-        self.ffi_hub.as_ref().unwrap().write_batch_clear(self.ps_wb.ptr);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_clear(self.ps_wb.ptr);
     }
 
     fn set_save_point(&mut self) {
@@ -173,7 +200,10 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 
     fn merge(&mut self, other: Self) -> Result<()> {
-        self.ffi_hub.as_ref().unwrap().write_batch_merge(self.ps_wb.ptr, other.ps_wb.ptr);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_merge(self.ps_wb.ptr, other.ps_wb.ptr);
         Ok(())
     }
 }
@@ -189,7 +219,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
-        self.ffi_hub.as_ref().unwrap().write_batch_put_page(self.ps_wb.ptr, key, value);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_put_page(self.ps_wb.ptr, key, value);
         Ok(())
     }
 
@@ -197,7 +230,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
-        self.ffi_hub.as_ref().unwrap().write_batch_put_page(self.ps_wb.ptr, key, value);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_put_page(self.ps_wb.ptr, key, value);
         Ok(())
     }
 
@@ -205,7 +241,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
-        self.ffi_hub.as_ref().unwrap().write_batch_del_page(self.ps_wb.ptr, key);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_del_page(self.ps_wb.ptr, key);
         Ok(())
     }
 
@@ -213,7 +252,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
-        self.ffi_hub.as_ref().unwrap().write_batch_del_page(self.ps_wb.ptr, key);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .write_batch_del_page(self.ps_wb.ptr, key);
         Ok(())
     }
 
@@ -253,7 +295,7 @@ mod tests {
             RocksDbOptions::from_raw(opt),
             vec![(CF_DEFAULT, RocksCfOptions::default())],
         )
-            .unwrap();
+        .unwrap();
         assert!(
             !engine
                 .as_inner()
@@ -299,7 +341,7 @@ mod tests {
             RocksDbOptions::from_raw(opt),
             vec![(CF_DEFAULT, RocksCfOptions::default())],
         )
-            .unwrap();
+        .unwrap();
         assert!(
             engine
                 .as_inner()

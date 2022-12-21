@@ -13,7 +13,7 @@ use std::{
 };
 
 use collections::HashMap;
-use engine_tiflash::{FsStatsExt, RawPSWriteBatchWrapper, RawPSWriteBatchPtr};
+use engine_tiflash::{FsStatsExt, RawPSWriteBatchPtr, RawPSWriteBatchWrapper};
 use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
 use kvproto::{
     metapb::Region,
@@ -94,38 +94,32 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     }
 
     fn create_write_batch(&self) -> RawPSWriteBatchWrapper {
-        self.engine_store_server_helper
-            .create_write_batch()
-            .into()
+        self.engine_store_server_helper.create_write_batch().into()
     }
 
     fn destroy_write_batch(&self, wb_wrapper: &RawPSWriteBatchWrapper) {
-        self.engine_store_server_helper.gc_raw_cpp_ptr(wb_wrapper.ptr, wb_wrapper.type_);
+        self.engine_store_server_helper
+            .gc_raw_cpp_ptr(wb_wrapper.ptr, wb_wrapper.type_);
     }
 
     fn consume_write_batch(&self, wb: RawPSWriteBatchPtr) {
-        self.engine_store_server_helper
-            .consume_write_batch(wb)
+        self.engine_store_server_helper.consume_write_batch(wb)
     }
 
     fn write_batch_size(&self, wb: RawPSWriteBatchPtr) -> usize {
-        self.engine_store_server_helper
-            .write_batch_size(wb) as usize
+        self.engine_store_server_helper.write_batch_size(wb) as usize
     }
 
     fn write_batch_is_empty(&self, wb: RawPSWriteBatchPtr) -> bool {
-        self.engine_store_server_helper
-            .write_batch_is_empty(wb) != 0
+        self.engine_store_server_helper.write_batch_is_empty(wb) != 0
     }
 
     fn write_batch_merge(&self, lwb: RawPSWriteBatchPtr, rwb: RawPSWriteBatchPtr) {
-        self.engine_store_server_helper
-            .write_batch_merge(lwb, rwb)
+        self.engine_store_server_helper.write_batch_merge(lwb, rwb)
     }
 
     fn write_batch_clear(&self, wb: RawPSWriteBatchPtr) {
-        self.engine_store_server_helper
-            .write_batch_clear(wb)
+        self.engine_store_server_helper.write_batch_clear(wb)
     }
 
     fn write_batch_put_page(&self, wb: RawPSWriteBatchPtr, page_id: &[u8], page: &[u8]) {
@@ -147,12 +141,22 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
         };
     }
 
-    fn scan_page(&self, start_page_id: &[u8], end_page_id: &[u8], f: &mut dyn FnMut(&[u8], &[u8]) -> engine_traits::Result<bool>) {
-        let values = self.engine_store_server_helper.scan_page(start_page_id.into(), end_page_id.into());
+    fn scan_page(
+        &self,
+        start_page_id: &[u8],
+        end_page_id: &[u8],
+        f: &mut dyn FnMut(&[u8], &[u8]) -> engine_traits::Result<bool>,
+    ) {
+        let values = self
+            .engine_store_server_helper
+            .scan_page(start_page_id.into(), end_page_id.into());
         for i in 0..values.len {
             let value = unsafe { &*values.inner.offset(i as isize) };
             if value.page_view.len != 0 {
-                f(&value.key_view.to_slice().to_vec(), &value.page_view.to_slice().to_vec());
+                f(
+                    &value.key_view.to_slice().to_vec(),
+                    &value.page_view.to_slice().to_vec(),
+                );
             }
         }
     }

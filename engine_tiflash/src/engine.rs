@@ -14,7 +14,10 @@ use std::{
 };
 
 use engine_rocks::{RocksDbVector, RocksEngineIterator, RocksSnapshot};
-use engine_traits::{Checkpointable, Checkpointer, Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions, Result, SyncMutable, DbVector};
+use engine_traits::{
+    Checkpointable, Checkpointer, DbVector, Error, IterOptions, Iterable, KvEngine, Peekable,
+    ReadOptions, Result, SyncMutable,
+};
 use rocksdb::{Writable, DB};
 use tikv_util::box_err;
 
@@ -62,7 +65,12 @@ pub trait FFIHubInner {
 
     fn read_page(&self, page_id: &[u8]) -> Option<Vec<u8>>;
 
-    fn scan_page(&self, start_page_id: &[u8], end_page_id: &[u8], f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>);
+    fn scan_page(
+        &self,
+        start_page_id: &[u8],
+        end_page_id: &[u8],
+        f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>,
+    );
 }
 
 pub trait FFIHub: FFIHubInner + Send + Sync {}
@@ -217,11 +225,14 @@ impl Iterable for RocksEngine {
         fill_cache: bool,
         f: F,
     ) -> Result<()>
-        where
-            F: FnMut(&[u8], &[u8]) -> Result<bool>,
+    where
+        F: FnMut(&[u8], &[u8]) -> Result<bool>,
     {
         let mut f = f;
-        self.ffi_hub.as_ref().unwrap().scan_page(start_key.into(), end_key.into(), &mut f);
+        self.ffi_hub
+            .as_ref()
+            .unwrap()
+            .scan_page(start_key.into(), end_key.into(), &mut f);
         Ok(())
     }
 
@@ -268,7 +279,7 @@ impl Peekable for RocksEngine {
         return match result {
             None => Ok(None),
             Some(v) => Ok(Some(PsDbVector::from_raw(v))),
-        }
+        };
     }
 
     fn get_value_cf_opt(
@@ -291,8 +302,14 @@ impl SyncMutable for RocksEngine {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub.as_ref().unwrap().write_batch_put_page(ps_wb.ptr, key, value);
-            self.ffi_hub.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .write_batch_put_page(ps_wb.ptr, key, value);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -300,8 +317,14 @@ impl SyncMutable for RocksEngine {
     fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub.as_ref().unwrap().write_batch_put_page(ps_wb.ptr, key, value);
-            self.ffi_hub.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .write_batch_put_page(ps_wb.ptr, key, value);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -309,8 +332,14 @@ impl SyncMutable for RocksEngine {
     fn delete(&self, key: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub.as_ref().unwrap().write_batch_del_page(ps_wb.ptr, key);
-            self.ffi_hub.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .write_batch_del_page(ps_wb.ptr, key);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -318,8 +347,14 @@ impl SyncMutable for RocksEngine {
     fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub.as_ref().unwrap().write_batch_del_page(ps_wb.ptr, key);
-            self.ffi_hub.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .write_batch_del_page(ps_wb.ptr, key);
+            self.ffi_hub
+                .as_ref()
+                .unwrap()
+                .consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }

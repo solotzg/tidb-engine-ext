@@ -5,7 +5,10 @@ use std::sync::Arc;
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use rocksdb::{Writable, WriteBatch as RawWriteBatch, DB};
 
-use crate::{engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle};
+use crate::{
+    engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle, FFIHubInner,
+    RawPSWriteBatchWrapper,
+};
 
 const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
@@ -49,6 +52,8 @@ pub struct RocksWriteBatchVec {
 impl RocksWriteBatchVec {
     pub fn new(
         db: Arc<DB>,
+        ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+        ps_wb: RawPSWriteBatchWrapper,
         batch_size_limit: usize,
         cap: usize,
         support_write_batch_vec: bool,
@@ -64,9 +69,15 @@ impl RocksWriteBatchVec {
         }
     }
 
-    pub fn with_unit_capacity(engine: &RocksEngine, cap: usize) -> RocksWriteBatchVec {
+    pub fn with_unit_capacity(
+        engine: &RocksEngine,
+        ps_wb: RawPSWriteBatchWrapper,
+        cap: usize,
+    ) -> RocksWriteBatchVec {
         Self::new(
             engine.as_inner().clone(),
+            engine.ffi_hub.clone(),
+            ps_wb,
             WRITE_BATCH_LIMIT,
             cap,
             engine.support_multi_batch_write(),
@@ -258,7 +269,7 @@ mod tests {
             RocksDbOptions::from_raw(opt),
             vec![(CF_DEFAULT, RocksCfOptions::default())],
         )
-            .unwrap();
+        .unwrap();
         assert!(
             !engine
                 .as_inner()
@@ -304,7 +315,7 @@ mod tests {
             RocksDbOptions::from_raw(opt),
             vec![(CF_DEFAULT, RocksCfOptions::default())],
         )
-            .unwrap();
+        .unwrap();
         assert!(
             engine
                 .as_inner()

@@ -34,9 +34,10 @@ pub use read_index_helper::ReadIndexClient;
 pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, EngineStoreApplyRes,
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
-    FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus, PageWithView,
-    PageAndCppStrWithView, PageAndCppStrWithViewVec, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
-    RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
+    PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
+    WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, FileEncryptionInfoRaw, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr,
