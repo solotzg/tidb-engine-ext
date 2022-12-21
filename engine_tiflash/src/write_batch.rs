@@ -22,7 +22,10 @@ impl WriteBatchExt for RocksEngine {
         RocksWriteBatchVec::new(
             Arc::clone(self.as_inner()),
             self.ffi_hub.clone(),
-            self.ffi_hub.as_ref().unwrap().create_write_batch(),
+            RawPSWriteBatchWrapper {
+                ptr: std::ptr::null_mut(),
+                type_: 0,
+            },
             WRITE_BATCH_LIMIT,
             1,
             self.support_multi_batch_write(),
@@ -32,7 +35,10 @@ impl WriteBatchExt for RocksEngine {
     fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
         RocksWriteBatchVec::with_unit_capacity(
             self,
-            self.ffi_hub.as_ref().unwrap().create_write_batch(),
+            RawPSWriteBatchWrapper {
+                ptr: std::ptr::null_mut(),
+                type_: 0,
+            },
             cap,
         )
     }
