@@ -268,8 +268,8 @@ impl PSEngine {
         let values = helper.scan_page(start_key.into(), end_key.into());
         for i in 0..values.len {
             let value = unsafe { &*values.inner.offset(i as isize) };
-            if value.view.len != 0 {
-                if !f(&[], &value.view.to_slice().to_vec())? {
+            if value.page_view.len != 0 {
+                if !f(&value.key_view.to_slice().to_vec(), &value.page_view.to_slice().to_vec())? {
                     break;
                 }
             }
@@ -335,8 +335,6 @@ impl RaftEngineReadOnly for PSEngine {
         let start_key = keys::raft_log_key(region_id, low);
         let end_key = keys::raft_log_key(region_id, high);
 
-        let mut count = 1;
-
         self.scan(&start_key, &end_key, |_, page| {
             let mut entry = Entry::default();
             entry.merge_from_bytes(page)?;
@@ -362,7 +360,6 @@ impl RaftEngineReadOnly for PSEngine {
     }
 
     fn is_empty(&self) -> Result<bool> {
-        let mut is_empty = true;
         Ok(self.is_empty())
     }
 

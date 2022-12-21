@@ -54,8 +54,17 @@ mod status;
 pub use crate::status::*;
 mod table_properties;
 pub use crate::table_properties::*;
+
+#[cfg(any(test, feature = "testexport"))]
 mod write_batch;
+#[cfg(any(test, feature = "testexport"))]
 pub use crate::write_batch::*;
+
+#[cfg(not(any(test, feature = "testexport")))]
+mod ps_write_batch;
+#[cfg(not(any(test, feature = "testexport")))]
+pub use crate::ps_write_batch::*;
+
 pub mod mvcc_properties;
 pub use crate::mvcc_properties::*;
 pub mod perf_context;
