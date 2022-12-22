@@ -1466,6 +1466,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
     failed_add_peer_res(ffi_interfaces::FastAddPeerStatus::BadData)
 }
 
+#[allow(clippy::single_element_loop)]
 pub fn move_data_from(
     engine_store_server: &mut EngineStoreServer,
     old_region_id: u64,
