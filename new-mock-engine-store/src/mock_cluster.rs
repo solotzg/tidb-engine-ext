@@ -254,6 +254,16 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         }
     }
 
+    pub fn access_ffi_helpers(&self, f: &mut dyn FnMut(&mut HashMap<u64, FFIHelperSet>)) {
+        let lock = self.ffi_helper_set.lock();
+        match lock {
+            Ok(mut l) => {
+                f(&mut l);
+            }
+            Err(_) => std::process::exit(1),
+        }
+    }
+
     pub fn create_engines(&mut self) {
         self.io_rate_limiter = Some(Arc::new(
             self.cfg
