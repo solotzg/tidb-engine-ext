@@ -4,7 +4,8 @@
 #![allow(unused_variables)]
 
 use std::{
-    fmt::{Debug, Formatter}, slice
+    fmt::{Debug, Formatter},
+    slice,
 };
 
 use engine_traits::{

@@ -28,6 +28,7 @@ pub use domain_impls::*;
 use encryption::DataKeyManager;
 pub use encryption_impls::*;
 use engine_traits::{Peekable, CF_LOCK};
+use interfaces::root::DB::SpecialCppPtrType;
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
 use protobuf::Message;
@@ -39,8 +40,8 @@ pub use self::interfaces::root::DB::{
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
-    RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
-    WriteCmdType, WriteCmdsView, RawCppPtrArr
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr,
+    StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -380,9 +381,7 @@ impl Drop for RawCppPtr {
 
 impl RawCppPtrArr {
     pub fn is_null(&self) -> bool {
-        unsafe {
-            (*self.inner).ptr.is_null()
-        }
+        unsafe { (*self.inner).ptr.is_null() }
     }
 }
 
@@ -392,9 +391,25 @@ impl Drop for RawCppPtrArr {
     fn drop(&mut self) {
         unsafe {
             if !self.is_null() {
+                println!("!!!! RawCppPtrArr 1");
                 let helper = get_engine_store_server_helper();
-                helper.gc_raw_cpp_ptr_arr((*self.inner).ptr, (*self.inner).type_, self.len);
-                (*self.inner).ptr = std::ptr::null_mut();
+                let len = self.len;
+                println!("!!!! RawCppPtrArr 2");
+                // Delete all `T**`
+                for i in 0..len {
+                    let i = i as usize;
+                    let inner_i = self.inner.add(i);
+                    helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                }
+                println!("!!!! RawCppPtrArr 3");
+                // Delete `T*`
+                helper.gc_special_raw_cpp_ptr(
+                    self.inner as RawVoidPtr,
+                    self.len,
+                    SpecialCppPtrType::ArrayOfRawCppPtr,
+                );
+                println!("!!!! RawCppPtrArr 4");
+                self.inner = std::ptr::null_mut();
                 self.len = 0;
             }
         }
@@ -418,7 +433,7 @@ pub fn get_engine_store_server_helper_ptr() -> isize {
     unsafe { ENGINE_STORE_SERVER_HELPER_PTR }
 }
 
-fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
+pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
 }
 
@@ -451,10 +466,15 @@ impl EngineStoreServerHelper {
         }
     }
 
-    fn gc_raw_cpp_ptr_arr(&self, head: *mut ::std::os::raw::c_void, tp: RawCppPtrType, len: u64) {
-        debug_assert!(self.fn_gc_raw_cpp_ptr_arr.is_some());
+    fn gc_special_raw_cpp_ptr(
+        &self,
+        ptr: *mut ::std::os::raw::c_void,
+        hint_len: u64,
+        tp: SpecialCppPtrType,
+    ) {
+        debug_assert!(self.fn_gc_special_raw_cpp_ptr.is_some());
         unsafe {
-            (self.fn_gc_raw_cpp_ptr_arr.into_inner())(head, tp, len);
+            (self.fn_gc_special_raw_cpp_ptr.into_inner())(ptr, hint_len, tp);
         }
     }
 

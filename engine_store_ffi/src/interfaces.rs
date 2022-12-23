@@ -51,6 +51,12 @@ pub mod root {
         }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum SpecialCppPtrType {
+            None = 0,
+            ArrayOfRawCppPtr = 1,
+        }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum EngineStoreApplyRes {
             None = 0,
             Persist = 1,
@@ -522,11 +528,11 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
-            pub fn_gc_raw_cpp_ptr_arr: ::std::option::Option<
+            pub fn_gc_special_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(
-                    head: root::DB::RawVoidPtr,
-                    arg1: root::DB::RawCppPtrType,
-                    len: u64,
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: u64,
+                    arg3: root::DB::SpecialCppPtrType,
                 ),
             >,
             pub fn_get_config: ::std::option::Option<
@@ -564,7 +570,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13243545128523171780;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 1634948592330095866;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
