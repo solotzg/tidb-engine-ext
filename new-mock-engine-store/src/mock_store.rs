@@ -11,6 +11,7 @@ pub use std::{
     time::Duration,
 };
 
+use assert_type_eq;
 use collections::{HashMap, HashSet};
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
@@ -21,6 +22,7 @@ pub use engine_traits::{
     Engines, Iterable, KvEngine, Mutable, Peekable, RaftEngine, RaftLogBatch, SyncMutable,
     WriteBatch, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
 };
+use int_enum::IntEnum;
 pub use kvproto::{
     raft_cmdpb::AdminCmdType,
     raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
@@ -36,6 +38,7 @@ pub use crate::{
     mock_cluster::{
         must_get_equal, must_get_none, Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine,
     },
+    mock_page_storage::*,
     server::ServerCluster,
 };
 
@@ -87,6 +90,7 @@ pub struct EngineStoreServer {
     pub proxy_compat: bool,
     pub mock_cfg: MockConfig,
     pub region_states: RefCell<HashMap<RegionId, RegionStats>>,
+    pub page_storage: MockPageStorage,
 }
 
 impl EngineStoreServer {
@@ -101,6 +105,7 @@ impl EngineStoreServer {
             proxy_compat: false,
             mock_cfg: MockConfig::default(),
             region_states: RefCell::new(Default::default()),
+            page_storage: Default::default(),
         }
     }
 
@@ -717,13 +722,13 @@ pub fn gen_engine_store_server_helper(
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
         fn_fast_add_peer: Some(ffi_fast_add_peer),
-        fn_create_write_batch: None,
-        fn_write_batch_put_page: None,
-        fn_write_batch_del_page: None,
-        fn_write_batch_size: None,
-        fn_write_batch_is_empty: None,
-        fn_write_batch_merge: None,
-        fn_write_batch_clear: None,
+        fn_create_write_batch: Some(ffi_mockps_create_write_batch),
+        fn_write_batch_put_page: Some(ffi_mockps_write_batch_put_page),
+        fn_write_batch_del_page: Some(ffi_mockps_write_batch_del_page),
+        fn_write_batch_size: Some(ffi_mockps_write_batch_size),
+        fn_write_batch_is_empty: Some(ffi_mockps_write_batch_is_empty),
+        fn_write_batch_merge: Some(ffi_mockps_write_batch_merge),
+        fn_write_batch_clear: Some(ffi_mockps_write_batch_clear),
         fn_consume_write_batch: None,
         fn_handle_read_page: None,
         fn_gc_page_and_cpp_str_with_view_vec: None,
@@ -734,7 +739,7 @@ pub fn gen_engine_store_server_helper(
     }
 }
 
-unsafe fn into_engine_store_server_wrap(
+pub unsafe fn into_engine_store_server_wrap(
     arg1: *const ffi_interfaces::EngineStoreServerWrap,
 ) -> &'static mut EngineStoreServerWrap {
     &mut *(arg1 as *mut EngineStoreServerWrap)
@@ -763,37 +768,27 @@ unsafe extern "C" fn ffi_handle_write_raft_cmd(
     store.handle_write_raft_cmd(arg2, arg3)
 }
 
-enum RawCppPtrTypeImpl {
+#[repr(u32)]
+#[derive(IntEnum, Copy, Clone)]
+pub enum RawCppPtrTypeImpl {
     None = 0,
-    String,
-    PreHandledSnapshotWithBlock,
-    WakerNotifier,
+    String = 1,
+    PreHandledSnapshotWithBlock = 2,
+    WakerNotifier = 3,
+    PSWriteBatch = 4,
+    PSUniversalPage = 5,
 }
 
-// TODO
-#[allow(clippy::from_over_into)]
-impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
-    fn from(o: ffi_interfaces::RawCppPtrType) -> Self {
-        match o {
-            0 => RawCppPtrTypeImpl::None,
-            1 => RawCppPtrTypeImpl::String,
-            2 => RawCppPtrTypeImpl::PreHandledSnapshotWithBlock,
-            3 => RawCppPtrTypeImpl::WakerNotifier,
-            _ => unreachable!(),
-        }
+impl From<RawCppPtrTypeImpl> for ffi_interfaces::RawCppPtrType {
+    fn from(value: RawCppPtrTypeImpl) -> Self {
+        assert_type_eq::assert_type_eq!(ffi_interfaces::RawCppPtrType, u32);
+        value.int_value()
     }
 }
 
-// TODO remove this warn.
-#[allow(clippy::from_over_into)]
-impl Into<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
-    fn into(self) -> ffi_interfaces::RawCppPtrType {
-        match self {
-            RawCppPtrTypeImpl::None => 0,
-            RawCppPtrTypeImpl::String => 1,
-            RawCppPtrTypeImpl::PreHandledSnapshotWithBlock => 2,
-            RawCppPtrTypeImpl::WakerNotifier => 3,
-        }
+impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
+    fn from(value: ffi_interfaces::RawCppPtrType) -> Self {
+        RawCppPtrTypeImpl::from_int(value).unwrap()
     }
 }
 
@@ -952,7 +947,7 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
     ptr: ffi_interfaces::RawVoidPtr,
     tp: ffi_interfaces::RawCppPtrType,
 ) {
-    match RawCppPtrTypeImpl::from(tp) {
+    match tp.into() {
         RawCppPtrTypeImpl::None => {}
         RawCppPtrTypeImpl::String => unsafe {
             drop(Box::<Vec<u8>>::from_raw(ptr as *mut _));
@@ -962,6 +957,12 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         },
         RawCppPtrTypeImpl::WakerNotifier => unsafe {
             drop(Box::from_raw(ptr as *mut ProxyNotifier));
+        },
+        RawCppPtrTypeImpl::PSWriteBatch => unsafe {
+            drop(Box::from_raw(ptr as *mut MockPSWriteBatch));
+        },
+        RawCppPtrTypeImpl::PSUniversalPage => unsafe {
+            drop(Box::from_raw(ptr as *mut MockPSUniversalPage));
         },
     }
 }

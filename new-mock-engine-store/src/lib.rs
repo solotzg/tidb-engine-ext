@@ -3,6 +3,7 @@
 #![feature(slice_take)]
 pub mod config;
 pub mod mock_cluster;
+pub mod mock_page_storage;
 pub mod mock_store;
 pub mod node;
 pub mod server;
