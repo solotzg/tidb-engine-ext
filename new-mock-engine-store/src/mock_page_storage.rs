@@ -63,7 +63,7 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_del_page(wb: RawVoidPtr, page_id
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_size(wb: RawVoidPtr) -> u64 {
     let wb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
-    wb.data.len()
+    wb.data.len() as u64
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_is_empty(wb: RawVoidPtr) -> u8 {
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_is_empty(wb: RawVoidPtr) -> u8 {
 pub unsafe extern "C" fn ffi_mockps_write_batch_merge(lwb: RawVoidPtr, rwb: RawVoidPtr) {
     let lwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(lwb);
     let rwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(rwb);
-    lwb.data.extend(rwb.data.into_iter());
+    lwb.data.extend(rwb.data.drain());
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_clear(wb: RawVoidPtr) {
@@ -88,11 +88,12 @@ pub unsafe extern "C" fn ffi_mockps_consume_write_batch(
 ) {
     let store = into_engine_store_server_wrap(wrap);
     let wb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
-    let guard = store.engine_store_server.page_storage.data.write().unwrap();
-    match guard.entry(key) {
-        std::collections::hash_map::Entry::Occupied(mut o) => o.insert(wb),
-        std::collections::hash_map::Entry::Vacant(v) => v.insert(wb),
-    }
+    let mut guard = (*store.engine_store_server)
+        .page_storage
+        .data
+        .write()
+        .unwrap();
+    guard.extend(wb.data.drain());
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_read_page(
@@ -133,5 +134,11 @@ pub unsafe extern "C" fn ffi_mockps_handle_seek_ps_key(
 pub unsafe extern "C" fn ffi_mockps_ps_is_empty(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
 ) -> u8 {
-    todo!()
+    let store = into_engine_store_server_wrap(wrap);
+    let guard = (*store.engine_store_server)
+        .page_storage
+        .data
+        .read()
+        .unwrap();
+    if guard.is_empty() { 1 } else { 0 }
 }
