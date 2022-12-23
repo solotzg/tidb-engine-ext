@@ -13,7 +13,7 @@ use std::{
 };
 
 use collections::HashMap;
-use engine_tiflash::FsStatsExt;
+use engine_tiflash::{FsStatsExt, RawPSWriteBatchPtr, RawPSWriteBatchWrapper};
 use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
 use kvproto::{
     metapb::Region,
@@ -302,25 +302,26 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         Ok(())
     }
 
-    pub fn access_cached_region_info<F: Fn(MapEntry<u64, Arc<CachedRegionInfo>>)>(
+    pub fn access_cached_region_info<F: FnMut(Arc<CachedRegionInfo>)>(
         &self,
         region_id: u64,
         mut f: F,
-    ) -> RaftStoreResult<()> {
+    ) {
         let slot_id = Self::slot_index(region_id);
-        let mut guard = match self.cached_region_info.get(slot_id).unwrap().read() {
+        let guard = match self.cached_region_info.get(slot_id).unwrap().read() {
             Ok(g) => g,
-            Err(_) => return Err(box_err!("access_cached_region_info_mut poisoned")),
+            Err(_) => panic!("access_cached_region_info poisoned!"),
         };
-        f(guard.entry(region_id));
-        Ok(())
+        match guard.get(&region_id) {
+            Some(g) => f(g.clone()),
+            None => (),
+        }
     }
 
-    pub fn get_is_first_or_fallback(&self, region_id: u64) -> bool {
-        let mut is_first = false;
-        let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-            MapEntry::Occupied(o) => is_first = o.get().inited_or_fallback.load(vOrdering::SeqCst),
-            _ => (),
+    pub fn get_inited_or_fallback(&self, region_id: u64) -> Option<bool> {
+        let mut is_first: Option<bool> = None;
+        let f = |info: Arc<CachedRegionInfo>| {
+            is_first = Some(info.inited_or_fallback.load(Ordering::SeqCst));
         };
         self.access_cached_region_info(region_id, f);
         is_first
@@ -459,9 +460,12 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         };
 
-        if self.get_is_first_or_fallback(region_id) {
-            self.access_cached_region_info_mut(region_id, f).unwrap();
-        }
+        match self.get_inited_or_fallback(region_id) {
+            Some(true) => {
+                is_first = false;
+            }
+            None | Some(false) => self.access_cached_region_info_mut(region_id, f).unwrap(),
+        };
 
         #[cfg(any(test, feature = "testexport"))]
         {
