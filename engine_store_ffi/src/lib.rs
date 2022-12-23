@@ -40,7 +40,7 @@ pub use self::interfaces::root::DB::{
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
     RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
-    WriteCmdType, WriteCmdsView,
+    WriteCmdType, WriteCmdsView, RawCppPtrArr
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -378,6 +378,29 @@ impl Drop for RawCppPtr {
     }
 }
 
+impl RawCppPtrArr {
+    pub fn is_null(&self) -> bool {
+        unsafe {
+            (*self.inner).ptr.is_null()
+        }
+    }
+}
+
+unsafe impl Send for RawCppPtrArr {}
+
+impl Drop for RawCppPtrArr {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.is_null() {
+                let helper = get_engine_store_server_helper();
+                helper.gc_raw_cpp_ptr_arr((*self.inner).ptr, (*self.inner).type_, self.len);
+                (*self.inner).ptr = std::ptr::null_mut();
+                self.len = 0;
+            }
+        }
+    }
+}
+
 impl Drop for PageAndCppStrWithViewVec {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
@@ -425,6 +448,13 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
             (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
+        }
+    }
+
+    fn gc_raw_cpp_ptr_arr(&self, head: *mut ::std::os::raw::c_void, tp: RawCppPtrType, len: u64) {
+        debug_assert!(self.fn_gc_raw_cpp_ptr_arr.is_some());
+        unsafe {
+            (self.fn_gc_raw_cpp_ptr_arr.into_inner())(head, tp, len);
         }
     }
 

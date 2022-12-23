@@ -156,6 +156,12 @@ pub mod root {
             pub inner: *mut root::DB::PageAndCppStrWithView,
             pub len: u64,
         }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppPtrArr {
+            pub inner: *mut root::DB::RawCppPtr,
+            pub len: u64,
+        }
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum HttpRequestStatus {
@@ -516,6 +522,13 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
+            pub fn_gc_raw_cpp_ptr_arr: ::std::option::Option<
+                unsafe extern "C" fn(
+                    head: root::DB::RawVoidPtr,
+                    arg1: root::DB::RawCppPtrType,
+                    len: u64,
+                ),
+            >,
             pub fn_get_config: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
@@ -551,7 +564,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 3525220209235231360;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 13243545128523171780;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

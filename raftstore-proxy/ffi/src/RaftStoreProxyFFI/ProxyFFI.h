@@ -103,6 +103,11 @@ struct PageAndCppStrWithViewVec {
   const uint64_t len;
 };
 
+struct RawCppPtrArr {
+  RawCppPtr *inner;
+  const uint64_t len;
+};
+
 enum class HttpRequestStatus : uint8_t {
   Ok = 0,
   ErrorParam,
@@ -258,6 +263,7 @@ struct EngineStoreServerHelper {
                                            BaseBuffView body);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
   void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
+  void (*fn_gc_raw_cpp_ptr_arr)(RawVoidPtr head, RawCppPtrType, uint64_t len);
   CppStrWithView (*fn_get_config)(EngineStoreServerWrap *, uint8_t full);
   void (*fn_set_store)(EngineStoreServerWrap *, BaseBuffView);
   void (*fn_set_pb_msg_by_bytes)(MsgPBType type, RawVoidPtr ptr,
