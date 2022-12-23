@@ -386,6 +386,43 @@ fn test_apply_snapshot() {
 }
 
 #[test]
+fn test_split_no_fast_add() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+    pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
+    cluster.cfg.raft_store.right_derive_when_split = true;
+
+    let _ = cluster.run();
+
+    // Compose split keys
+    cluster.must_put(b"k1", b"v1");
+    cluster.must_put(b"k3", b"v3");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, None);
+    check_key(&cluster, b"k3", b"v3", Some(true), None, None);
+    let r1 = cluster.get_region(b"k1");
+    let r3 = cluster.get_region(b"k3");
+    assert_eq!(r1.get_id(), r3.get_id());
+
+    fail::cfg("go_fast_path_succeed", "panic").unwrap();
+    cluster.must_split(&r1, b"k2");
+    must_wait_until_cond_node(&cluster, 1000, None, &|states: &States| -> bool {
+        states.in_disk_region_state.get_region().get_peers().len() == 3
+    });
+    let r1_new = cluster.get_region(b"k1"); // 1000
+    let r3_new = cluster.get_region(b"k3"); // 1
+    cluster.must_put(b"k0", b"v0");
+    check_key(&cluster, b"k0", b"v0", Some(true), None, None);
+
+    fail::remove("go_fast_path_succeed");
+    fail::remove("on_can_apply_snapshot");
+    cluster.shutdown();
+}
+
+#[test]
 fn test_split_merge() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
@@ -398,12 +435,11 @@ fn test_split_merge() {
 
     let _ = cluster.run_conf_change();
 
+    // Compose split keys
     cluster.must_put(b"k1", b"v1");
     cluster.must_put(b"k3", b"v3");
-
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1]));
-
     let r1 = cluster.get_region(b"k1");
     let r3 = cluster.get_region(b"k3");
     assert_eq!(r1.get_id(), r3.get_id());
@@ -411,7 +447,6 @@ fn test_split_merge() {
     cluster.must_split(&r1, b"k2");
     let r1_new = cluster.get_region(b"k1"); // 1000
     let r3_new = cluster.get_region(b"k3"); // 1
-
     let r1_id = r1_new.get_id();
     let r3_id = r3_new.get_id();
     debug!("r1_new {} r3_new {}", r1_id, r3_id);

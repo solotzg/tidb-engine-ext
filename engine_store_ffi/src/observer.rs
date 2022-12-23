@@ -305,10 +305,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 MapEntry::Occupied(mut o) => {
                     (is_first, has_already_inited) =
                         if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
-                            // If `has_already_inited` is true, usually means we recover from a
-                            // restart. So we have data in disk, but not in memory.
-                            // TODO Maybe only check once if we are not from recover.
-                            // If we do not, we can then remove logics in apply snapshot.
+                            // If `has_already_inited` is true:
+                            // 1. We recover from a restart,
+                            // 2. The peer is created by TiKV like split;
+                            // So we have data in disk, but not in memory.
+                            // In these cases, we need to check everytime.
+
+                            // TODO We can then remove logics in apply snapshot.
                             // This is because if the next maybe_fast_path after apply snapshot
                             // will have has_already_inited == true, which leads to normal
                             // MsgAppend.
@@ -322,10 +325,20 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         };
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
-                    if is_first {
-                        #[cfg(any(test, feature = "testexport"))]
-                        {
+                    #[cfg(any(test, feature = "testexport"))]
+                    {
+                        if is_first {
                             info!("fast path: ongoing {}:{} {}, MsgAppend skipped",
+                                self.store_id, region_id, new_peer_id;
+                                    "to_peer_id" => msg.get_to_peer().get_id(),
+                                    "from_peer_id" => msg.get_from_peer().get_id(),
+                                    "inner_msg" => ?inner_msg,
+                                    "is_replicated" => is_replicated,
+                                    "has_already_inited" => has_already_inited,
+                                    "is_first" => is_first,
+                            );
+                        } else {
+                            info!("fast path: ongoing {}:{} {}, MsgAppend accepted",
                                 self.store_id, region_id, new_peer_id;
                                     "to_peer_id" => msg.get_to_peer().get_id(),
                                     "from_peer_id" => msg.get_from_peer().get_id(),
@@ -372,7 +385,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             #[cfg(any(test, feature = "testexport"))]
             {
                 info!(
-                    "fast path: normal MsgAppend of {}:{} {}",
+                    "fast path: ongoing {}:{} {}, normal MsgAppend",
                     self.store_id, region_id, new_peer_id;
                     "to_peer_id" => msg.get_to_peer().get_id(),
                     "from_peer_id" => msg.get_from_peer().get_id(),
@@ -1206,6 +1219,9 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
                 v.insert(Arc::new(c));
             }
         };
+        info!("fast path: ongoing {}:{} {}, peer created",
+            self.store_id, region_id, "NA";
+        );
         // TODO remove unwrap
         self.access_cached_region_info_mut(region_id, f).unwrap();
     }
