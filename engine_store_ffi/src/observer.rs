@@ -222,6 +222,31 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         Ok(())
     }
 
+    pub fn access_cached_region_info<F: FnMut(Arc<CachedRegionInfo>)>(
+        &self,
+        region_id: u64,
+        mut f: F,
+    ) {
+        let slot_id = Self::slot_index(region_id);
+        let guard = match self.cached_region_info.get(slot_id).unwrap().read() {
+            Ok(g) => g,
+            Err(_) => panic!("access_cached_region_info poisoned!"),
+        };
+        match guard.get(&region_id) {
+            Some(g) => f(g.clone()),
+            None => (),
+        }
+    }
+
+    pub fn get_inited_or_fallback(&self, region_id: u64) -> Option<bool> {
+        let mut is_first: Option<bool> = None;
+        let f = |info: Arc<CachedRegionInfo>| {
+            is_first = Some(info.inited_or_fallback.load(Ordering::SeqCst));
+        };
+        self.access_cached_region_info(region_id, f);
+        is_first
+    }
+
     pub fn remove_cached_region_info(&self, region_id: u64) {
         let slot_id = Self::slot_index(region_id);
         if let Ok(mut g) = self.cached_region_info.get(slot_id).unwrap().write() {
@@ -325,30 +350,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         };
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
-                    #[cfg(any(test, feature = "testexport"))]
-                    {
-                        if is_first {
-                            info!("fast path: ongoing {}:{} {}, MsgAppend skipped",
-                                self.store_id, region_id, new_peer_id;
-                                    "to_peer_id" => msg.get_to_peer().get_id(),
-                                    "from_peer_id" => msg.get_from_peer().get_id(),
-                                    "inner_msg" => ?inner_msg,
-                                    "is_replicated" => is_replicated,
-                                    "has_already_inited" => has_already_inited,
-                                    "is_first" => is_first,
-                            );
-                        } else {
-                            info!("fast path: ongoing {}:{} {}, MsgAppend accepted",
-                                self.store_id, region_id, new_peer_id;
-                                    "to_peer_id" => msg.get_to_peer().get_id(),
-                                    "from_peer_id" => msg.get_from_peer().get_id(),
-                                    "inner_msg" => ?inner_msg,
-                                    "is_replicated" => is_replicated,
-                                    "has_already_inited" => has_already_inited,
-                                    "is_first" => is_first,
-                            );
-                        }
-                    }
                     let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
                     if last != 0 {
                         let current = SystemTime::now()
@@ -378,20 +379,40 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 }
             }
         };
-        // Can use immutable version.
-        self.access_cached_region_info_mut(region_id, f).unwrap();
 
-        if !is_first {
-            #[cfg(any(test, feature = "testexport"))]
-            {
-                info!(
-                    "fast path: ongoing {}:{} {}, normal MsgAppend",
+        match self.get_inited_or_fallback(region_id) {
+            Some(true) => {
+                is_first = false;
+            }
+            None | Some(false) => self.access_cached_region_info_mut(region_id, f).unwrap(),
+        };
+
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            if is_first {
+                info!("fast path: ongoing {}:{} {}, MsgAppend skipped",
                     self.store_id, region_id, new_peer_id;
-                    "to_peer_id" => msg.get_to_peer().get_id(),
-                    "from_peer_id" => msg.get_from_peer().get_id(),
-                    "inner_msg" => ?inner_msg,
+                        "to_peer_id" => msg.get_to_peer().get_id(),
+                        "from_peer_id" => msg.get_from_peer().get_id(),
+                        "inner_msg" => ?inner_msg,
+                        "is_replicated" => is_replicated,
+                        "has_already_inited" => ?has_already_inited,
+                        "is_first" => is_first,
+                );
+            } else {
+                info!("fast path: ongoing {}:{} {}, MsgAppend accepted",
+                    self.store_id, region_id, new_peer_id;
+                        "to_peer_id" => msg.get_to_peer().get_id(),
+                        "from_peer_id" => msg.get_from_peer().get_id(),
+                        "inner_msg" => ?inner_msg,
+                        "is_replicated" => is_replicated,
+                        "has_already_inited" => ?has_already_inited,
+                        "is_first" => is_first,
                 );
             }
+        }
+
+        if !is_first {
             return false;
         }
 
