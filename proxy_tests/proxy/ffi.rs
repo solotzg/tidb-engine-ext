@@ -1,7 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use core::slice::SlicePattern;
-
 use engine_store_ffi::{
     get_engine_store_server_helper, EngineStoreServerHelper, RawCppPtr, RawCppPtrArr,
     RawCppPtrTuple, RawVoidPtr, UnwrapExternCFunc,
@@ -44,7 +42,6 @@ fn test_array_of_raw_cpp_ptr() {
         let len = 10;
         let mut v: Vec<RawVoidPtr> = vec![];
 
-        println!("AAAA 1");
         for i in 0..len {
             let s = format!("s{}", i);
             let raw_cpp_ptr = (helper.fn_gen_cpp_string.into_inner())(s.as_bytes().into());
@@ -52,17 +49,12 @@ fn test_array_of_raw_cpp_ptr() {
             v.push(raw_void_ptr);
         }
 
-        println!("AAAA 2");
         let (ptr_v, l, cap) = v.into_raw_parts();
-        println!("AAAA cap {}", cap);
         let cpp_ptr_arr = RawCppPtrArr {
             inner: ptr_v,
             type_: RawCppPtrTypeImpl::String.into(),
             len: cap as u64,
         };
-
-        println!("AAAA 3");
         drop(cpp_ptr_arr);
-        println!("AAAA 4");
     }
 }
