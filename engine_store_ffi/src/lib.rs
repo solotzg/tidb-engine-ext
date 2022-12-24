@@ -40,8 +40,8 @@ pub use self::interfaces::root::DB::{
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
-    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr,
-    StoreStats, WriteCmdType, WriteCmdsView,
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr,
+    SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -354,7 +354,7 @@ impl RaftStoreProxyFFIHelper {
 }
 
 impl RawCppPtr {
-    fn into_raw(mut self) -> RawVoidPtr {
+    pub fn into_raw(mut self) -> RawVoidPtr {
         let ptr = self.ptr;
         self.ptr = std::ptr::null_mut();
         ptr
@@ -379,9 +379,42 @@ impl Drop for RawCppPtr {
     }
 }
 
-impl RawCppPtrArr {
+impl RawCppPtrTuple {
     pub fn is_null(&self) -> bool {
         unsafe { (*self.inner).ptr.is_null() }
+    }
+}
+
+unsafe impl Send for RawCppPtrTuple {}
+
+impl Drop for RawCppPtrTuple {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.is_null() {
+                let helper = get_engine_store_server_helper();
+                let len = self.len;
+                // Delete all `void *`
+                for i in 0..len {
+                    let i = i as usize;
+                    let inner_i = self.inner.add(i);
+                    helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                }
+                // Delete `void **`
+                helper.gc_special_raw_cpp_ptr(
+                    self.inner as RawVoidPtr,
+                    self.len,
+                    SpecialCppPtrType::TupleOfRawCppPtr,
+                );
+                self.inner = std::ptr::null_mut();
+                self.len = 0;
+            }
+        }
+    }
+}
+
+impl RawCppPtrArr {
+    pub fn is_null(&self) -> bool {
+        unsafe { self.inner.is_null() }
     }
 }
 
@@ -391,24 +424,22 @@ impl Drop for RawCppPtrArr {
     fn drop(&mut self) {
         unsafe {
             if !self.is_null() {
-                println!("!!!! RawCppPtrArr 1");
                 let helper = get_engine_store_server_helper();
                 let len = self.len;
-                println!("!!!! RawCppPtrArr 2");
-                // Delete all `T**`
+                // Delete all `T *`
                 for i in 0..len {
                     let i = i as usize;
                     let inner_i = self.inner.add(i);
-                    helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                    if !(*inner_i).is_null() {
+                        helper.gc_raw_cpp_ptr(*inner_i, self.type_);
+                    }
                 }
-                println!("!!!! RawCppPtrArr 3");
-                // Delete `T*`
+                // Delete `T **`
                 helper.gc_special_raw_cpp_ptr(
                     self.inner as RawVoidPtr,
                     self.len,
                     SpecialCppPtrType::ArrayOfRawCppPtr,
                 );
-                println!("!!!! RawCppPtrArr 4");
                 self.inner = std::ptr::null_mut();
                 self.len = 0;
             }

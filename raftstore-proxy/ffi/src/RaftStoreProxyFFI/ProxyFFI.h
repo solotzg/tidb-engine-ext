@@ -8,7 +8,8 @@ struct EngineStoreServerWrap;
 
 enum class SpecialCppPtrType : uint32_t {
   None = 0,
-  ArrayOfRawCppPtr = 1,
+  TupleOfRawCppPtr = 1,
+  ArrayOfRawCppPtr = 2,
 };
 
 enum class EngineStoreApplyRes : uint32_t {
@@ -108,10 +109,19 @@ struct PageAndCppStrWithViewVec {
   const uint64_t len;
 };
 
-// An array of pointers, like `T **`
-struct RawCppPtrArr {
+// An tuple of pointers, like `void **`,
+// Can be used to represent structures.
+struct RawCppPtrTuple {
   RawCppPtr *inner;
   const uint64_t len;
+};
+
+// An array of pointers(same type), like `T **`,
+// Can be used to represent arrays.
+struct RawCppPtrArr {
+  RawVoidPtr *inner;
+  const uint64_t len;
+  RawCppPtrType type;
 };
 
 enum class HttpRequestStatus : uint8_t {

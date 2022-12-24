@@ -53,7 +53,8 @@ pub mod root {
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum SpecialCppPtrType {
             None = 0,
-            ArrayOfRawCppPtr = 1,
+            TupleOfRawCppPtr = 1,
+            ArrayOfRawCppPtr = 2,
         }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -164,9 +165,16 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
-        pub struct RawCppPtrArr {
+        pub struct RawCppPtrTuple {
             pub inner: *mut root::DB::RawCppPtr,
             pub len: u64,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppPtrArr {
+            pub inner: *mut root::DB::RawVoidPtr,
+            pub len: u64,
+            pub type_: root::DB::RawCppPtrType,
         }
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -570,7 +578,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 1634948592330095866;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 4326611643816778519;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
