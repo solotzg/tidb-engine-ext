@@ -20,14 +20,19 @@ fn test_tuple_of_raw_cpp_ptr() {
 
         for i in 0..len {
             let s = format!("s{}", i);
-            v.push((helper.fn_gen_cpp_string.into_inner())(s.as_bytes().into()));
+            let raw_cpp_ptr = (helper.fn_gen_cpp_string.into_inner())(s.as_bytes().into());
+            v.push(raw_cpp_ptr);
         }
 
         let (ptr_v, l, cap) = v.into_raw_parts();
+        assert_ne!(l, cap);
         let cpp_ptr_tp = RawCppPtrTuple {
             inner: ptr_v,
             len: cap as u64,
         };
+        for i in 0..cap {
+            let inner_i = cpp_ptr_tp.inner.add(i);
+        }
         drop(cpp_ptr_tp);
     }
 }
@@ -50,6 +55,7 @@ fn test_array_of_raw_cpp_ptr() {
         }
 
         let (ptr_v, l, cap) = v.into_raw_parts();
+        assert_ne!(l, cap);
         let cpp_ptr_arr = RawCppPtrArr {
             inner: ptr_v,
             type_: RawCppPtrTypeImpl::String.into(),

@@ -393,13 +393,19 @@ impl Drop for RawCppPtrTuple {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
                 let len = self.len;
-                // Delete all `void *`
+                // Delete all `void *`.
                 for i in 0..len {
                     let i = i as usize;
                     let inner_i = self.inner.add(i);
-                    helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                    // Will not fire even without the if in tests,
+                    // since type must be 0 which is None.
+                    if !inner_i.is_null() {
+                        helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                        // We still set to nullptr, even though we will immediately delete it.
+                        (*inner_i).ptr = std::ptr::null_mut();
+                    }
                 }
-                // Delete `void **`
+                // Delete `void **`.
                 helper.gc_special_raw_cpp_ptr(
                     self.inner as RawVoidPtr,
                     self.len,
@@ -430,8 +436,11 @@ impl Drop for RawCppPtrArr {
                 for i in 0..len {
                     let i = i as usize;
                     let inner_i = self.inner.add(i);
+                    // Will fire even without the if in tests, since type is not 0.
                     if !(*inner_i).is_null() {
                         helper.gc_raw_cpp_ptr(*inner_i, self.type_);
+                        // We still set to nullptr, even though we will immediately delete it.
+                        *inner_i = std::ptr::null_mut();
                     }
                 }
                 // Delete `T **`
