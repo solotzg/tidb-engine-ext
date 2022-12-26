@@ -44,6 +44,7 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --test proxy region
     cargo test --package proxy_tests --test proxy flashback
     cargo test --package proxy_tests --test proxy server_cluster_test
+    cargo test --package proxy_tests --test proxy ffi -- --test-threads 1
 elif [[ $M == "debug" ]]; then
     # export RUSTC_WRAPPER=~/.cargo/bin/sccache
     export ENGINE_LABEL_VALUE=tiflash

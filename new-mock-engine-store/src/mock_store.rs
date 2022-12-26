@@ -717,6 +717,7 @@ pub fn gen_engine_store_server_helper(
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
+        fn_gc_special_raw_cpp_ptr: Some(ffi_gc_special_raw_cpp_ptr),
         fn_get_config: None,
         fn_set_store: None,
         fn_set_pb_msg_by_bytes: Some(ffi_set_pb_msg_by_bytes),
@@ -773,10 +774,10 @@ unsafe extern "C" fn ffi_handle_write_raft_cmd(
 pub enum RawCppPtrTypeImpl {
     None = 0,
     String = 1,
-    PreHandledSnapshotWithBlock = 2,
-    WakerNotifier = 3,
-    PSWriteBatch = 4,
-    PSUniversalPage = 5,
+    PreHandledSnapshotWithBlock = 11,
+    WakerNotifier = 12,
+    PSWriteBatch = 13,
+    PSUniversalPage = 14,
 }
 
 impl From<RawCppPtrTypeImpl> for ffi_interfaces::RawCppPtrType {
@@ -940,6 +941,24 @@ impl ProxyNotifier {
             ptr: Box::into_raw(notifier) as _,
             type_: RawCppPtrTypeImpl::WakerNotifier.into(),
         }
+    }
+}
+
+extern "C" fn ffi_gc_special_raw_cpp_ptr(
+    ptr: ffi_interfaces::RawVoidPtr,
+    hint_len: u64,
+    tp: ffi_interfaces::SpecialCppPtrType,
+) {
+    match tp {
+        ffi_interfaces::SpecialCppPtrType::None => (),
+        ffi_interfaces::SpecialCppPtrType::TupleOfRawCppPtr => unsafe {
+            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            drop(p);
+        },
+        ffi_interfaces::SpecialCppPtrType::ArrayOfRawCppPtr => unsafe {
+            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            drop(p);
+        },
     }
 }
 

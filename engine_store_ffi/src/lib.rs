@@ -39,8 +39,8 @@ pub use self::interfaces::root::DB::{
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
-    RaftStoreProxyFFIHelper, RawCppPtr, RawCppStringPtr, RawVoidPtr, SSTReaderPtr, StoreStats,
-    WriteCmdType, WriteCmdsView,
+    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr,
+    SSTReaderPtr, SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -353,7 +353,7 @@ impl RaftStoreProxyFFIHelper {
 }
 
 impl RawCppPtr {
-    fn into_raw(mut self) -> RawVoidPtr {
+    pub fn into_raw(mut self) -> RawVoidPtr {
         let ptr = self.ptr;
         self.ptr = std::ptr::null_mut();
         ptr
@@ -378,6 +378,83 @@ impl Drop for RawCppPtr {
     }
 }
 
+impl RawCppPtrTuple {
+    pub fn is_null(&self) -> bool {
+        unsafe { (*self.inner).ptr.is_null() }
+    }
+}
+
+unsafe impl Send for RawCppPtrTuple {}
+
+impl Drop for RawCppPtrTuple {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.is_null() {
+                let helper = get_engine_store_server_helper();
+                let len = self.len;
+                // Delete all `void *`.
+                for i in 0..len {
+                    let i = i as usize;
+                    let inner_i = self.inner.add(i);
+                    // Will not fire even without the if in tests,
+                    // since type must be 0 which is None.
+                    if !inner_i.is_null() {
+                        helper.gc_raw_cpp_ptr((*inner_i).ptr, (*inner_i).type_);
+                        // We still set to nullptr, even though we will immediately delete it.
+                        (*inner_i).ptr = std::ptr::null_mut();
+                    }
+                }
+                // Delete `void **`.
+                helper.gc_special_raw_cpp_ptr(
+                    self.inner as RawVoidPtr,
+                    self.len,
+                    SpecialCppPtrType::TupleOfRawCppPtr,
+                );
+                self.inner = std::ptr::null_mut();
+                self.len = 0;
+            }
+        }
+    }
+}
+
+impl RawCppPtrArr {
+    pub fn is_null(&self) -> bool {
+        unsafe { self.inner.is_null() }
+    }
+}
+
+unsafe impl Send for RawCppPtrArr {}
+
+impl Drop for RawCppPtrArr {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.is_null() {
+                let helper = get_engine_store_server_helper();
+                let len = self.len;
+                // Delete all `T *`
+                for i in 0..len {
+                    let i = i as usize;
+                    let inner_i = self.inner.add(i);
+                    // Will fire even without the if in tests, since type is not 0.
+                    if !(*inner_i).is_null() {
+                        helper.gc_raw_cpp_ptr(*inner_i, self.type_);
+                        // We still set to nullptr, even though we will immediately delete it.
+                        *inner_i = std::ptr::null_mut();
+                    }
+                }
+                // Delete `T **`
+                helper.gc_special_raw_cpp_ptr(
+                    self.inner as RawVoidPtr,
+                    self.len,
+                    SpecialCppPtrType::ArrayOfRawCppPtr,
+                );
+                self.inner = std::ptr::null_mut();
+                self.len = 0;
+            }
+        }
+    }
+}
+
 impl Drop for PageAndCppStrWithViewVec {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
@@ -395,7 +472,7 @@ pub fn get_engine_store_server_helper_ptr() -> isize {
     unsafe { ENGINE_STORE_SERVER_HELPER_PTR }
 }
 
-fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
+pub fn get_engine_store_server_helper() -> &'static EngineStoreServerHelper {
     gen_engine_store_server_helper(unsafe { ENGINE_STORE_SERVER_HELPER_PTR })
 }
 
@@ -425,6 +502,18 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
             (self.fn_gc_raw_cpp_ptr.into_inner())(ptr, tp);
+        }
+    }
+
+    fn gc_special_raw_cpp_ptr(
+        &self,
+        ptr: *mut ::std::os::raw::c_void,
+        hint_len: u64,
+        tp: SpecialCppPtrType,
+    ) {
+        debug_assert!(self.fn_gc_special_raw_cpp_ptr.is_some());
+        unsafe {
+            (self.fn_gc_special_raw_cpp_ptr.into_inner())(ptr, hint_len, tp);
         }
     }
 

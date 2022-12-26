@@ -133,6 +133,7 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     }
 
     fn read_page(&self, page_id: &[u8]) -> Option<Vec<u8>> {
+        // TODO maybe we can steal memory from C++ here to reduce redundant copy?
         let value = self.engine_store_server_helper.read_page(page_id.into());
         return if value.view.len == 0 {
             None

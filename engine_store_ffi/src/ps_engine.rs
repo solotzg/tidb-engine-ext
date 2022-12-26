@@ -4,12 +4,10 @@
 #![allow(unused_variables)]
 
 use std::{
-    fmt,
     fmt::{Debug, Formatter},
-    mem, slice,
+    slice,
 };
 
-use byteorder::{BigEndian, ByteOrder};
 use engine_traits::{
     Error, PerfContext, PerfContextExt, PerfContextKind, PerfLevel, RaftEngine, RaftEngineDebug,
     RaftEngineReadOnly, RaftLogBatch, RaftLogGcTask, Result,

@@ -51,6 +51,13 @@ pub mod root {
         }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum SpecialCppPtrType {
+            None = 0,
+            TupleOfRawCppPtr = 1,
+            ArrayOfRawCppPtr = 2,
+        }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum EngineStoreApplyRes {
             None = 0,
             Persist = 1,
@@ -155,6 +162,19 @@ pub mod root {
         pub struct PageAndCppStrWithViewVec {
             pub inner: *mut root::DB::PageAndCppStrWithView,
             pub len: u64,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppPtrTuple {
+            pub inner: *mut root::DB::RawCppPtr,
+            pub len: u64,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct RawCppPtrArr {
+            pub inner: *mut root::DB::RawVoidPtr,
+            pub len: u64,
+            pub type_: root::DB::RawCppPtrType,
         }
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -516,6 +536,13 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
+            pub fn_gc_special_raw_cpp_ptr: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: u64,
+                    arg3: root::DB::SpecialCppPtrType,
+                ),
+            >,
             pub fn_get_config: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
@@ -551,7 +578,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 3525220209235231360;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 4326611643816778519;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

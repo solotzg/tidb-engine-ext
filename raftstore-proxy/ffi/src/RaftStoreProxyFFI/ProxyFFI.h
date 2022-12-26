@@ -6,6 +6,12 @@ namespace DB {
 
 struct EngineStoreServerWrap;
 
+enum class SpecialCppPtrType : uint32_t {
+  None = 0,
+  TupleOfRawCppPtr = 1,
+  ArrayOfRawCppPtr = 2,
+};
+
 enum class EngineStoreApplyRes : uint32_t {
   None = 0,
   Persist,
@@ -101,6 +107,21 @@ struct PageAndCppStrWithView {
 struct PageAndCppStrWithViewVec {
   PageAndCppStrWithView *inner;
   const uint64_t len;
+};
+
+// An tuple of pointers, like `void **`,
+// Can be used to represent structures.
+struct RawCppPtrTuple {
+  RawCppPtr *inner;
+  const uint64_t len;
+};
+
+// An array of pointers(same type), like `T **`,
+// Can be used to represent arrays.
+struct RawCppPtrArr {
+  RawVoidPtr *inner;
+  const uint64_t len;
+  RawCppPtrType type;
 };
 
 enum class HttpRequestStatus : uint8_t {
@@ -258,6 +279,7 @@ struct EngineStoreServerHelper {
                                            BaseBuffView body);
   uint8_t (*fn_check_http_uri_available)(BaseBuffView);
   void (*fn_gc_raw_cpp_ptr)(RawVoidPtr, RawCppPtrType);
+  void (*fn_gc_special_raw_cpp_ptr)(RawVoidPtr, uint64_t, SpecialCppPtrType);
   CppStrWithView (*fn_get_config)(EngineStoreServerWrap *, uint8_t full);
   void (*fn_set_store)(EngineStoreServerWrap *, BaseBuffView);
   void (*fn_set_pb_msg_by_bytes)(MsgPBType type, RawVoidPtr ptr,
