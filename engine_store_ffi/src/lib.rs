@@ -28,7 +28,6 @@ pub use domain_impls::*;
 use encryption::DataKeyManager;
 pub use encryption_impls::*;
 use engine_traits::{Peekable, CF_LOCK};
-use interfaces::root::DB::SpecialCppPtrType;
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
 use protobuf::Message;
@@ -41,7 +40,7 @@ pub use self::interfaces::root::DB::{
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
     PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
     RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr,
-    SSTReaderPtr, StoreStats, WriteCmdType, WriteCmdsView,
+    SSTReaderPtr, SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
