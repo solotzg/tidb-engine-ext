@@ -157,7 +157,8 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
                 f(
                     &value.key_view.to_slice().to_vec(),
                     &value.page_view.to_slice().to_vec(),
-                );
+                )
+                .unwrap();
             }
         }
     }

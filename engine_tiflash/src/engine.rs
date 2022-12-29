@@ -19,7 +19,6 @@ use engine_traits::{
     ReadOptions, Result, SyncMutable,
 };
 use rocksdb::{Writable, DB};
-use tikv_util::box_err;
 
 use crate::{r2e, util::get_cf_handle};
 

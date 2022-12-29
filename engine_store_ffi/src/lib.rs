@@ -419,7 +419,7 @@ impl Drop for RawCppPtrTuple {
 
 impl RawCppPtrArr {
     pub fn is_null(&self) -> bool {
-        unsafe { self.inner.is_null() }
+        self.inner.is_null()
     }
 }
 

@@ -952,11 +952,17 @@ extern "C" fn ffi_gc_special_raw_cpp_ptr(
     match tp {
         ffi_interfaces::SpecialCppPtrType::None => (),
         ffi_interfaces::SpecialCppPtrType::TupleOfRawCppPtr => unsafe {
-            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut RawCppPtr,
+                hint_len as usize,
+            ));
             drop(p);
         },
         ffi_interfaces::SpecialCppPtrType::ArrayOfRawCppPtr => unsafe {
-            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut RawCppPtr,
+                hint_len as usize,
+            ));
             drop(p);
         },
     }

@@ -20,7 +20,7 @@ use kvproto::{
 };
 use protobuf::Message;
 use raft::eraftpb::Entry;
-use tikv_util::{box_err, box_try, info};
+use tikv_util::{box_try, info};
 use tracker::TrackerToken;
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
