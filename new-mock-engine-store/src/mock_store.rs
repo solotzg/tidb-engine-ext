@@ -789,7 +789,11 @@ impl From<RawCppPtrTypeImpl> for ffi_interfaces::RawCppPtrType {
 
 impl From<ffi_interfaces::RawCppPtrType> for RawCppPtrTypeImpl {
     fn from(value: ffi_interfaces::RawCppPtrType) -> Self {
-        RawCppPtrTypeImpl::from_int(value).unwrap()
+        if let Ok(s) = RawCppPtrTypeImpl::from_int(value) {
+            s
+        } else {
+            panic!("unknown RawCppPtrType {:?}", value);
+        }
     }
 }
 
@@ -952,11 +956,17 @@ extern "C" fn ffi_gc_special_raw_cpp_ptr(
     match tp {
         ffi_interfaces::SpecialCppPtrType::None => (),
         ffi_interfaces::SpecialCppPtrType::TupleOfRawCppPtr => unsafe {
-            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut RawCppPtr,
+                hint_len as usize,
+            ));
             drop(p);
         },
         ffi_interfaces::SpecialCppPtrType::ArrayOfRawCppPtr => unsafe {
-            let p = std::slice::from_raw_parts_mut(ptr as *mut RawCppPtr, hint_len as usize);
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut RawVoidPtr,
+                hint_len as usize,
+            ));
             drop(p);
         },
     }

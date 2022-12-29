@@ -157,7 +157,8 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
                 f(
                     &value.key_view.to_slice().to_vec(),
                     &value.page_view.to_slice().to_vec(),
-                );
+                )
+                .unwrap();
             }
         }
     }
@@ -547,8 +548,20 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let region_str = res.region.view.to_slice();
         let mut apply_state = RaftApplyState::default();
         let mut new_region = kvproto::metapb::Region::default();
-        apply_state.merge_from_bytes(apply_state_str).unwrap();
-        new_region.merge_from_bytes(region_str).unwrap();
+        if let Err(e) = apply_state.merge_from_bytes(apply_state_str) {
+            error!(
+                "fast path: ongoing {}:{} {} failed. parse apply_state {:?}, fallback to normal",
+                self.store_id, region_id, new_peer_id, res
+            );
+            self.fallback_to_slow_path(region_id);
+        }
+        if let Err(e) = new_region.merge_from_bytes(region_str) {
+            error!(
+                "fast path: ongoing {}:{} {} failed. parse region {:?}, fallback to normal",
+                self.store_id, region_id, new_peer_id, res
+            );
+            self.fallback_to_slow_path(region_id);
+        }
 
         // Validate
         // check if the source already knows the know peer
