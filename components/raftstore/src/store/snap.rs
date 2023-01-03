@@ -420,7 +420,7 @@ impl CfFile {
 }
 
 #[derive(Default)]
-struct MetaFile {
+pub struct MetaFile {
     pub meta: Option<SnapshotMeta>,
     pub path: PathBuf,
     pub file: Option<File>,
@@ -436,8 +436,8 @@ pub struct Snapshot {
     cf_files: Vec<CfFile>,
     cf_index: usize,
     cf_file_index: usize,
-    meta_file: MetaFile,
-    hold_tmp_files: bool,
+    pub meta_file: MetaFile,
+    pub hold_tmp_files: bool,
 
     mgr: SnapManagerCore,
 }
@@ -458,6 +458,7 @@ impl Snapshot {
         mgr: &SnapManagerCore,
     ) -> RaftStoreResult<Self> {
         let dir_path = dir.into();
+
         if !dir_path.exists() {
             file_system::create_dir_all(dir_path.as_path())?;
         }

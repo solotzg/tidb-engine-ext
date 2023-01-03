@@ -21,6 +21,7 @@ fn basic_fast_add_peer() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     // fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+    fail::cfg("fast_add_peer_fake_snapshot", "return(1)").unwrap();
     fail::cfg("before_tiflash_check_double_write", "return").unwrap();
     disable_auto_gen_compact_log(&mut cluster);
     // Disable auto generate peer.
@@ -33,6 +34,9 @@ fn basic_fast_add_peer() {
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
 
     cluster.shutdown();
+    fail::remove("fallback_to_slow_path_not_allow");
+    fail::remove("fast_add_peer_fake_snapshot");
+    fail::remove("before_tiflash_check_double_write");
 }
 
 fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseType) {
@@ -167,12 +171,13 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
         _ => (),
     };
 
-    // Destroy peer
+    // Destroy peer, and then try re-add a new peer of the same region.
     pd_client.must_remove_peer(1, new_learner_peer(3, 3));
     must_wait_until_cond_node(&cluster, 1, Some(vec![1]), &|states: &States| -> bool {
         find_peer_by_id(states.in_disk_region_state.get_region(), 3).is_none()
     });
     std::thread::sleep(std::time::Duration::from_millis(1000));
+    // Assert the peer removing succeeed.
     iter_ffi_helpers(
         &cluster,
         Some(vec![3]),
@@ -186,7 +191,12 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
     );
     cluster.must_put(b"k5", b"v5");
     // These failpoints make sure we will cause again a fast path.
-    fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
+    if source_type == SourceType::InvalidSource {
+        // If we still use InvalidSource, we still need to goto slow path.
+    } else {
+        fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
+    }
+    // Re-add peer in store.
     pd_client.must_add_peer(1, new_learner_peer(3, 4));
     // Wait until Learner has applied ConfChange
     std::thread::sleep(std::time::Duration::from_millis(1000));
