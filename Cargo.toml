@@ -1,6 +1,6 @@
 [package]
 name = "tikv"
-version = "6.5.0-alpha"
+version = "6.6.0-alpha"
 authors = ["The TiKV Authors"]
 description = "A distributed transactional key-value database powered by Rust and Raft"
 license = "Apache-2.0"
@@ -132,11 +132,11 @@ pnet_datalink = "0.23"
 pprof = { version = "0.11", default-features = false, features = ["flamegraph", "protobuf-codec"] }
 prometheus = { version = "0.13", features = ["nightly"] }
 prometheus-static-metric = "0.5"
-prost = "0.7"
 protobuf = { version = "2.8", features = ["bytes"] }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft_log_engine = { workspace = true }
 raftstore = { workspace = true, features = ["engine_rocks"] }
+raftstore-v2 = { workspace = true }
 rand = "0.7.3"
 regex = "1.3"
 resource_metering = { workspace = true }
@@ -154,7 +154,7 @@ smallvec = "1.4"
 sst_importer = { workspace = true }
 strum = { version = "0.20", features = ["derive"] }
 sync_wrapper = "0.1.1"
-sysinfo = "0.16"
+sysinfo = "0.26"
 tempfile = "3.0"
 thiserror = "1.0"
 tidb_query_aggr = { workspace = true }
@@ -190,8 +190,6 @@ tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "time"] }
 zipf = "6.1.0"
 
 [patch.crates-io]
-prometheus = { git = "https://github.com/solotzg/rust-prometheus.git", rev = "b4fe98a06a58d29f9b9987a0d7186f6ed5230193" }
-
 # TODO: remove this when new raft-rs is published.
 raft = { git = "https://github.com/tikv/raft-rs", branch = "master" }
 raft-proto = { git = "https://github.com/tikv/raft-rs", branch = "master" }
@@ -227,7 +225,13 @@ procinfo = { git = "https://github.com/tikv/procinfo-rs", rev = "6599eb9dca74229
 # kvproto = { git = "https://github.com/your_github_id/kvproto", branch = "your_branch" }
 
 [workspace]
+# See https://github.com/rust-lang/rfcs/blob/master/text/2957-cargo-features2.md
+# Without resolver = 2, using `cargo build --features x` to build `cmd`
+# will _not_ propagate the feature `x` into `cmd`'s direct dependencies.
+resolver = "2"
 members = [
+  "cmd/tikv-ctl",
+  "cmd/tikv-server",
   "components/api_version",
   "components/backup",
   "components/backup-stream",
@@ -289,17 +293,13 @@ members = [
   "components/tipb_helper",
   "components/tracker",
   "components/txn_types",
-  "engine_tiflash",
   "fuzz",
   "fuzz/fuzzer-afl",
   "fuzz/fuzzer-honggfuzz",
   "fuzz/fuzzer-libfuzzer",
-  "gen-proxy-ffi",
-  "proxy_tests",
-  "raftstore-proxy",
   "tests",
 ]
-default-members = ["raftstore-proxy"]
+default-members = ["cmd/tikv-server", "cmd/tikv-ctl"]
 
 [workspace.dependencies]
 api_version = { path = "components/api_version" }
@@ -339,7 +339,7 @@ pd_client = { path = "components/pd_client" }
 profiler = { path = "components/profiler" }
 raft_log_engine = { path = "components/raft_log_engine" }
 raftstore = { path = "components/raftstore", default-features = false }
-raftstore_v2 = { path = "components/raftstore-v2", default-features = false }
+raftstore-v2 = { path = "components/raftstore-v2", default-features = false }
 resolved_ts = { path = "components/resolved_ts" }
 resource_metering = { path = "components/resource_metering" }
 security = { path = "components/security" }
@@ -375,12 +375,6 @@ tipb = { git = "https://github.com/pingcap/tipb.git" }
 kvproto = { git = "https://github.com/pingcap/kvproto.git" }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 tokio-timer = { git = "https://github.com/tikv/tokio", branch = "tokio-timer-hotfix" }
-
-# TiFlash libs
-engine_store_ffi = { path = "engine_store_ffi", default-features = false }
-new-mock-engine-store = { path = "new-mock-engine-store", default-features = false }
-proxy_server = { path = "proxy_server", default-features = false }
-engine_tiflash = { path = "engine_tiflash", default-features = false }
 
 [profile.dev.package.grpcio-sys]
 debug = false
@@ -424,9 +418,13 @@ debug-assertions = false
 overflow-checks = false
 rpath = false
 
+[profile.release.package.server]
+opt-level = 1
+codegen-units = 4
+
 [profile.test]
 opt-level = 0
-debug = true
+debug = 0
 codegen-units = 16
 lto = false
 incremental = true
