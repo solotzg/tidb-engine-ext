@@ -761,6 +761,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         .unwrap();
                     self.set_snapshot_inflight(region_id, current.as_millis())
                         .unwrap();
+                    // If we don't flush here, packet will lost.
+                    trans.flush();
                 }
                 Err(RaftStoreError::RegionNotFound(_)) => (),
                 _ => return Ok(crate::FastAddPeerStatus::OtherError),
