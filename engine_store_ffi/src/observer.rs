@@ -504,6 +504,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         }
 
         if !is_first {
+            // Most cases, the region is already inited or fallback.
+            // Skip fast add peer.
             return false;
         }
 
