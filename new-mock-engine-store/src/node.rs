@@ -83,15 +83,25 @@ impl Default for ChannelTransport {
 impl Transport for ChannelTransport {
     #[allow(clippy::significant_drop_in_scrutinee)]
     fn send(&mut self, msg: RaftMessage) -> Result<()> {
-        let from_store = msg.get_from_peer().get_store_id();
+        let mut from_store = msg.get_from_peer().get_store_id();
         let to_store = msg.get_to_peer().get_store_id();
         let to_peer_id = msg.get_to_peer().get_id();
         let region_id = msg.get_region_id();
         let is_snapshot = msg.get_message().get_msg_type() == MessageType::MsgSnapshot;
 
         if is_snapshot {
+            let fake_self_snapshot = (|| {
+                fail::fail_point!("fast_add_peer_fake_snapshot", |t| {
+                    let t = t.unwrap().parse::<u64>().unwrap();
+                    t
+                });
+                0
+            })();
             let snap = msg.get_message().get_snapshot();
             let key = SnapKey::from_snap(snap).unwrap();
+            if fake_self_snapshot == 1 {
+                from_store = to_store;
+            }
             let from = match self.core.lock().unwrap().snap_paths.get(&from_store) {
                 Some(p) => {
                     p.0.register(key.clone(), SnapEntry::Sending);
@@ -99,6 +109,9 @@ impl Transport for ChannelTransport {
                 }
                 None => return Err(box_err!("missing temp dir for store {}", from_store)),
             };
+            if fake_self_snapshot == 1 && !from.exists() {
+                panic!("non-exist snapshot");
+            }
             let to = match self.core.lock().unwrap().snap_paths.get(&to_store) {
                 Some(p) => {
                     p.0.register(key.clone(), SnapEntry::Receiving);
@@ -302,6 +315,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             (snap_mgr.clone(), None)
         };
 
+        debug!("snapshot_mgr path of {} is {:?}", node_id, snap_mgr_path);
         self.snap_mgrs.insert(node_id, snap_mgr.clone());
 
         let importer = {

@@ -456,6 +456,7 @@ where
                 Some(msg) => msg,
                 None => return,
             };
+
             if msg.get_message().has_snapshot() {
                 let mut snapshot = RaftSnapshotData::default();
                 snapshot
