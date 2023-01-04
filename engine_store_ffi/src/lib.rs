@@ -505,6 +505,13 @@ impl EngineStoreServerHelper {
         }
     }
 
+    fn gc_raw_cpp_ptr_carr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType, len: u64) {
+        debug_assert!(self.fn_gc_raw_cpp_ptr_carr.is_some());
+        unsafe {
+            (self.fn_gc_raw_cpp_ptr_carr.into_inner())(ptr, tp, len);
+        }
+    }
+
     fn gc_special_raw_cpp_ptr(
         &self,
         ptr: *mut ::std::os::raw::c_void,

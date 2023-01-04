@@ -536,6 +536,13 @@ pub mod root {
             pub fn_gc_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawCppPtrType),
             >,
+            pub fn_gc_raw_cpp_ptr_carr: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RawVoidPtr,
+                    arg2: root::DB::RawCppPtrType,
+                    arg3: u64,
+                ),
+            >,
             pub fn_gc_special_raw_cpp_ptr: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RawVoidPtr,
@@ -578,7 +585,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 4326611643816778519;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 14213283800760119223;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
