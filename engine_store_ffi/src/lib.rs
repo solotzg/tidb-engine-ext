@@ -388,6 +388,11 @@ unsafe impl Send for RawCppPtrTuple {}
 
 impl Drop for RawCppPtrTuple {
     fn drop(&mut self) {
+        /// Note the layout is:
+        /// [0] RawCppPtr to T
+        /// [1] RawCppPtr to R
+        /// ...
+        /// [len-1] RawCppPtr to S
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
@@ -427,6 +432,11 @@ unsafe impl Send for RawCppPtrArr {}
 
 impl Drop for RawCppPtrArr {
     fn drop(&mut self) {
+        /// Note the layout is:
+        /// [0] RawVoidPtr to T
+        /// [1] RawVoidPtr
+        /// ...
+        /// [len-1] RawVoidPtr
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
