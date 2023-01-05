@@ -717,6 +717,7 @@ pub fn gen_engine_store_server_helper(
         fn_handle_http_request: None,
         fn_check_http_uri_available: None,
         fn_gc_raw_cpp_ptr: Some(ffi_gc_raw_cpp_ptr),
+        fn_gc_raw_cpp_ptr_carr: Some(ffi_gc_raw_cpp_ptr_carr),
         fn_gc_special_raw_cpp_ptr: Some(ffi_gc_special_raw_cpp_ptr),
         fn_get_config: None,
         fn_set_store: None,
@@ -778,6 +779,7 @@ pub enum RawCppPtrTypeImpl {
     WakerNotifier = 12,
     PSWriteBatch = 13,
     PSUniversalPage = 14,
+    PSPageAndCppStr = 15,
 }
 
 impl From<RawCppPtrTypeImpl> for ffi_interfaces::RawCppPtrType {
@@ -993,6 +995,31 @@ extern "C" fn ffi_gc_raw_cpp_ptr(
         RawCppPtrTypeImpl::PSUniversalPage => unsafe {
             drop(Box::from_raw(ptr as *mut MockPSUniversalPage));
         },
+        _ => todo!(),
+    }
+}
+
+extern "C" fn ffi_gc_raw_cpp_ptr_carr(
+    ptr: ffi_interfaces::RawVoidPtr,
+    tp: ffi_interfaces::RawCppPtrType,
+    len: u64,
+) {
+    match tp.into() {
+        RawCppPtrTypeImpl::String => unsafe {
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut RawVoidPtr,
+                len as usize,
+            ));
+            for i in 0..len {
+                let i = i as usize;
+                if !p[i].is_null() {
+                    ffi_gc_raw_cpp_ptr(p[i], RawCppPtrTypeImpl::String.into());
+                }
+            }
+            drop(p);
+        },
+        RawCppPtrTypeImpl::PSPageAndCppStr => unsafe { todo!() },
+        _ => todo!(),
     }
 }
 

@@ -410,6 +410,26 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
             match info {
                 MapEntry::Occupied(mut o) => {
+                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                    if last != 0 {
+                        let current = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap();
+                        info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
+                            self.store_id, region_id, new_peer_id;
+                                "to_peer_id" => msg.get_to_peer().get_id(),
+                                "from_peer_id" => msg.get_from_peer().get_id(),
+                                "inner_msg" => ?inner_msg,
+                                "is_replicated" => is_replicated,
+                                "has_already_inited" => has_already_inited,
+                                "is_first" => is_first,
+                                "elapsed" => current.as_millis() - last,
+                        );
+                        early_skip = true;
+                        // We must return here to avoid changing `inited_or_fallback`.
+                        // Otherwise will cause different value in pre/post_apply_snapshot.
+                        return;
+                    }
                     (is_first, has_already_inited) =
                         if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
                             // If `has_already_inited` is true:
@@ -432,23 +452,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         };
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
-                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
-                    if last != 0 {
-                        let current = SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap();
-                        info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
-                            self.store_id, region_id, new_peer_id;
-                                "to_peer_id" => msg.get_to_peer().get_id(),
-                                "from_peer_id" => msg.get_from_peer().get_id(),
-                                "inner_msg" => ?inner_msg,
-                                "is_replicated" => is_replicated,
-                                "has_already_inited" => has_already_inited,
-                                "is_first" => is_first,
-                                "elapsed" => current.as_millis() - last,
-                        );
-                        early_skip = true;
-                    }
                 }
                 MapEntry::Vacant(v) => {
                     info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
@@ -462,6 +465,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         };
 
+        // Try not acquire write lock firstly.
         match self.get_inited_or_fallback(region_id) {
             Some(true) => {
                 is_first = false;
@@ -494,12 +498,15 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             }
         }
 
-        if !is_first {
-            return false;
-        }
-
+        // If early_skip is true, we don't read the value of `is_first`.
         if early_skip {
             return true;
+        }
+
+        if !is_first {
+            // Most cases, the region is already inited or fallback.
+            // Skip fast add peer.
+            return false;
         }
 
         {

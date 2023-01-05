@@ -30,9 +30,6 @@ fn test_tuple_of_raw_cpp_ptr() {
             inner: ptr_v,
             len: cap as u64,
         };
-        for i in 0..cap {
-            let inner_i = cpp_ptr_tp.inner.add(i);
-        }
         drop(cpp_ptr_tp);
     }
 }
@@ -62,5 +59,32 @@ fn test_array_of_raw_cpp_ptr() {
             len: cap as u64,
         };
         drop(cpp_ptr_arr);
+    }
+}
+
+#[test]
+fn test_carray_of_raw_cpp_ptr() {
+    tikv_util::set_panic_hook(true, "./");
+    unsafe {
+        init_global_ffi_helper_set();
+        let helper = get_engine_store_server_helper();
+
+        const len: usize = 10;
+        let mut v: Vec<RawVoidPtr> = vec![];
+
+        for i in 0..len {
+            let s = format!("s{}", i);
+            let raw_cpp_ptr = (helper.fn_gen_cpp_string.into_inner())(s.as_bytes().into());
+            let raw_void_ptr = raw_cpp_ptr.into_raw();
+            v.push(raw_void_ptr);
+        }
+
+        let (pv1, l, cap) = v.into_raw_parts();
+        let pv1 = pv1 as RawVoidPtr;
+        (helper.fn_gc_raw_cpp_ptr_carr.into_inner())(
+            pv1,
+            RawCppPtrTypeImpl::String.into(),
+            cap as u64,
+        );
     }
 }
