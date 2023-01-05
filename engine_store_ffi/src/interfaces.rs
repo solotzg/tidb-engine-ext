@@ -162,7 +162,7 @@ pub mod root {
         pub struct PageAndCppStrWithViewVec {
             pub inner: *mut root::DB::PageAndCppStrWithView,
             pub len: u64,
-            pub type_: u64,
+            pub type_: root::DB::RawCppPtrType,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -583,7 +583,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13706227877734022809;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 10253455389063462714;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
