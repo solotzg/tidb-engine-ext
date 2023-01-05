@@ -162,6 +162,7 @@ pub mod root {
         pub struct PageAndCppStrWithViewVec {
             pub inner: *mut root::DB::PageAndCppStrWithView,
             pub len: u64,
+            pub type_: root::DB::RawCppPtrType,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -465,9 +466,6 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::PageAndCppStrWithViewVec,
             >,
-            pub fn_gc_page_and_cpp_str_with_view_vec: ::std::option::Option<
-                unsafe extern "C" fn(arg1: *mut root::DB::PageAndCppStrWithView, arg2: u64),
-            >,
             pub fn_handle_purge_pagestorage: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
             >,
@@ -585,7 +583,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 14213283800760119223;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 10253455389063462714;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

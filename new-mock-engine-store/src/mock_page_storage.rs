@@ -111,13 +111,6 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
     todo!()
 }
 
-pub unsafe extern "C" fn ffi_mockps_gc_page_and_cpp_str_with_view_vec(
-    arg1: *mut PageAndCppStrWithView,
-    arg2: u64,
-) {
-    todo!()
-}
-
 pub unsafe extern "C" fn ffi_mockps_handle_purge_pagestorage(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
 ) {

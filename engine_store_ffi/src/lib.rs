@@ -388,11 +388,11 @@ unsafe impl Send for RawCppPtrTuple {}
 
 impl Drop for RawCppPtrTuple {
     fn drop(&mut self) {
-        /// Note the layout is:
-        /// [0] RawCppPtr to T
-        /// [1] RawCppPtr to R
-        /// ...
-        /// [len-1] RawCppPtr to S
+        // Note the layout is:
+        // [0] RawCppPtr to T
+        // [1] RawCppPtr to R
+        // ...
+        // [len-1] RawCppPtr to S
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
@@ -432,11 +432,11 @@ unsafe impl Send for RawCppPtrArr {}
 
 impl Drop for RawCppPtrArr {
     fn drop(&mut self) {
-        /// Note the layout is:
-        /// [0] RawVoidPtr to T
-        /// [1] RawVoidPtr
-        /// ...
-        /// [len-1] RawVoidPtr
+        // Note the layout is:
+        // [0] RawVoidPtr to T
+        // [1] RawVoidPtr
+        // ...
+        // [len-1] RawVoidPtr
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
@@ -469,7 +469,7 @@ impl Drop for PageAndCppStrWithViewVec {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
             let helper = get_engine_store_server_helper();
-            helper.gc_page_and_cpp_str_with_view_vec(self.inner, self.len);
+            helper.gc_raw_cpp_ptr_carr(self.inner as RawVoidPtr, self.type_, self.len);
             self.inner = std::ptr::null_mut();
             self.len = 0;
         }
@@ -680,11 +680,6 @@ impl EngineStoreServerHelper {
     ) -> PageAndCppStrWithViewVec {
         debug_assert!(self.fn_handle_scan_page.is_some());
         unsafe { (self.fn_handle_scan_page.into_inner())(self.inner, start_page_id, end_page_id) }
-    }
-
-    pub fn gc_page_and_cpp_str_with_view_vec(&self, arg1: *mut PageAndCppStrWithView, arg2: u64) {
-        debug_assert!(self.fn_gc_page_and_cpp_str_with_view_vec.is_some());
-        unsafe { (self.fn_gc_page_and_cpp_str_with_view_vec.into_inner())(arg1, arg2) }
     }
 
     pub fn purge_pagestorage(&self) {
