@@ -30,9 +30,6 @@ fn test_tuple_of_raw_cpp_ptr() {
             inner: ptr_v,
             len: cap as u64,
         };
-        for i in 0..cap {
-            let inner_i = cpp_ptr_tp.inner.add(i);
-        }
         drop(cpp_ptr_tp);
     }
 }
