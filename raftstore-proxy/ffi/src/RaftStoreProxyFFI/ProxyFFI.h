@@ -107,6 +107,7 @@ struct PageAndCppStrWithView {
 struct PageAndCppStrWithViewVec {
   PageAndCppStrWithView *inner;
   const uint64_t len;
+  uint64_t type;
 };
 
 // An tuple of pointers, like `void **`,
@@ -255,8 +256,6 @@ struct EngineStoreServerHelper {
                                       BaseBuffView);
   PageAndCppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
                                                   BaseBuffView, BaseBuffView);
-  void (*fn_gc_page_and_cpp_str_with_view_vec)(PageAndCppStrWithView *,
-                                               uint64_t);
   void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
   CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *,
                                           BaseBuffView);

@@ -733,7 +733,6 @@ pub fn gen_engine_store_server_helper(
         fn_write_batch_clear: Some(ffi_mockps_write_batch_clear),
         fn_consume_write_batch: Some(ffi_mockps_consume_write_batch),
         fn_handle_read_page: None,
-        fn_gc_page_and_cpp_str_with_view_vec: None,
         fn_handle_purge_pagestorage: None,
         fn_handle_scan_page: None,
         fn_handle_seek_ps_key: None,
