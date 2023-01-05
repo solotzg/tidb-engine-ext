@@ -388,11 +388,11 @@ unsafe impl Send for RawCppPtrTuple {}
 
 impl Drop for RawCppPtrTuple {
     fn drop(&mut self) {
-        /// Note the layout is:
-        /// [0] RawCppPtr to T
-        /// [1] RawCppPtr to R
-        /// ...
-        /// [len-1] RawCppPtr to S
+        // Note the layout is:
+        // [0] RawCppPtr to T
+        // [1] RawCppPtr to R
+        // ...
+        // [len-1] RawCppPtr to S
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
@@ -432,11 +432,11 @@ unsafe impl Send for RawCppPtrArr {}
 
 impl Drop for RawCppPtrArr {
     fn drop(&mut self) {
-        /// Note the layout is:
-        /// [0] RawVoidPtr to T
-        /// [1] RawVoidPtr
-        /// ...
-        /// [len-1] RawVoidPtr
+        // Note the layout is:
+        // [0] RawVoidPtr to T
+        // [1] RawVoidPtr
+        // ...
+        // [len-1] RawVoidPtr
         unsafe {
             if !self.is_null() {
                 let helper = get_engine_store_server_helper();
@@ -469,7 +469,7 @@ impl Drop for PageAndCppStrWithViewVec {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
             let helper = get_engine_store_server_helper();
-            helper.gc_raw_cpp_ptr_carr(self.inner, self.type_, self.len);
+            helper.gc_raw_cpp_ptr_carr(self.inner as RawVoidPtr, self.type_, self.len);
             self.inner = std::ptr::null_mut();
             self.len = 0;
         }

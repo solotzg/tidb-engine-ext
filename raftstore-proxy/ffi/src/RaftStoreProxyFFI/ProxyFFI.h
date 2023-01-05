@@ -107,7 +107,7 @@ struct PageAndCppStrWithView {
 struct PageAndCppStrWithViewVec {
   PageAndCppStrWithView *inner;
   const uint64_t len;
-  uint64_t type;
+  RawCppPtrType type;
 };
 
 // An tuple of pointers, like `void **`,
