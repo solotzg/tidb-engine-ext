@@ -1009,8 +1009,10 @@ extern "C" fn ffi_gc_raw_cpp_ptr_carr(
                 ptr as *mut RawVoidPtr,
                 len as usize,
             ));
+            println!("!!!! ffi_gc_raw_cpp_ptr_carr");
             for i in 0..len {
                 let i = i as usize;
+                println!("!!!! ffi_gc_raw_cpp_ptr_carr i {} {:?}", i, p[i]);
                 if !p[i].is_null() {
                     ffi_gc_raw_cpp_ptr(p[i], RawCppPtrTypeImpl::String.into());
                 }

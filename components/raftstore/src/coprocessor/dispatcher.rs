@@ -680,10 +680,10 @@ impl<E: KvEngine> CoprocessorHost<E> {
         false
     }
 
-    pub fn on_peer_created(&self, region_id: u64) {
+    pub fn on_peer_created(&self, region_id: u64, peer_id: u64, event: PeerCreateEvent) {
         for observer in &self.registry.region_change_observers {
             let observer = observer.observer.inner();
-            observer.on_peer_created(region_id)
+            observer.on_peer_created(region_id, peer_id, event)
         }
     }
 
