@@ -446,7 +446,6 @@ impl Drop for RawCppPtrArr {
                     let i = i as usize;
                     let inner_i = self.inner.add(i);
                     // Will fire even without the if in tests, since type is not 0.
-                    println!("!!!! RawCppPtrArr {} {:?}", i, *inner_i);
                     if !(*inner_i).is_null() {
                         helper.gc_raw_cpp_ptr(*inner_i, self.type_);
                         // We still set to nullptr, even though we will immediately delete it.
@@ -454,7 +453,6 @@ impl Drop for RawCppPtrArr {
                     }
                 }
                 // Delete `T **`
-                println!("!!!! RawCppPtrArr B");
                 helper.gc_special_raw_cpp_ptr(
                     self.inner as RawVoidPtr,
                     self.len,
