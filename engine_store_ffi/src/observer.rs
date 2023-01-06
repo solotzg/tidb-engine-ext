@@ -1589,9 +1589,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                     MapEntry::Occupied(mut o) => {
                         let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
                         if is_first_snapsot {
+                            let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                            let current = SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap();
                             info!("fast path: applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
+                                "cost" => current.as_millis() - last,
                             );
                             should_skip = true;
                             o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
