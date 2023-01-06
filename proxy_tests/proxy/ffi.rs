@@ -27,10 +27,8 @@ fn test_tuple_of_raw_cpp_ptr() {
         let (ptr_v, l, cap) = v.into_raw_parts();
         for i in l..cap {
             let v = ptr_v.add(i);
-            *v = RawCppPtr {
-                ptr: std::ptr::null_mut(),
-                type_: RawCppPtrTypeImpl::None.into(),
-            };
+            (*v).ptr = std::ptr::null_mut();
+            (*v).type_ = RawCppPtrTypeImpl::None.into();
         }
         assert_ne!(l, cap);
         let cpp_ptr_tp = RawCppPtrTuple {
