@@ -383,7 +383,8 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.raft_store.clean_stale_ranges_tick = clean_stale_ranges_tick;
     config.raft_store.apply_batch_system.low_priority_pool_size =
         proxy_config.raft_store.apply_low_priority_pool_size;
-    config.raft_store.evict_cache_on_memory_ratio = proxy_config.raft_store.evict_cache_on_memory_ratio;
+    config.raft_store.evict_cache_on_memory_ratio =
+        proxy_config.raft_store.evict_cache_on_memory_ratio;
 
     config.raftdb.defaultcf.block_cache_size = proxy_config.raftdb.defaultcf.block_cache_size;
     config.rocksdb.defaultcf.block_cache_size = proxy_config.rocksdb.defaultcf.block_cache_size;
@@ -407,7 +408,8 @@ pub fn address_proxy_config(config: &mut TikvConfig, proxy_config: &ProxyConfig)
     config.server.background_thread_count = proxy_config.server.background_thread_count;
     config.import.num_threads = proxy_config.import.num_threads;
     config.server.status_thread_pool_size = proxy_config.server.status_thread_pool_size;
-    config.server.reject_messages_on_memory_ratio = proxy_config.server.reject_messages_on_memory_ratio;
+    config.server.reject_messages_on_memory_ratio =
+        proxy_config.server.reject_messages_on_memory_ratio;
 }
 
 pub fn validate_and_persist_config(config: &mut TikvConfig, persist: bool) {
