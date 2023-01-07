@@ -840,7 +840,8 @@ where
             task @ Task::Apply { .. } => {
                 fail_point!("on_region_worker_apply", true, |_| {});
                 if self.coprocessor_host.should_pre_apply_snapshot() {
-                    let _ = self.pre_apply_snapshot(&task);
+                    let e = self.pre_apply_snapshot(&task);
+                    tikv_util::debug!("!!!! pre handle error {:?}", e);
                 }
                 SNAP_COUNTER.apply.all.inc();
                 // to makes sure applying snapshots in order.

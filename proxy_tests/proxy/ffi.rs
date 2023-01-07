@@ -25,6 +25,11 @@ fn test_tuple_of_raw_cpp_ptr() {
         }
 
         let (ptr_v, l, cap) = v.into_raw_parts();
+        for i in l..cap {
+            let v = ptr_v.add(i);
+            (*v).ptr = std::ptr::null_mut();
+            (*v).type_ = RawCppPtrTypeImpl::None.into();
+        }
         assert_ne!(l, cap);
         let cpp_ptr_tp = RawCppPtrTuple {
             inner: ptr_v,
@@ -52,6 +57,10 @@ fn test_array_of_raw_cpp_ptr() {
         }
 
         let (ptr_v, l, cap) = v.into_raw_parts();
+        for i in l..cap {
+            let v = ptr_v.add(i);
+            *v = std::ptr::null_mut();
+        }
         assert_ne!(l, cap);
         let cpp_ptr_arr = RawCppPtrArr {
             inner: ptr_v,
@@ -69,22 +78,22 @@ fn test_carray_of_raw_cpp_ptr() {
         init_global_ffi_helper_set();
         let helper = get_engine_store_server_helper();
 
-        const len: usize = 10;
-        let mut v: Vec<RawVoidPtr> = vec![];
+        const LEN: usize = 10;
+        let mut v: [RawVoidPtr; LEN] = [std::ptr::null_mut(); LEN];
 
-        for i in 0..len {
+        for i in 0..LEN {
+            let i = i as usize;
             let s = format!("s{}", i);
             let raw_cpp_ptr = (helper.fn_gen_cpp_string.into_inner())(s.as_bytes().into());
             let raw_void_ptr = raw_cpp_ptr.into_raw();
-            v.push(raw_void_ptr);
+            v[i] = raw_void_ptr;
         }
 
-        let (pv1, l, cap) = v.into_raw_parts();
-        let pv1 = pv1 as RawVoidPtr;
+        let pv1 = Box::into_raw(Box::new(v));
         (helper.fn_gc_raw_cpp_ptr_carr.into_inner())(
-            pv1,
+            pv1 as RawVoidPtr,
             RawCppPtrTypeImpl::String.into(),
-            cap as u64,
+            LEN as u64,
         );
     }
 }

@@ -307,6 +307,11 @@ pub enum RegionChangeEvent {
     UpdateBuckets(usize),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PeerCreateEvent {
+    Replicate,
+    Create,
+}
 pub trait RegionChangeObserver: Coprocessor {
     /// Hook to call when a region changed on this TiKV
     fn on_region_changed(&self, _: &mut ObserverContext<'_>, _: RegionChangeEvent, _: StateRole) {}
@@ -333,7 +338,7 @@ pub trait RegionChangeObserver: Coprocessor {
         false
     }
 
-    fn on_peer_created(&self, _: u64) {}
+    fn on_peer_created(&self, _: u64, _: u64, _: PeerCreateEvent) {}
 }
 
 #[derive(Clone, Debug, Default)]
