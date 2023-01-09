@@ -22,6 +22,7 @@ use protobuf::Message;
 use raft::eraftpb::Entry;
 use tikv_util::{box_try, info};
 use tracker::TrackerToken;
+use crate::PageAndCppStrWithView;
 
 use crate::{gen_engine_store_server_helper, RawCppPtr};
 
@@ -264,8 +265,9 @@ impl PSEngine {
     {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
         let values = helper.scan_page(start_key.into(), end_key.into());
+        let arr = values.inner as *mut *mut PageAndCppStrWithView;
         for i in 0..values.len {
-            let value = unsafe { &*values.inner.offset(i as isize) };
+            let value = unsafe { &*arr.offset(i as isize) };
             if value.page_view.len != 0 {
                 if !f(
                     &value.key_view.to_slice().to_vec(),

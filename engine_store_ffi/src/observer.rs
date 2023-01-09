@@ -48,7 +48,7 @@ use crate::{
     gen_engine_store_server_helper,
     interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
     name_to_cf, ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
-    WriteCmdType, WriteCmds, CF_LOCK,
+    WriteCmdType, WriteCmds, CF_LOCK, PageAndCppStrWithView,
 };
 
 macro_rules! fatal {
@@ -151,8 +151,9 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
         let values = self
             .engine_store_server_helper
             .scan_page(start_page_id.into(), end_page_id.into());
+        let arr = values.inner as *mut *mut PageAndCppStrWithView;
         for i in 0..values.len {
-            let value = unsafe { &*values.inner.offset(i as isize) };
+            let value = unsafe { &*arr.offset(i as isize) };
             if value.page_view.len != 0 {
                 f(
                     &value.key_view.to_slice().to_vec(),

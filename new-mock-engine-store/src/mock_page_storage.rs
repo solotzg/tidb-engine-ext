@@ -1,15 +1,15 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::{collections::btree_map::OccupiedEntry, sync::RwLock};
+use std::{collections::{btree_map::OccupiedEntry, BTreeMap}, sync::RwLock};
 
 use collections::HashMap;
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, BaseBuffView, CppStrWithView, EngineStoreServerHelper,
-    PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftStoreProxyFFIHelper,
+    PageAndCppStrWithView, RaftStoreProxyFFIHelper,
     RawCppPtr, RawVoidPtr,
 };
 
-use crate::mock_store::{into_engine_store_server_wrap, EngineStoreServerWrap, RawCppPtrTypeImpl};
+use crate::{mock_store::{into_engine_store_server_wrap, EngineStoreServerWrap, RawCppPtrTypeImpl}, ffi_gen_cpp_string};
 
 #[derive(Default)]
 pub struct MockPSWriteBatch {
@@ -30,7 +30,7 @@ impl Into<MockPSUniversalPage> for BaseBuffView {
 
 #[derive(Default)]
 pub struct MockPageStorage {
-    pub data: RwLock<HashMap<Vec<u8>, MockPSUniversalPage>>,
+    pub data: RwLock<BTreeMap<Vec<u8>, MockPSUniversalPage>>,
 }
 
 pub unsafe extern "C" fn ffi_mockps_create_write_batch() -> RawCppPtr {
@@ -99,16 +99,47 @@ pub unsafe extern "C" fn ffi_mockps_consume_write_batch(
 pub unsafe extern "C" fn ffi_mockps_handle_read_page(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
     page_id: BaseBuffView,
-) -> PageWithView {
-    todo!()
+) -> CppStrWithView {
+    let store = into_engine_store_server_wrap(wrap);
+    let mut guard = (*store.engine_store_server)
+        .page_storage
+        .data
+        .read()
+        .unwrap();
+    let key = page_id.to_slice().to_vec();
+    let page = guard.get(&key).unwrap();
+    create_cpp_str(Some(page.data.clone()))
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
     start_page_id: BaseBuffView,
     end_page_id: BaseBuffView,
-) -> PageAndCppStrWithViewVec {
-    todo!()
+) -> RawCppPtrCarr {
+    let store = into_engine_store_server_wrap(wrap);
+    let mut guard = (*store.engine_store_server)
+        .page_storage
+        .data
+        .read()
+        .unwrap();
+    let range = guard.range((Included(start_page_id.to_slice().to_vec()), Excluded(end_page_id.to_slice().to_vec())));
+    let result: Vec<PageAndCppStrWithView> = Vec::with_capacity(range.count());
+    for (k, v) in range.into_iter() {
+        let pacwv = PageAndCppStrWithView {
+            page: root::DB::RawCppPtr,
+            key: root::DB::RawCppPtr,
+            page_view: root::DB::BaseBuffView,
+            key_view: root::DB::BaseBuffView,
+        };
+        result.push(pacwv)
+    }
+    let (result_ptr, l, c) = result.into_raw_parts();
+    assert_eq!(l, c);
+    RawCppPtrCarr {
+        inner: result_ptr as *mut RawVoidPtr,
+        len: c,
+        type_: RawCppPtrTypeImpl::PSPageAndCppStr.into(),
+    }
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_purge_pagestorage(

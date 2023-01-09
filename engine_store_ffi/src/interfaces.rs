@@ -145,12 +145,6 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
-        pub struct PageWithView {
-            pub inner: root::DB::RawCppPtr,
-            pub view: root::DB::BaseBuffView,
-        }
-        #[repr(C)]
-        #[derive(Debug)]
         pub struct PageAndCppStrWithView {
             pub page: root::DB::RawCppPtr,
             pub key: root::DB::RawCppPtr,
@@ -159,8 +153,8 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
-        pub struct PageAndCppStrWithViewVec {
-            pub inner: *mut root::DB::PageAndCppStrWithView,
+        pub struct RawCppPtrCarr {
+            pub inner: *mut root::DB::RawVoidPtr,
             pub len: u64,
             pub type_: root::DB::RawCppPtrType,
         }
@@ -457,14 +451,14 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::BaseBuffView,
-                ) -> root::DB::PageWithView,
+                ) -> root::DB::CppStrWithView,
             >,
             pub fn_handle_scan_page: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::BaseBuffView,
                     arg3: root::DB::BaseBuffView,
-                ) -> root::DB::PageAndCppStrWithViewVec,
+                ) -> root::DB::RawCppPtrCarr,
             >,
             pub fn_handle_purge_pagestorage: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
@@ -583,7 +577,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 10253455389063462714;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 10782025733884802858;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

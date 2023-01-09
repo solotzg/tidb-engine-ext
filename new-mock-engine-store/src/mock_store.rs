@@ -1320,32 +1320,42 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
     }
 }
 
-unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
+pub unsafe fn create_cpp_str_parts(s: Option<Vec<u8>>) -> (ffi_interfaces::RawCppPtr, ffi_interfaces::BaseBuffView) {
     match s {
         Some(s) => {
             let len = s.len() as u64;
-            let ptr = Box::into_raw(Box::new(s.clone())); // leak
-            ffi_interfaces::CppStrWithView {
-                inner: ffi_interfaces::RawCppPtr {
+            let ptr = Box::into_raw(Box::new(s)); // leak
+            (
+                ffi_interfaces::RawCppPtr {
                     ptr: ptr as RawVoidPtr,
                     type_: RawCppPtrTypeImpl::String.into(),
                 },
-                view: ffi_interfaces::BaseBuffView {
+                ffi_interfaces::BaseBuffView {
                     data: (*ptr).as_ptr() as *const _,
                     len,
-                },
-            }
+                }
+            )
         }
-        None => ffi_interfaces::CppStrWithView {
-            inner: ffi_interfaces::RawCppPtr {
-                ptr: std::ptr::null_mut(),
-                type_: RawCppPtrTypeImpl::None.into(),
-            },
-            view: ffi_interfaces::BaseBuffView {
-                data: std::ptr::null(),
-                len: 0,
-            },
-        },
+        None => {
+            (
+                ffi_interfaces::RawCppPtr {
+                    ptr: std::ptr::null_mut(),
+                    type_: RawCppPtrTypeImpl::None.into(),
+                },
+                ffi_interfaces::BaseBuffView {
+                    data: std::ptr::null(),
+                    len: 0,
+                }
+            )
+        }
+    }
+}
+
+pub unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
+    let (p, v) = create_cpp_str_parts(s);
+    ffi_interfaces::CppStrWithView {
+        inner: p,
+        view: v,
     }
 }
 
