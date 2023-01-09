@@ -100,7 +100,7 @@ struct PageAndCppStrWithView {
 };
 
 struct RawCppPtrCarr {
-  RawVoidPtr *inner;
+  RawVoidPtr inner;
   const uint64_t len;
   RawCppPtrType type;
 };

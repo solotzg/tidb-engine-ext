@@ -154,7 +154,7 @@ pub mod root {
         #[repr(C)]
         #[derive(Debug)]
         pub struct RawCppPtrCarr {
-            pub inner: *mut root::DB::RawVoidPtr,
+            pub inner: root::DB::RawVoidPtr,
             pub len: u64,
             pub type_: root::DB::RawCppPtrType,
         }
@@ -577,7 +577,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 10782025733884802858;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 13521456379823691892;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

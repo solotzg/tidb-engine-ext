@@ -38,9 +38,9 @@ pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, EngineStoreApplyRes,
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
-    PageAndCppStrWithView, RaftCmdHeader, RaftProxyStatus, RawCppPtrCarr,
-    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr,
-    SSTReaderPtr, SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
+    PageAndCppStrWithView, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
+    RawCppPtrArr, RawCppPtrCarr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr, SSTReaderPtr,
+    SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,

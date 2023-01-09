@@ -22,9 +22,8 @@ use protobuf::Message;
 use raft::eraftpb::Entry;
 use tikv_util::{box_try, info};
 use tracker::TrackerToken;
-use crate::PageAndCppStrWithView;
 
-use crate::{gen_engine_store_server_helper, RawCppPtr};
+use crate::{gen_engine_store_server_helper, PageAndCppStrWithView, RawCppPtr};
 
 // 1. STORE_IDENT 0
 // 2. PREPARE_BOOTSTRAP 1
@@ -265,7 +264,7 @@ impl PSEngine {
     {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
         let values = helper.scan_page(start_key.into(), end_key.into());
-        let arr = values.inner as *mut *mut PageAndCppStrWithView;
+        let arr = values.inner as *mut PageAndCppStrWithView;
         for i in 0..values.len {
             let value = unsafe { &*arr.offset(i as isize) };
             if value.page_view.len != 0 {

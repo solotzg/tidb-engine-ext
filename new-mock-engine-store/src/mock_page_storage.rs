@@ -1,15 +1,20 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::{collections::{btree_map::OccupiedEntry, BTreeMap}, sync::RwLock};
+use std::{
+    collections::{btree_map::OccupiedEntry, BTreeMap},
+    sync::RwLock,
+};
 
 use collections::HashMap;
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, BaseBuffView, CppStrWithView, EngineStoreServerHelper,
-    PageAndCppStrWithView, RaftStoreProxyFFIHelper,
-    RawCppPtr, RawVoidPtr,
+    PageAndCppStrWithView, RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrCarr, RawVoidPtr,
 };
 
-use crate::{mock_store::{into_engine_store_server_wrap, EngineStoreServerWrap, RawCppPtrTypeImpl}, ffi_gen_cpp_string};
+use crate::{
+    create_cpp_str, create_cpp_str_parts,
+    mock_store::{into_engine_store_server_wrap, EngineStoreServerWrap, RawCppPtrTypeImpl},
+};
 
 #[derive(Default)]
 pub struct MockPSWriteBatch {
@@ -122,22 +127,29 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
         .data
         .read()
         .unwrap();
-    let range = guard.range((Included(start_page_id.to_slice().to_vec()), Excluded(end_page_id.to_slice().to_vec())));
-    let result: Vec<PageAndCppStrWithView> = Vec::with_capacity(range.count());
+    use core::ops::Bound::{Excluded, Included};
+    let range = guard.range((
+        Included(start_page_id.to_slice().to_vec()),
+        Excluded(end_page_id.to_slice().to_vec()),
+    ));
+    let range = range.collect::<Vec<_>>();
+    let mut result: Vec<PageAndCppStrWithView> = Vec::with_capacity(range.len());
     for (k, v) in range.into_iter() {
+        let (page, page_view) = create_cpp_str_parts(Some(v.data.clone()));
+        let (key, key_view) = create_cpp_str_parts(Some(k.clone()));
         let pacwv = PageAndCppStrWithView {
-            page: root::DB::RawCppPtr,
-            key: root::DB::RawCppPtr,
-            page_view: root::DB::BaseBuffView,
-            key_view: root::DB::BaseBuffView,
+            page,
+            key,
+            page_view,
+            key_view,
         };
         result.push(pacwv)
     }
     let (result_ptr, l, c) = result.into_raw_parts();
     assert_eq!(l, c);
     RawCppPtrCarr {
-        inner: result_ptr as *mut RawVoidPtr,
-        len: c,
+        inner: result_ptr as RawVoidPtr,
+        len: c as u64,
         type_: RawCppPtrTypeImpl::PSPageAndCppStr.into(),
     }
 }
