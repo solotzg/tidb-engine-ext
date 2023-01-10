@@ -171,11 +171,11 @@ pub unsafe extern "C" fn ffi_mockps_handle_read_page(
         Some(p) => {
             tikv_util::debug!("!!!!! read page {:?} succ", key);
             create_cpp_str(Some(p.data.clone()))
-        },
+        }
         None => {
             tikv_util::debug!("!!!!! read page {:?} fail", key);
             create_cpp_str(None)
-        },
+        }
     }
 }
 
