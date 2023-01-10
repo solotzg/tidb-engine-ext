@@ -207,7 +207,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
     iter_ffi_helpers(
         &cluster,
         Some(vec![3]),
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
             (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
                 assert!(e.fast_add_peer_count.load(Ordering::SeqCst) > 0);
             });

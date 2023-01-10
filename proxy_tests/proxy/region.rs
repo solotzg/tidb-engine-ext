@@ -373,7 +373,7 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     iter_ffi_helpers(
         cluster,
         Some(vec![from]),
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
             let server = &mut ffi.engine_store_server;
             maybe_source_region = server.kvstore.get(&region_id).cloned();
         },
@@ -386,7 +386,7 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     iter_ffi_helpers(
         cluster,
         Some(vec![to]),
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
             let server = &mut ffi.engine_store_server;
             assert!(server.kvstore.get(&region_id).is_none());
 
@@ -603,7 +603,7 @@ fn test_add_delayed_started_learner_snapshot() {
     iter_ffi_helpers(
         &cluster,
         Some(vec![5]),
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
             (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
                 assert_eq!(e.pre_handle_count.load(Ordering::SeqCst), 1);
             });
