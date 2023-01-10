@@ -732,10 +732,10 @@ pub fn gen_engine_store_server_helper(
         fn_write_batch_merge: Some(ffi_mockps_write_batch_merge),
         fn_write_batch_clear: Some(ffi_mockps_write_batch_clear),
         fn_consume_write_batch: Some(ffi_mockps_consume_write_batch),
-        fn_handle_read_page: None,
-        fn_handle_purge_pagestorage: None,
-        fn_handle_scan_page: None,
-        fn_handle_seek_ps_key: None,
+        fn_handle_read_page: Some(ffi_mockps_handle_read_page),
+        fn_handle_purge_pagestorage: Some(ffi_mockps_handle_purge_pagestorage),
+        fn_handle_scan_page: Some(ffi_mockps_handle_scan_page),
+        fn_handle_seek_ps_key: Some(ffi_mockps_handle_seek_ps_key),
         fn_ps_is_empty: Some(ffi_mockps_ps_is_empty),
     }
 }

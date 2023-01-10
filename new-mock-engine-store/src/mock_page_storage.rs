@@ -1,5 +1,6 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use core::ops::Bound::{Excluded, Included, Unbounded};
 use std::{
     collections::{btree_map::OccupiedEntry, BTreeMap},
     sync::RwLock,
@@ -127,7 +128,6 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
         .data
         .read()
         .unwrap();
-    use core::ops::Bound::{Excluded, Included};
     let range = guard.range((
         Included(start_page_id.to_slice().to_vec()),
         Excluded(end_page_id.to_slice().to_vec()),
@@ -157,14 +157,23 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
 pub unsafe extern "C" fn ffi_mockps_handle_purge_pagestorage(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
 ) {
-    todo!()
+    // TODO
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_seek_ps_key(
     wrap: *const ffi_interfaces::EngineStoreServerWrap,
     page_id: BaseBuffView,
 ) -> CppStrWithView {
-    todo!()
+    // Find the first great or equal than
+    let store = into_engine_store_server_wrap(wrap);
+    let mut guard = (*store.engine_store_server)
+        .page_storage
+        .data
+        .read()
+        .unwrap();
+    let range = guard.range((Included(start_page_id.to_slice().to_vec()), Unbounded));
+    let key = range.next().unwrap();
+    create_cpp_str(Some(key.clone()))
 }
 
 pub unsafe extern "C" fn ffi_mockps_ps_is_empty(
