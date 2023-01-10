@@ -535,6 +535,12 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Initialize and check config
         info!("using proxy config"; "config" => ?proxy_config);
+
+        #[cfg(feature = "enable-pagestorage")]
+        info!("enabled pagestorage");
+        #[cfg(not(feature = "enable-pagestorage"))]
+        info!("disabled pagestorage");
+
         let cfg_controller = Self::init_config(config, &proxy_config);
         let config = cfg_controller.get_current();
 
