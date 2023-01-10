@@ -98,7 +98,6 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_put_page(
 ) {
     let wb: &mut MockPSWriteBatch = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
     let wid = wb.core.write().unwrap().alloc_id();
-    tikv_util::debug!("!!!!! write batch page {:?}", page_id.to_slice());
     let write = MockPSSingleWrite::Put((page_id.to_slice().to_vec(), page.into()));
     wb.data.push((wid, write));
 }
@@ -142,7 +141,6 @@ pub unsafe extern "C" fn ffi_mockps_consume_write_batch(
         .data
         .write()
         .unwrap();
-    tikv_util::debug!("!!!!! consume write batch");
     wb.data.sort_by_key(|k| k.0);
     for (_, write) in wb.data.drain(..) {
         match write {
@@ -168,14 +166,8 @@ pub unsafe extern "C" fn ffi_mockps_handle_read_page(
         .unwrap();
     let key = page_id.to_slice().to_vec();
     match guard.get(&key) {
-        Some(p) => {
-            tikv_util::debug!("!!!!! read page {:?} succ", key);
-            create_cpp_str(Some(p.data.clone()))
-        }
-        None => {
-            tikv_util::debug!("!!!!! read page {:?} fail", key);
-            create_cpp_str(None)
-        }
+        Some(p) => create_cpp_str(Some(p.data.clone())),
+        None => create_cpp_str(None),
     }
 }
 

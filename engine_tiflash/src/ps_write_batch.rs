@@ -220,7 +220,6 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
-        tikv_util::debug!("!!!! put {:?} {:?}", key, value);
         self.ffi_hub
             .as_ref()
             .unwrap()
@@ -232,7 +231,6 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
-        tikv_util::debug!("!!!! put {:?} {:?}", key, value);
         self.ffi_hub
             .as_ref()
             .unwrap()
