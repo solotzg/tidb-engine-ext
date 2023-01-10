@@ -133,7 +133,7 @@ impl RocksWriteBatchVec {
 
 impl engine_traits::WriteBatch for RocksWriteBatchVec {
     fn write_opt(&mut self, opts: &WriteOptions) -> Result<u64> {
-        tikv_util::debug!("!!!! write_opt");
+        tikv_util::dewrite_opt");
         // write into ps
         self.ffi_hub
             .as_ref()
@@ -242,7 +242,6 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
-        tikv_util::debug!("!!!! delete {:?}", key);
         self.ffi_hub
             .as_ref()
             .unwrap()
@@ -254,7 +253,7 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
-        tikv_util::debug!("!!!! delete {:?}", key);
+        tikv_util::debug!(delete {:?}", key);
         self.ffi_hub
             .as_ref()
             .unwrap()
