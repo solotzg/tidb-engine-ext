@@ -420,8 +420,11 @@ pub mod root {
                     arg5: u64,
                 ) -> u8,
             >,
-            pub fn_create_write_batch:
-                ::std::option::Option<unsafe extern "C" fn() -> root::DB::RawCppPtr>,
+            pub fn_create_write_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                ) -> root::DB::RawCppPtr,
+            >,
             pub fn_write_batch_put_page: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RawVoidPtr,
@@ -577,7 +580,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13521456379823691892;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 17394545035928865111;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

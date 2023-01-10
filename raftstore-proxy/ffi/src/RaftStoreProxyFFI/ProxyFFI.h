@@ -239,7 +239,7 @@ struct EngineStoreServerHelper {
   uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
   uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
                                uint64_t, uint64_t);
-  RawCppPtr (*fn_create_write_batch)();
+  RawCppPtr (*fn_create_write_batch)(const EngineStoreServerWrap *);
   void (*fn_write_batch_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
   void (*fn_write_batch_del_page)(RawVoidPtr, BaseBuffView);
   uint64_t (*fn_write_batch_size)(RawVoidPtr);

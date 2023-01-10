@@ -2,8 +2,8 @@
 
 use core::ops::Bound::{Excluded, Included, Unbounded};
 use std::{
-    collections::{btree_map::OccupiedEntry, BTreeMap},
-    sync::RwLock,
+    collections::BTreeMap,
+    sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
 use collections::HashMap;
@@ -14,12 +14,26 @@ pub use engine_store_ffi::{
 
 use crate::{
     create_cpp_str, create_cpp_str_parts,
-    mock_store::{into_engine_store_server_wrap, EngineStoreServerWrap, RawCppPtrTypeImpl},
+    mock_store::{into_engine_store_server_wrap, RawCppPtrTypeImpl},
 };
 
-#[derive(Default)]
+pub enum MockPSSingleWrite {
+    Put((Vec<u8>, MockPSUniversalPage)),
+    Delete(Vec<u8>),
+}
+
 pub struct MockPSWriteBatch {
-    pub data: HashMap<Vec<u8>, MockPSUniversalPage>,
+    pub data: Vec<(u64, MockPSSingleWrite)>,
+    core: Arc<RwLock<MockPageStorageCore>>,
+}
+
+impl MockPSWriteBatch {
+    fn new(core: Arc<RwLock<MockPageStorageCore>>) -> Self {
+        Self {
+            data: Default::default(),
+            core,
+        }
+    }
 }
 
 pub struct MockPSUniversalPage {
@@ -34,13 +48,37 @@ impl Into<MockPSUniversalPage> for BaseBuffView {
     }
 }
 
+pub struct MockPageStorageCore {
+    current_id: AtomicU64,
+}
+
+impl MockPageStorageCore {
+    pub fn alloc_id(&mut self) -> u64 {
+        self.current_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Default for MockPageStorageCore {
+    fn default() -> Self {
+        Self {
+            current_id: AtomicU64::new(1),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct MockPageStorage {
     pub data: RwLock<BTreeMap<Vec<u8>, MockPSUniversalPage>>,
+    pub core: Arc<RwLock<MockPageStorageCore>>,
 }
 
-pub unsafe extern "C" fn ffi_mockps_create_write_batch() -> RawCppPtr {
-    let ptr = Box::into_raw(Box::new(MockPSWriteBatch::default()));
+pub unsafe extern "C" fn ffi_mockps_create_write_batch(
+    wrap: *const ffi_interfaces::EngineStoreServerWrap,
+) -> RawCppPtr {
+    let store = into_engine_store_server_wrap(wrap);
+    let core = (*store.engine_store_server).page_storage.core.clone();
+    let ptr = Box::into_raw(Box::new(MockPSWriteBatch::new(core)));
     RawCppPtr {
         ptr: ptr as RawVoidPtr,
         type_: RawCppPtrTypeImpl::PSWriteBatch.into(),
@@ -58,13 +96,18 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_put_page(
     page_id: BaseBuffView,
     page: BaseBuffView,
 ) {
-    let wb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
-    wb.data.insert(page_id.to_slice().to_owned(), page.into());
+    let wb: &mut MockPSWriteBatch = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
+    let wid = wb.core.write().unwrap().alloc_id();
+    tikv_util::debug!("!!!!! write batch page {:?}", page_id.to_slice());
+    let write = MockPSSingleWrite::Put((page_id.to_slice().to_vec(), page.into()));
+    wb.data.push((wid, write));
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_del_page(wb: RawVoidPtr, page_id: BaseBuffView) {
-    let wb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
-    wb.data.remove(page_id.to_slice());
+    let wb: &mut MockPSWriteBatch = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
+    let wid = wb.core.write().unwrap().alloc_id();
+    let write = MockPSSingleWrite::Delete(page_id.to_slice().to_vec());
+    wb.data.push((wid, write));
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_size(wb: RawVoidPtr) -> u64 {
@@ -80,7 +123,7 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_is_empty(wb: RawVoidPtr) -> u8 {
 pub unsafe extern "C" fn ffi_mockps_write_batch_merge(lwb: RawVoidPtr, rwb: RawVoidPtr) {
     let lwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(lwb);
     let rwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(rwb);
-    lwb.data.extend(rwb.data.drain());
+    lwb.data.extend(rwb.data.drain(..));
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_clear(wb: RawVoidPtr) {
@@ -99,7 +142,18 @@ pub unsafe extern "C" fn ffi_mockps_consume_write_batch(
         .data
         .write()
         .unwrap();
-    guard.extend(wb.data.drain());
+    tikv_util::debug!("!!!!! consume write batch");
+    wb.data.sort_by_key(|k| k.0);
+    for (_, write) in wb.data.drain(..) {
+        match write {
+            MockPSSingleWrite::Put(w) => {
+                guard.insert(w.0, w.1);
+            }
+            MockPSSingleWrite::Delete(w) => {
+                guard.remove(&w);
+            }
+        }
+    }
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_read_page(
@@ -107,12 +161,13 @@ pub unsafe extern "C" fn ffi_mockps_handle_read_page(
     page_id: BaseBuffView,
 ) -> CppStrWithView {
     let store = into_engine_store_server_wrap(wrap);
-    let mut guard = (*store.engine_store_server)
+    let guard = (*store.engine_store_server)
         .page_storage
         .data
         .read()
         .unwrap();
     let key = page_id.to_slice().to_vec();
+    tikv_util::debug!("!!!!! read page {:?}", key);
     let page = guard.get(&key).unwrap();
     create_cpp_str(Some(page.data.clone()))
 }
@@ -123,7 +178,7 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
     end_page_id: BaseBuffView,
 ) -> RawCppPtrCarr {
     let store = into_engine_store_server_wrap(wrap);
-    let mut guard = (*store.engine_store_server)
+    let guard = (*store.engine_store_server)
         .page_storage
         .data
         .read()
@@ -166,14 +221,14 @@ pub unsafe extern "C" fn ffi_mockps_handle_seek_ps_key(
 ) -> CppStrWithView {
     // Find the first great or equal than
     let store = into_engine_store_server_wrap(wrap);
-    let mut guard = (*store.engine_store_server)
+    let guard = (*store.engine_store_server)
         .page_storage
         .data
         .read()
         .unwrap();
-    let range = guard.range((Included(start_page_id.to_slice().to_vec()), Unbounded));
-    let key = range.next().unwrap();
-    create_cpp_str(Some(key.clone()))
+    let mut range = guard.range((Included(page_id.to_slice().to_vec()), Unbounded));
+    let kv = range.next().unwrap();
+    create_cpp_str(Some(kv.0.clone()))
 }
 
 pub unsafe extern "C" fn ffi_mockps_ps_is_empty(

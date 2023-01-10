@@ -279,14 +279,12 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn run(&mut self) {
         self.create_engines();
         self.bootstrap_region().unwrap();
-        self.bootstrap_ffi_helper_set();
         self.start().unwrap();
     }
 
     pub fn run_conf_change(&mut self) -> u64 {
         self.create_engines();
         let region_id = self.bootstrap_conf_change();
-        self.bootstrap_ffi_helper_set();
         // Will not start new nodes in `start`
         self.start().unwrap();
         region_id
@@ -295,7 +293,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn run_conf_change_no_start(&mut self) -> u64 {
         self.create_engines();
         let region_id = self.bootstrap_conf_change();
-        self.bootstrap_ffi_helper_set();
         region_id
     }
 
@@ -307,6 +304,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         key_manager: &Option<Arc<DataKeyManager>>,
         router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
     ) {
+        init_global_ffi_helper_set();
         let (mut ffi_helper_set, _node_cfg) =
             self.make_ffi_helper_set(0, engines, key_manager, router);
 
@@ -348,6 +346,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         } else {
             self.ffi_helper_lst.pop().unwrap()
         };
+        debug!("set up ffi helper set for {}", node_id);
         ffi_helper_set.engine_store_server.id = node_id;
         self.ffi_helper_set
             .lock()
@@ -355,6 +354,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             .insert(node_id, ffi_helper_set);
     }
 
+    // Need self.engines be filled.
     pub fn bootstrap_ffi_helper_set(&mut self) {
         let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
         // We force iterate engines in sorted order.
@@ -388,8 +388,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 
     pub fn start_with(&mut self, skip_set: HashSet<usize>) -> ServerResult<()> {
-        init_global_ffi_helper_set();
-
         // Try recover from last shutdown.
         // `self.engines` is inited in bootstrap_region or bootstrap_conf_change.
         let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
@@ -496,6 +494,7 @@ pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
 pub fn init_global_ffi_helper_set() {
     unsafe {
         START.call_once(|| {
+            debug!("init_global_ffi_helper_set");
             assert_eq!(engine_store_ffi::get_engine_store_server_helper_ptr(), 0);
             let (set, ptr) = make_global_ffi_helper_set_no_bind();
             engine_store_ffi::init_engine_store_server_helper(ptr);
@@ -888,6 +887,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 .insert(id, self.key_managers[i].clone());
         }
 
+        self.bootstrap_ffi_helper_set();
         let mut region = metapb::Region::default();
         region.set_id(1);
         region.set_start_key(keys::EMPTY_KEY.to_vec());
@@ -906,6 +906,9 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 "node_id" => id,
             );
             prepare_bootstrap_cluster(engines, &region)?;
+            tikv_util::debug!("prepare_bootstrap_cluster finish";
+                "node_id" => id,
+            );
         }
 
         self.bootstrap_cluster(region);
@@ -924,6 +927,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 .insert(id, self.key_managers[i].clone());
         }
 
+        self.bootstrap_ffi_helper_set();
         for (&id, engines) in &self.engines {
             bootstrap_store(engines, self.id(), id).unwrap();
         }

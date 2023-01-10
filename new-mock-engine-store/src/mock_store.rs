@@ -1017,7 +1017,13 @@ extern "C" fn ffi_gc_raw_cpp_ptr_carr(
             }
             drop(p);
         },
-        RawCppPtrTypeImpl::PSPageAndCppStr => unsafe { todo!() },
+        RawCppPtrTypeImpl::PSPageAndCppStr => unsafe {
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut PageAndCppStrWithView,
+                len as usize,
+            ));
+            drop(p)
+        },
         _ => todo!(),
     }
 }

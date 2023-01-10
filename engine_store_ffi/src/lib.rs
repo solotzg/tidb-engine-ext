@@ -630,7 +630,7 @@ impl EngineStoreServerHelper {
 
     pub fn create_write_batch(&self) -> RawCppPtr {
         debug_assert!(self.fn_create_write_batch.is_some());
-        unsafe { (self.fn_create_write_batch.into_inner())() }
+        unsafe { (self.fn_create_write_batch.into_inner())(self.inner) }
     }
 
     pub fn write_batch_put_page(&self, wb: RawVoidPtr, page_id: BaseBuffView, page: BaseBuffView) {

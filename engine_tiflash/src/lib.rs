@@ -53,14 +53,14 @@ pub use crate::status::*;
 mod table_properties;
 pub use crate::table_properties::*;
 
-#[cfg(any(test, feature = "testexport"))]
+#[cfg(not(feature = "enable-pagestorage"))]
 mod write_batch;
-#[cfg(any(test, feature = "testexport"))]
+#[cfg(not(feature = "enable-pagestorage"))]
 pub use crate::write_batch::*;
 
-#[cfg(not(any(test, feature = "testexport")))]
+#[cfg(feature = "enable-pagestorage")]
 mod ps_write_batch;
-#[cfg(not(any(test, feature = "testexport")))]
+#[cfg(feature = "enable-pagestorage")]
 pub use crate::ps_write_batch::*;
 
 pub mod mvcc_properties;

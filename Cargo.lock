@@ -4437,6 +4437,7 @@ dependencies = [
  "engine_rocks",
  "engine_rocks_helper",
  "engine_store_ffi",
+ "engine_tiflash",
  "engine_traits",
  "error_code",
  "fail",

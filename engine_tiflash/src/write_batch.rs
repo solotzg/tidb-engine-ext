@@ -118,6 +118,7 @@ impl RocksWriteBatchVec {
 impl engine_traits::WriteBatch for RocksWriteBatchVec {
     fn write_opt(&mut self, opts: &WriteOptions) -> Result<u64> {
         let opt: RocksWriteOptions = opts.into();
+        tikv_util::debug!("!!!! write_opt");
         if crate::log_check_double_write(self) {
             return Ok(0);
         }
@@ -209,6 +210,7 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
+        tikv_util::debug!("!!!! put {:?} {:?}", key, value);
         self.check_switch_batch();
         self.wbs[self.index].put(key, value).map_err(r2e)
     }
@@ -217,6 +219,7 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
+        tikv_util::debug!("!!!! put {:?} {:?}", key, value);
         self.check_switch_batch();
         let handle = get_cf_handle(self.db.as_ref(), cf)?;
         self.wbs[self.index].put_cf(handle, key, value).map_err(r2e)
@@ -226,6 +229,7 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
+        tikv_util::debug!("!!!! delete {:?}", key);
         self.check_switch_batch();
         self.wbs[self.index].delete(key).map_err(r2e)
     }
@@ -234,6 +238,7 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
+        tikv_util::debug!("!!!! delete {:?}", key);
         self.check_switch_batch();
         let handle = get_cf_handle(self.db.as_ref(), cf)?;
         self.wbs[self.index].delete_cf(handle, key).map_err(r2e)
