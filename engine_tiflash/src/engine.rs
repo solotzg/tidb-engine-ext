@@ -108,6 +108,10 @@ impl RocksEngine {
         snap_handle_pool_size: usize,
         ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
     ) {
+        #[cfg(feature = "enable-pagestorage")]
+        tikv_util::info!("enabled pagestorage");
+        #[cfg(not(feature = "enable-pagestorage"))]
+        tikv_util::info!("disabled pagestorage");
         self.engine_store_server_helper = engine_store_server_helper;
         self.pool_capacity = snap_handle_pool_size;
         self.pending_applies_count.store(0, Ordering::SeqCst);

@@ -6,7 +6,6 @@ use std::{
     sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
-use collections::HashMap;
 pub use engine_store_ffi::{
     interfaces::root::DB as ffi_interfaces, BaseBuffView, CppStrWithView, EngineStoreServerHelper,
     PageAndCppStrWithView, RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrCarr, RawVoidPtr,
