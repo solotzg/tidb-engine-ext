@@ -167,9 +167,16 @@ pub unsafe extern "C" fn ffi_mockps_handle_read_page(
         .read()
         .unwrap();
     let key = page_id.to_slice().to_vec();
-    tikv_util::debug!("!!!!! read page {:?}", key);
-    let page = guard.get(&key).unwrap();
-    create_cpp_str(Some(page.data.clone()))
+    match guard.get(&key) {
+        Some(p) => {
+            tikv_util::debug!("!!!!! read page {:?} succ", key);
+            create_cpp_str(Some(p.data.clone()))
+        },
+        None => {
+            tikv_util::debug!("!!!!! read page {:?} fail", key);
+            create_cpp_str(None)
+        },
+    }
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
