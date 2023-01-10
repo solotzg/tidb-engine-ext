@@ -40,4 +40,4 @@ name = "raftstore_proxy"
 crate-type = ["cdylib"]
 
 [dependencies]
-proxy_server = { workspace = true, feature = ["enable-pagestorage"] }
+proxy_server = { workspace = true, features = ["proxy_server/enable-pagestorage"] }
