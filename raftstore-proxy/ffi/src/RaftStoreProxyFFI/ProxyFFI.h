@@ -92,11 +92,6 @@ struct CppStrWithView {
   BaseBuffView view;
 };
 
-struct PageWithView {
-  RawCppPtr inner;
-  BaseBuffView view;
-};
-
 struct PageAndCppStrWithView {
   RawCppPtr page;
   RawCppPtr key;
@@ -104,8 +99,8 @@ struct PageAndCppStrWithView {
   BaseBuffView key_view;
 };
 
-struct PageAndCppStrWithViewVec {
-  PageAndCppStrWithView *inner;
+struct RawCppPtrCarr {
+  RawVoidPtr inner;
   const uint64_t len;
   RawCppPtrType type;
 };
@@ -244,7 +239,7 @@ struct EngineStoreServerHelper {
   uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
   uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
                                uint64_t, uint64_t);
-  RawCppPtr (*fn_create_write_batch)();
+  RawCppPtr (*fn_create_write_batch)(const EngineStoreServerWrap *);
   void (*fn_write_batch_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
   void (*fn_write_batch_del_page)(RawVoidPtr, BaseBuffView);
   uint64_t (*fn_write_batch_size)(RawVoidPtr);
@@ -252,10 +247,10 @@ struct EngineStoreServerHelper {
   void (*fn_write_batch_merge)(RawVoidPtr, RawVoidPtr);
   void (*fn_write_batch_clear)(RawVoidPtr);
   void (*fn_consume_write_batch)(const EngineStoreServerWrap *, RawVoidPtr);
-  PageWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
-                                      BaseBuffView);
-  PageAndCppStrWithViewVec (*fn_handle_scan_page)(const EngineStoreServerWrap *,
-                                                  BaseBuffView, BaseBuffView);
+  CppStrWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
+                                        BaseBuffView);
+  RawCppPtrCarr (*fn_handle_scan_page)(const EngineStoreServerWrap *,
+                                       BaseBuffView, BaseBuffView);
   void (*fn_handle_purge_pagestorage)(const EngineStoreServerWrap *);
   CppStrWithView (*fn_handle_seek_ps_key)(const EngineStoreServerWrap *,
                                           BaseBuffView);

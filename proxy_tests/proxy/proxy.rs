@@ -26,7 +26,7 @@ pub use kvproto::{
 };
 pub use new_mock_engine_store::{
     config::Config,
-    get_apply_state, get_raft_local_state, get_region_local_state, make_new_region,
+    general_get_apply_state, general_get_region_local_state, get_raft_local_state, make_new_region,
     mock_cluster::{new_put_cmd, new_request, FFIHelperSet},
     must_get_equal, must_get_none,
     node::NodeCluster,
@@ -76,7 +76,7 @@ pub struct States {
 pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
-    f: &mut dyn FnMut(u64, &engine_rocks::RocksEngine, &mut FFIHelperSet) -> (),
+    f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet) -> (),
 ) {
     cluster.iter_ffi_helpers(store_ids, f);
 }
@@ -90,7 +90,7 @@ pub fn maybe_collect_states(
     iter_ffi_helpers(
         cluster,
         store_ids,
-        &mut |id: u64, engine: &engine_rocks::RocksEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, engine: &engine_store_ffi::TiFlashEngine, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
             let raft_engine = &cluster.get_engines(id).raft;
             if let Some(region) = server.kvstore.get(&region_id) {
@@ -98,8 +98,8 @@ pub fn maybe_collect_states(
                     Ok(Some(i)) => i,
                     _ => unreachable!(),
                 };
-                let apply_state = get_apply_state(&engine, region_id);
-                let region_state = get_region_local_state(&engine, region_id);
+                let apply_state = general_get_apply_state(engine, region_id);
+                let region_state = general_get_region_local_state(engine, region_id);
                 let raft_state = get_raft_local_state(raft_engine, region_id);
                 if apply_state.is_none() {
                     return;

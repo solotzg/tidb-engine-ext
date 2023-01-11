@@ -732,10 +732,10 @@ pub fn gen_engine_store_server_helper(
         fn_write_batch_merge: Some(ffi_mockps_write_batch_merge),
         fn_write_batch_clear: Some(ffi_mockps_write_batch_clear),
         fn_consume_write_batch: Some(ffi_mockps_consume_write_batch),
-        fn_handle_read_page: None,
-        fn_handle_purge_pagestorage: None,
-        fn_handle_scan_page: None,
-        fn_handle_seek_ps_key: None,
+        fn_handle_read_page: Some(ffi_mockps_handle_read_page),
+        fn_handle_purge_pagestorage: Some(ffi_mockps_handle_purge_pagestorage),
+        fn_handle_scan_page: Some(ffi_mockps_handle_scan_page),
+        fn_handle_seek_ps_key: Some(ffi_mockps_handle_seek_ps_key),
         fn_ps_is_empty: Some(ffi_mockps_ps_is_empty),
     }
 }
@@ -1017,7 +1017,13 @@ extern "C" fn ffi_gc_raw_cpp_ptr_carr(
             }
             drop(p);
         },
-        RawCppPtrTypeImpl::PSPageAndCppStr => unsafe { todo!() },
+        RawCppPtrTypeImpl::PSPageAndCppStr => unsafe {
+            let p = Box::from_raw(std::slice::from_raw_parts_mut(
+                ptr as *mut PageAndCppStrWithView,
+                len as usize,
+            ));
+            drop(p)
+        },
         _ => todo!(),
     }
 }
@@ -1320,33 +1326,40 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
     }
 }
 
-unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
+pub unsafe fn create_cpp_str_parts(
+    s: Option<Vec<u8>>,
+) -> (ffi_interfaces::RawCppPtr, ffi_interfaces::BaseBuffView) {
     match s {
         Some(s) => {
             let len = s.len() as u64;
-            let ptr = Box::into_raw(Box::new(s.clone())); // leak
-            ffi_interfaces::CppStrWithView {
-                inner: ffi_interfaces::RawCppPtr {
+            let ptr = Box::into_raw(Box::new(s)); // leak
+            (
+                ffi_interfaces::RawCppPtr {
                     ptr: ptr as RawVoidPtr,
                     type_: RawCppPtrTypeImpl::String.into(),
                 },
-                view: ffi_interfaces::BaseBuffView {
+                ffi_interfaces::BaseBuffView {
                     data: (*ptr).as_ptr() as *const _,
                     len,
                 },
-            }
+            )
         }
-        None => ffi_interfaces::CppStrWithView {
-            inner: ffi_interfaces::RawCppPtr {
+        None => (
+            ffi_interfaces::RawCppPtr {
                 ptr: std::ptr::null_mut(),
                 type_: RawCppPtrTypeImpl::None.into(),
             },
-            view: ffi_interfaces::BaseBuffView {
+            ffi_interfaces::BaseBuffView {
                 data: std::ptr::null(),
                 len: 0,
             },
-        },
+        ),
     }
+}
+
+pub unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> ffi_interfaces::CppStrWithView {
+    let (p, v) = create_cpp_str_parts(s);
+    ffi_interfaces::CppStrWithView { inner: p, view: v }
 }
 
 #[allow(clippy::redundant_closure_call)]

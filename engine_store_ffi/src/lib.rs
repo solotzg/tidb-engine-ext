@@ -38,9 +38,9 @@ pub use self::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, CppStrVecView, CppStrWithView, EngineStoreApplyRes,
     EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, FastAddPeerStatus,
     FileEncryptionRes, FsStats, HttpRequestRes, HttpRequestStatus, KVGetStatus,
-    PageAndCppStrWithView, PageAndCppStrWithViewVec, PageWithView, RaftCmdHeader, RaftProxyStatus,
-    RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr,
-    SSTReaderPtr, SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
+    PageAndCppStrWithView, RaftCmdHeader, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
+    RawCppPtrArr, RawCppPtrCarr, RawCppPtrTuple, RawCppStringPtr, RawVoidPtr, SSTReaderPtr,
+    SpecialCppPtrType, StoreStats, WriteCmdType, WriteCmdsView,
 };
 use self::interfaces::root::DB::{
     ConstRawVoidPtr, RaftStoreProxyPtr, RawCppPtrType, RawRustPtr, SSTReaderInterfaces, SSTView,
@@ -465,7 +465,7 @@ impl Drop for RawCppPtrArr {
     }
 }
 
-impl Drop for PageAndCppStrWithViewVec {
+impl Drop for RawCppPtrCarr {
     fn drop(&mut self) {
         if self.inner != std::ptr::null_mut() {
             let helper = get_engine_store_server_helper();
@@ -630,7 +630,7 @@ impl EngineStoreServerHelper {
 
     pub fn create_write_batch(&self) -> RawCppPtr {
         debug_assert!(self.fn_create_write_batch.is_some());
-        unsafe { (self.fn_create_write_batch.into_inner())() }
+        unsafe { (self.fn_create_write_batch.into_inner())(self.inner) }
     }
 
     pub fn write_batch_put_page(&self, wb: RawVoidPtr, page_id: BaseBuffView, page: BaseBuffView) {
@@ -668,7 +668,7 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_consume_write_batch.into_inner())(self.inner, wb) }
     }
 
-    pub fn read_page(&self, page_id: BaseBuffView) -> PageWithView {
+    pub fn read_page(&self, page_id: BaseBuffView) -> CppStrWithView {
         debug_assert!(self.fn_handle_read_page.is_some());
         unsafe { (self.fn_handle_read_page.into_inner())(self.inner, page_id) }
     }
@@ -677,7 +677,7 @@ impl EngineStoreServerHelper {
         &self,
         start_page_id: BaseBuffView,
         end_page_id: BaseBuffView,
-    ) -> PageAndCppStrWithViewVec {
+    ) -> RawCppPtrCarr {
         debug_assert!(self.fn_handle_scan_page.is_some());
         unsafe { (self.fn_handle_scan_page.into_inner())(self.inner, start_page_id, end_page_id) }
     }
