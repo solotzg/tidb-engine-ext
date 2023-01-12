@@ -5,14 +5,12 @@ use std::{
     ops::DerefMut,
     path::PathBuf,
     str::FromStr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex, RwLock,
-    },
+    sync::{atomic::Ordering, mpsc, Arc, Mutex, RwLock},
     time::SystemTime,
 };
 
 use collections::HashMap;
+use engine_tiflash::{CachedRegionInfo, CachedRegionInfoManager};
 use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
 use kvproto::{
     metapb::Region,
@@ -55,7 +53,6 @@ macro_rules! fatal {
         ::std::process::exit(1)
     })
 }
-
 pub struct PtrWrapper(RawCppPtr);
 
 unsafe impl Send for PtrWrapper {}
@@ -81,21 +78,9 @@ impl PrehandleTask {
 unsafe impl Send for PrehandleTask {}
 unsafe impl Sync for PrehandleTask {}
 
-const CACHED_REGION_INFO_SLOT_COUNT: usize = 256;
-
-#[derive(Debug, Default)]
-pub struct CachedRegionInfo {
-    pub replicated_or_created: AtomicBool,
-    // TiKV assumes a region's learner peer is added through snapshot.
-    // If this field is false, will try fast path when meet MsgAppend.
-    // If this field is true, it means this peer is inited or will be inited by a TiKV snapshot.
-    // NOTE If we want a fallback, then we must set inited_or_fallback to true,
-    // Otherwise, a normal snapshot will be neglect in `post_apply_snapshot` and cause data loss.
-    pub inited_or_fallback: AtomicBool,
-    pub snapshot_inflight: portable_atomic::AtomicU128,
-}
-
-pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;
+// TiFlash observer's priority should be higher than all other observers, to
+// avoid being bypassed.
+const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
 
 pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub store_id: u64,
@@ -107,11 +92,31 @@ pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
-    pub cached_region_info: Arc<Vec<RwLock<CachedRegionInfoMap>>>,
     // TODO should we use a Mutex here?
     pub trans: Arc<Mutex<T>>,
     pub snap_mgr: Arc<SnapManager>,
     pub engine_store_cfg: crate::EngineStoreConfig,
+}
+
+pub fn get_region_local_state<EK: engine_traits::KvEngine>(
+    engine: &EK,
+    region_id: u64,
+) -> Option<RegionLocalState> {
+    let region_state_key = keys::region_state_key(region_id);
+    engine
+        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
+        .unwrap_or(None)
+}
+
+pub fn validate_remote_peer_region(
+    new_region: &kvproto::metapb::Region,
+    store_id: u64,
+    new_peer_id: u64,
+) -> bool {
+    match find_peer(new_region, store_id) {
+        Some(peer) => peer.get_id() == new_peer_id,
+        None => false,
+    }
 }
 
 impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
@@ -126,7 +131,6 @@ impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
             snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
             pending_delete_ssts: self.pending_delete_ssts.clone(),
-            cached_region_info: self.cached_region_info.clone(),
             trans: self.trans.clone(),
             snap_mgr: self.snap_mgr.clone(),
             engine_store_cfg: self.engine_store_cfg.clone(),
@@ -134,142 +138,7 @@ impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
     }
 }
 
-// TiFlash observer's priority should be higher than all other observers, to
-// avoid being bypassed.
-const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
-
-// Credit: [splitmix64 algorithm](https://xorshift.di.unimi.it/splitmix64.c)
-#[inline]
-fn hash_u64(mut i: u64) -> u64 {
-    i = (i ^ (i >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    i = (i ^ (i >> 27)).wrapping_mul(0x94d049bb133111eb);
-    i ^ (i >> 31)
-}
-
-#[allow(dead_code)]
-#[inline]
-fn unhash_u64(mut i: u64) -> u64 {
-    i = (i ^ (i >> 31) ^ (i >> 62)).wrapping_mul(0x319642b2d24d8ec3);
-    i = (i ^ (i >> 27) ^ (i >> 54)).wrapping_mul(0x96de1b173f119089);
-    i ^ (i >> 30) ^ (i >> 60)
-}
-
-pub fn validate_remote_peer_region(
-    new_region: &kvproto::metapb::Region,
-    store_id: u64,
-    new_peer_id: u64,
-) -> bool {
-    match find_peer(new_region, store_id) {
-        Some(peer) => peer.get_id() == new_peer_id,
-        None => false,
-    }
-}
-
-pub fn get_region_local_state<EK: engine_traits::KvEngine>(
-    engine: &EK,
-    region_id: u64,
-) -> Option<RegionLocalState> {
-    let region_state_key = keys::region_state_key(region_id);
-    engine
-        .get_msg_cf::<RegionLocalState>(CF_RAFT, &region_state_key)
-        .unwrap_or(None)
-}
-
 impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
-    #[inline]
-    fn slot_index(id: u64) -> usize {
-        debug_assert!(CACHED_REGION_INFO_SLOT_COUNT.is_power_of_two());
-        hash_u64(id) as usize & (CACHED_REGION_INFO_SLOT_COUNT - 1)
-    }
-
-    pub fn access_cached_region_info_mut<F: FnMut(MapEntry<u64, Arc<CachedRegionInfo>>)>(
-        &self,
-        region_id: u64,
-        mut f: F,
-    ) -> RaftStoreResult<()> {
-        let slot_id = Self::slot_index(region_id);
-        let mut guard = match self.cached_region_info.get(slot_id).unwrap().write() {
-            Ok(g) => g,
-            Err(_) => return Err(box_err!("access_cached_region_info_mut poisoned")),
-        };
-        f(guard.entry(region_id));
-        Ok(())
-    }
-
-    pub fn access_cached_region_info<F: FnMut(Arc<CachedRegionInfo>)>(
-        &self,
-        region_id: u64,
-        mut f: F,
-    ) {
-        let slot_id = Self::slot_index(region_id);
-        let guard = match self.cached_region_info.get(slot_id).unwrap().read() {
-            Ok(g) => g,
-            Err(_) => panic!("access_cached_region_info poisoned!"),
-        };
-        match guard.get(&region_id) {
-            Some(g) => f(g.clone()),
-            None => (),
-        }
-    }
-
-    pub fn get_inited_or_fallback(&self, region_id: u64) -> Option<bool> {
-        let mut is_first: Option<bool> = None;
-        let f = |info: Arc<CachedRegionInfo>| {
-            is_first = Some(info.inited_or_fallback.load(Ordering::SeqCst));
-        };
-        self.access_cached_region_info(region_id, f);
-        is_first
-    }
-
-    pub fn remove_cached_region_info(&self, region_id: u64) {
-        let slot_id = Self::slot_index(region_id);
-        if let Ok(mut g) = self.cached_region_info.get(slot_id).unwrap().write() {
-            info!(
-                "remove_cached_region_info";
-                "region_id" => region_id,
-                "store_id" => self.store_id,
-            );
-            let _ = g.remove(&region_id);
-        }
-    }
-
-    pub fn set_inited_or_fallback(&self, region_id: u64, v: bool) -> RaftStoreResult<()> {
-        self.access_cached_region_info_mut(
-            region_id,
-            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {
-                    o.get_mut().inited_or_fallback.store(v, Ordering::SeqCst);
-                }
-                MapEntry::Vacant(_) => {
-                    tikv_util::safe_panic!("not inited!");
-                }
-            },
-        )
-    }
-
-    pub fn set_snapshot_inflight(&self, region_id: u64, v: u128) -> RaftStoreResult<()> {
-        self.access_cached_region_info_mut(
-            region_id,
-            |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {
-                    o.get_mut().snapshot_inflight.store(v, Ordering::SeqCst);
-                }
-                MapEntry::Vacant(_) => {
-                    tikv_util::safe_panic!("not inited!");
-                }
-            },
-        )
-    }
-
-    fn fallback_to_slow_path(&self, region_id: u64) {
-        // TODO clean local, and prepare to request snapshot from TiKV as a trivial
-        // procedure.
-        fail::fail_point!("fallback_to_slow_path_not_allow", |_| {});
-        if self.set_inited_or_fallback(region_id, true).is_err() {
-            tikv_util::safe_panic!("set_inited_or_fallback");
-        }
-    }
-
     pub fn is_initialized(&self, region_id: u64) -> bool {
         match get_region_local_state(&self.engine, region_id) {
             None => false,
@@ -278,6 +147,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     && (r.get_state() != PeerState::Tombstone)
             }
         }
+    }
+
+    pub fn get_cached_manager(&self) -> Arc<CachedRegionInfoManager> {
+        self.engine
+            .cached_region_info_manager
+            .as_ref()
+            .unwrap()
+            .clone()
     }
 
     // Returns whether we need to ignore this message and run fast path instead.
@@ -360,11 +237,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         };
 
         // Try not acquire write lock firstly.
-        match self.get_inited_or_fallback(region_id) {
+        match self.get_cached_manager().get_inited_or_fallback(region_id) {
             Some(true) => {
                 is_first = false;
             }
-            None | Some(false) => self.access_cached_region_info_mut(region_id, f).unwrap(),
+            None | Some(false) => self
+                .get_cached_manager()
+                .access_cached_region_info_mut(region_id, f)
+                .unwrap(),
         };
 
         #[cfg(any(test, feature = "testexport"))]
@@ -446,7 +326,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     self.store_id, region_id, new_peer_id, res;
                     "region_id" => region_id,
                 );
-                self.fallback_to_slow_path(region_id);
+                self.get_cached_manager().fallback_to_slow_path(region_id);
                 return false;
             }
         };
@@ -461,7 +341,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 self.store_id, region_id, new_peer_id, res;
                 "region_id" => region_id,
             );
-            self.fallback_to_slow_path(region_id);
+            self.get_cached_manager().fallback_to_slow_path(region_id);
         }
         if let Err(_e) = new_region.merge_from_bytes(region_str) {
             error!(
@@ -469,7 +349,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 self.store_id, region_id, new_peer_id, res;
                 "region_id" => region_id,
             );
-            self.fallback_to_slow_path(region_id);
+            self.get_cached_manager().fallback_to_slow_path(region_id);
         }
 
         // Validate
@@ -481,7 +361,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 "region_id" => region_id,
                 "region" => ?new_region,
             );
-            self.fallback_to_slow_path(region_id);
+            self.get_cached_manager().fallback_to_slow_path(region_id);
             return false;
         }
 
@@ -517,7 +397,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                             self.store_id, region_id, new_peer_id, s;
                             "region_id" => region_id,
                         );
-                        self.fallback_to_slow_path(region_id);
+                        self.get_cached_manager().fallback_to_slow_path(region_id);
                         return false;
                     }
                 };
@@ -528,7 +408,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     self.store_id, region_id, new_peer_id, e;
                     "region_id" => region_id,
                 );
-                self.fallback_to_slow_path(region_id);
+                self.get_cached_manager().fallback_to_slow_path(region_id);
                 return false;
             }
         };
@@ -670,7 +550,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     let current = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap();
-                    self.set_snapshot_inflight(region_id, current.as_millis())
+                    self.get_cached_manager()
+                        .set_snapshot_inflight(region_id, current.as_millis())
                         .unwrap();
                     // If we don't flush here, packet will lost.
                     trans.flush();
@@ -703,10 +584,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
             .max_thread_count(snap_handle_pool_size)
             .build_future_pool();
-        let mut cached_region_info = Vec::with_capacity(CACHED_REGION_INFO_SLOT_COUNT);
-        for _ in 0..CACHED_REGION_INFO_SLOT_COUNT {
-            cached_region_info.push(RwLock::new(HashMap::default()));
-        }
+
         TiFlashObserver {
             store_id,
             engine_store_server_helper,
@@ -717,7 +595,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
-            cached_region_info: Arc::new(cached_region_info),
             trans: Arc::new(Mutex::new(trans)),
             snap_mgr: Arc::new(snap_mgr),
             engine_store_cfg,
@@ -1189,7 +1066,8 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
             self.engine_store_server_helper
                 .handle_destroy(ob_ctx.region().get_id());
             if self.engine_store_cfg.enable_fast_add_peer {
-                self.remove_cached_region_info(region_id);
+                self.get_cached_manager()
+                    .remove_cached_region_info(region_id);
             }
         }
     }
@@ -1265,7 +1143,9 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
                 "region_id" => region_id,
             );
             // TODO remove unwrap
-            self.access_cached_region_info_mut(region_id, f).unwrap();
+            self.get_cached_manager()
+                .access_cached_region_info_mut(region_id, f)
+                .unwrap();
         }
     }
 }
@@ -1377,7 +1257,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         let mut should_skip = false;
         #[allow(clippy::collapsible_if)]
         if self.engine_store_cfg.enable_fast_add_peer {
-            if self.access_cached_region_info_mut(
+            if self.get_cached_manager().access_cached_region_info_mut(
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(o) => {
@@ -1480,7 +1360,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         let mut should_skip = false;
         #[allow(clippy::collapsible_if)]
         if self.engine_store_cfg.enable_fast_add_peer {
-            if self.access_cached_region_info_mut(
+            if self.get_cached_manager().access_cached_region_info_mut(
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(mut o) => {

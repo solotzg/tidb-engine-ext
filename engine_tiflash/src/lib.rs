@@ -120,6 +120,8 @@ pub mod raw;
 
 mod proxy_utils;
 pub use proxy_utils::*;
+mod cached_region_info_manager;
+pub use cached_region_info_manager::*;
 pub use rocksdb::DB;
 
 pub fn get_env(

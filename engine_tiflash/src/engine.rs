@@ -8,7 +8,7 @@ use std::{
     ops::Deref,
     path::Path,
     sync::{
-        atomic::{AtomicIsize, AtomicUsize, Ordering},
+        atomic::{AtomicIsize, Ordering},
         Arc,
     },
 };
@@ -84,6 +84,7 @@ pub struct RocksEngine {
     pub pending_applies_count: Arc<AtomicIsize>,
     pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
     pub config_set: Option<Arc<crate::ProxyConfigSet>>,
+    pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
 }
 
 impl std::fmt::Debug for RocksEngine {
@@ -119,6 +120,7 @@ impl RocksEngine {
         self.pending_applies_count.store(0, Ordering::SeqCst);
         self.ffi_hub = ffi_hub;
         self.config_set = config_set;
+        self.cached_region_info_manager = Some(Arc::new(crate::CachedRegionInfoManager::new()))
     }
 
     pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
@@ -129,6 +131,7 @@ impl RocksEngine {
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
+            cached_region_info_manager: None,
         }
     }
 
@@ -140,6 +143,7 @@ impl RocksEngine {
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
+            cached_region_info_manager: None,
         }
     }
 
@@ -205,7 +209,7 @@ impl KvEngine for RocksEngine {
     // new task,    or when `handle_pending_applies` need to handle multiple
     // snapshots.    We need to compare to what's in queue.
 
-    fn can_apply_snapshot(&self, is_timeout: bool, new_batch: bool, _region_id: u64) -> bool {
+    fn can_apply_snapshot(&self, is_timeout: bool, new_batch: bool, region_id: u64) -> bool {
         fail::fail_point!("on_can_apply_snapshot", |e| e
             .unwrap()
             .parse::<bool>()
@@ -214,7 +218,26 @@ impl KvEngine for RocksEngine {
             if s.engine_store.enable_fast_add_peer {
                 // TODO Return true if this is an empty snapshot.
                 // We need to test if the region is still in fast add peer mode.
-                return true;
+                let result = self
+                    .cached_region_info_manager
+                    .as_ref()
+                    .expect("expect cached_region_info_manager")
+                    .get_inited_or_fallback(region_id);
+                match result {
+                    Some(true) => {
+                        // Do nothing.
+                        tikv_util::debug!("!!!! can_apply_snapshot do nothing";
+                            "region_id" => region_id,
+                        );
+                    }
+                    None | Some(false) => {
+                        // Otherwise, try fast path.
+                        tikv_util::debug!("!!!! can_apply_snapshot go fast path";
+                            "region_id" => region_id,
+                        );
+                        return true;
+                    }
+                };
             }
         }
         // is called after calling observer's pre_handle_snapshot
