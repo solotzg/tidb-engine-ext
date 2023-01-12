@@ -44,10 +44,9 @@ use yatp::{
 };
 
 use crate::{
-    gen_engine_store_server_helper,
-    interfaces::root::{DB as ffi_interfaces, DB::EngineStoreApplyRes},
-    name_to_cf, ColumnFamilyType, EngineStoreServerHelper, PageAndCppStrWithView, RaftCmdHeader,
-    RawCppPtr, TiFlashEngine, WriteCmdType, WriteCmds, CF_LOCK,
+    gen_engine_store_server_helper, interfaces::root::DB::EngineStoreApplyRes, name_to_cf,
+    ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
+    WriteCmdType, WriteCmds, CF_LOCK,
 };
 
 macro_rules! fatal {
@@ -636,7 +635,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 f.sync_all()?;
             }
             snap_data.set_meta(snapshot_meta);
-            snap.hold_tmp_files = false;
+            snap.set_hold_tmp_files(false);
         }
 
         pb_snapshot_metadata
