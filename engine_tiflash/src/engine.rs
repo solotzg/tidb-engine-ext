@@ -83,6 +83,7 @@ pub struct RocksEngine {
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicUsize>,
     pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+    pub config_set: Option<Arc<crate::ProxyConfigSet>>,
 }
 
 impl std::fmt::Debug for RocksEngine {
@@ -107,6 +108,7 @@ impl RocksEngine {
         engine_store_server_helper: isize,
         snap_handle_pool_size: usize,
         ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+        config_set: Option<Arc<crate::ProxyConfigSet>>,
     ) {
         #[cfg(feature = "enable-pagestorage")]
         tikv_util::info!("enabled pagestorage");
@@ -116,6 +118,7 @@ impl RocksEngine {
         self.pool_capacity = snap_handle_pool_size;
         self.pending_applies_count.store(0, Ordering::SeqCst);
         self.ffi_hub = ffi_hub;
+        self.config_set = config_set;
     }
 
     pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
@@ -125,6 +128,7 @@ impl RocksEngine {
             pool_capacity: 0,
             pending_applies_count: Arc::new(AtomicUsize::new(0)),
             ffi_hub: None,
+            config_set: None,
         }
     }
 
@@ -135,6 +139,7 @@ impl RocksEngine {
             pool_capacity: 0,
             pending_applies_count: Arc::new(AtomicUsize::new(0)),
             ffi_hub: None,
+            config_set: None,
         }
     }
 
@@ -201,6 +206,15 @@ impl KvEngine for RocksEngine {
     // snapshots.    We need to compare to what's in queue.
 
     fn can_apply_snapshot(&self, is_timeout: bool, new_batch: bool, _region_id: u64) -> bool {
+        fail::fail_point!("on_can_apply_snapshot", |e| e
+            .unwrap()
+            .parse::<bool>()
+            .unwrap());
+        if let Some(s) = self.config_set.as_ref() {
+            if s.engine_store.enable_fast_add_peer {
+                return true;
+            }
+        }
         // is called after calling observer's pre_handle_snapshot
         let in_queue = self.pending_applies_count.load(Ordering::SeqCst);
         // if queue is full, we should begin to handle
@@ -209,10 +223,6 @@ impl KvEngine for RocksEngine {
         } else {
             in_queue > self.pool_capacity
         };
-        fail::fail_point!("on_can_apply_snapshot", |e| e
-            .unwrap()
-            .parse::<bool>()
-            .unwrap());
         can
     }
 }

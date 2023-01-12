@@ -436,8 +436,8 @@ pub struct Snapshot {
     cf_files: Vec<CfFile>,
     cf_index: usize,
     cf_file_index: usize,
-    pub meta_file: MetaFile,
-    pub hold_tmp_files: bool,
+    meta_file: MetaFile,
+    hold_tmp_files: bool,
 
     mgr: SnapManagerCore,
 }
@@ -458,7 +458,6 @@ impl Snapshot {
         mgr: &SnapManagerCore,
     ) -> RaftStoreResult<Self> {
         let dir_path = dir.into();
-
         if !dir_path.exists() {
             file_system::create_dir_all(dir_path.as_path())?;
         }
@@ -814,7 +813,7 @@ impl Snapshot {
     }
 
     // Only called in `do_build`.
-    pub fn save_meta_file(&mut self) -> RaftStoreResult<()> {
+    fn save_meta_file(&mut self) -> RaftStoreResult<()> {
         let v = box_try!(self.meta_file.meta.as_ref().unwrap().write_to_bytes());
         if let Some(mut f) = self.meta_file.file.take() {
             // `meta_file` could be None for this case: in `init_for_building` the snapshot
@@ -1139,6 +1138,10 @@ impl Snapshot {
 
     pub fn total_count(&self) -> u64 {
         self.cf_files.iter().map(|cf| cf.kv_count).sum()
+    }
+
+    pub fn set_hold_tmp_files(&mut self, v: bool) {
+        self.hold_tmp_files = v;
     }
 
     pub fn save(&mut self) -> io::Result<()> {

@@ -326,11 +326,14 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             (helper_ptr, ffi_hub)
         };
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
-
+        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
+            engine_store: self.cfg.proxy_cfg.engine_store.clone(),
+        });
         engines.kv.init(
             helper_ptr,
             self.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
             Some(ffi_hub),
+            Some(proxy_config_set),
         );
 
         assert_ne!(engines.kv.engine_store_server_helper, 0);

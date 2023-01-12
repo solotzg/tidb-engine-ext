@@ -427,10 +427,14 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         });
         // engine_tiflash::RocksEngine has engine_rocks::RocksEngine inside
         let mut kv_engine = TiFlashEngine::from_rocks(kv_engine);
+        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
+            engine_store: self.proxy_config.engine_store.clone(),
+        });
         kv_engine.init(
             engine_store_server_helper,
             self.proxy_config.raft_store.snap_handle_pool_size,
             Some(ffi_hub),
+            Some(proxy_config_set),
         );
 
         let engines = Engines::new(kv_engine, raft_engine);

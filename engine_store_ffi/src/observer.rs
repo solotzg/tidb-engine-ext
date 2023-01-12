@@ -1360,6 +1360,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             "peer_id" => peer_id,
             "region_id" => region_id,
             "snap_key" => ?snap_key,
+            "has_snap" => snap.is_some(),
             "pending" => self.engine.pending_applies_count.load(Ordering::SeqCst),
         );
         fail::fail_point!("on_ob_pre_handle_snapshot", |_| {});
