@@ -210,18 +210,21 @@ impl KvEngine for RocksEngine {
             .unwrap()
             .parse::<bool>()
             .unwrap());
-        // if let Some(s) = self.config_set.as_ref() {
-        //     if s.engine_store.enable_fast_add_peer {
-        //         // TODO Must firstly judge if this peer is in fast add peer mode.
-        //         return true;
-        //     }
-        // }
+        if let Some(s) = self.config_set.as_ref() {
+            if s.engine_store.enable_fast_add_peer {
+                // TODO Return true if this is an empty snapshot.
+                // We need to test if the region is still in fast add peer mode.
+                return true;
+            }
+        }
         // is called after calling observer's pre_handle_snapshot
         let in_queue = self.pending_applies_count.load(Ordering::SeqCst);
-        // if queue is full, we should begin to handle
         let can = if is_timeout && new_batch {
+            // If queue is full, we should begin to handle
             true
         } else {
+            // Otherwise, we wait until the queue is full.
+            // In order to batch more tasks.
             in_queue > (self.pool_capacity as isize)
         };
         can
