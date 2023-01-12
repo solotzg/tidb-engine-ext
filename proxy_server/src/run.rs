@@ -1725,10 +1725,10 @@ impl ConfiguredRaftEngine for RaftLogEngine {
 
 impl ConfiguredRaftEngine for PSEngine {
     fn build(
-        config: &TikvConfig,
-        env: &Arc<Env>,
-        key_manager: &Option<Arc<DataKeyManager>>,
-        block_cache: &Option<Cache>,
+        _config: &TikvConfig,
+        _env: &Arc<Env>,
+        _key_manager: &Option<Arc<DataKeyManager>>,
+        _block_cache: &Option<Cache>,
     ) -> Self {
         PSEngine::new()
     }

@@ -8,7 +8,7 @@ use std::{
     ops::Deref,
     path::Path,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicIsize, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -81,7 +81,7 @@ pub struct RocksEngine {
     pub rocks: engine_rocks::RocksEngine,
     pub engine_store_server_helper: isize,
     pub pool_capacity: usize,
-    pub pending_applies_count: Arc<AtomicUsize>,
+    pub pending_applies_count: Arc<AtomicIsize>,
     pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
     pub config_set: Option<Arc<crate::ProxyConfigSet>>,
 }
@@ -126,7 +126,7 @@ impl RocksEngine {
             rocks,
             engine_store_server_helper: 0,
             pool_capacity: 0,
-            pending_applies_count: Arc::new(AtomicUsize::new(0)),
+            pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
         }
@@ -137,7 +137,7 @@ impl RocksEngine {
             rocks: engine_rocks::RocksEngine::from_db(db),
             engine_store_server_helper: 0,
             pool_capacity: 0,
-            pending_applies_count: Arc::new(AtomicUsize::new(0)),
+            pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
         }
@@ -210,18 +210,19 @@ impl KvEngine for RocksEngine {
             .unwrap()
             .parse::<bool>()
             .unwrap());
-        if let Some(s) = self.config_set.as_ref() {
-            if s.engine_store.enable_fast_add_peer {
-                return true;
-            }
-        }
+        // if let Some(s) = self.config_set.as_ref() {
+        //     if s.engine_store.enable_fast_add_peer {
+        //         // TODO Must firstly judge if this peer is in fast add peer mode.
+        //         return true;
+        //     }
+        // }
         // is called after calling observer's pre_handle_snapshot
         let in_queue = self.pending_applies_count.load(Ordering::SeqCst);
         // if queue is full, we should begin to handle
         let can = if is_timeout && new_batch {
             true
         } else {
-            in_queue > self.pool_capacity
+            in_queue > (self.pool_capacity as isize)
         };
         can
     }

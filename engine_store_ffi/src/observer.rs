@@ -608,10 +608,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
                 path.set_extension("sst");
-                info!(
-                    "!!!!! create snapshot data file {:?} {}",
-                    path, snap.hold_tmp_files
-                );
                 let mut f = std::fs::File::create(path.as_path())?;
                 f.flush()?;
                 f.sync_all()?;
@@ -1384,7 +1380,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             if self.access_cached_region_info_mut(
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                    MapEntry::Occupied(mut o) => {
+                    MapEntry::Occupied(o) => {
                         let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
                         if is_first_snapsot {
                             info!("fast path: prehandle first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
@@ -1404,6 +1400,10 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             };
         }
 
+        if should_skip {
+            return;
+        }
+
         let (sender, receiver) = mpsc::channel();
         let task = Arc::new(PrehandleTask::new(receiver, peer_id));
         {
@@ -1415,16 +1415,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             ctx.tracer.insert(snap_key.clone(), task.clone());
         }
 
-        if should_skip {
-            return;
-        }
-
         let engine_store_server_helper = self.engine_store_server_helper;
         let region = ob_ctx.region().clone();
         let snap_key = snap_key.clone();
         let ssts = retrieve_sst_files(snap);
         match self.apply_snap_pool.as_ref() {
             Some(p) => {
+                // We use thread pool to do pre handling.
                 self.engine
                     .pending_applies_count
                     .fetch_add(1, Ordering::SeqCst);
@@ -1505,6 +1502,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                 fatal!("post_apply_snapshot poisoned")
             };
         }
+
+        if should_skip {
+            return;
+        }
+
         let snap = match snap {
             None => return,
             Some(s) => s,
@@ -1517,9 +1519,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             let ctx = lock.deref_mut();
             ctx.tracer.remove(snap_key)
         };
-        if should_skip {
-            return;
-        }
+
         let need_retry = match maybe_snapshot {
             Some(t) => {
                 let neer_retry = match t.recv.recv() {
@@ -1546,9 +1546,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                         true
                     }
                 };
-                self.engine
+                let prev = self
+                    .engine
                     .pending_applies_count
                     .fetch_sub(1, Ordering::SeqCst);
+
+                #[cfg(any(test, feature = "testexport"))]
+                assert!(prev > 0);
+
                 info!("apply snapshot finished";
                     "peer_id" => peer_id,
                     "snap_key" => ?snap_key,
