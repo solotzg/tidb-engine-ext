@@ -11,9 +11,13 @@ use concurrency_manager::ConcurrencyManager;
 use engine_traits::{KvEngine, RaftEngine, TabletRegistry};
 use kvproto::{metapb, pdpb};
 use pd_client::PdClient;
-use raftstore::store::{util::KeysInfoFormatter, FlowStatsReporter, ReadStats, TxnExt, WriteStats};
+use raftstore::store::{
+    util::KeysInfoFormatter, Config, FlowStatsReporter, ReadStats, TabletSnapManager, TxnExt,
+    WriteStats,
+};
 use slog::{error, info, Logger};
 use tikv_util::{
+    config::VersionTrack,
     time::UnixSecs,
     worker::{Runnable, Scheduler},
 };
@@ -102,6 +106,7 @@ where
     pd_client: Arc<T>,
     raft_engine: ER,
     tablet_registry: TabletRegistry<EK>,
+    snap_mgr: TabletSnapManager,
     router: StoreRouter<EK, ER>,
 
     remote: Remote<TaskCell>,
@@ -122,6 +127,7 @@ where
 
     logger: Logger,
     shutdown: Arc<AtomicBool>,
+    cfg: Arc<VersionTrack<Config>>,
 }
 
 impl<EK, ER, T> Runner<EK, ER, T>
@@ -135,18 +141,21 @@ where
         pd_client: Arc<T>,
         raft_engine: ER,
         tablet_registry: TabletRegistry<EK>,
+        snap_mgr: TabletSnapManager,
         router: StoreRouter<EK, ER>,
         remote: Remote<TaskCell>,
         concurrency_manager: ConcurrencyManager,
         causal_ts_provider: Option<Arc<CausalTsProviderImpl>>, // used for rawkv apiv2
         logger: Logger,
         shutdown: Arc<AtomicBool>,
+        cfg: Arc<VersionTrack<Config>>,
     ) -> Self {
         Self {
             store_id,
             pd_client,
             raft_engine,
             tablet_registry,
+            snap_mgr,
             router,
             remote,
             region_peers: HashMap::default(),
@@ -158,6 +167,7 @@ where
             causal_ts_provider,
             logger,
             shutdown,
+            cfg,
         }
     }
 }
