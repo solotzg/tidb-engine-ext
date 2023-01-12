@@ -208,7 +208,7 @@ pub unsafe extern "C" fn ffi_mockps_handle_scan_page(
 }
 
 pub unsafe extern "C" fn ffi_mockps_handle_purge_pagestorage(
-    wrap: *const ffi_interfaces::EngineStoreServerWrap,
+    _wrap: *const ffi_interfaces::EngineStoreServerWrap,
 ) {
     // TODO
 }

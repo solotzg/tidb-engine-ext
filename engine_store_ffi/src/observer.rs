@@ -1404,23 +1404,24 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             return;
         }
 
-        let (sender, receiver) = mpsc::channel();
-        let task = Arc::new(PrehandleTask::new(receiver, peer_id));
-        {
-            let mut lock = match self.pre_handle_snapshot_ctx.lock() {
-                Ok(l) => l,
-                Err(_) => fatal!("pre_apply_snapshot poisoned"),
-            };
-            let ctx = lock.deref_mut();
-            ctx.tracer.insert(snap_key.clone(), task.clone());
-        }
-
-        let engine_store_server_helper = self.engine_store_server_helper;
-        let region = ob_ctx.region().clone();
-        let snap_key = snap_key.clone();
-        let ssts = retrieve_sst_files(snap);
         match self.apply_snap_pool.as_ref() {
             Some(p) => {
+                let (sender, receiver) = mpsc::channel();
+                let task = Arc::new(PrehandleTask::new(receiver, peer_id));
+                {
+                    let mut lock = match self.pre_handle_snapshot_ctx.lock() {
+                        Ok(l) => l,
+                        Err(_) => fatal!("pre_apply_snapshot poisoned"),
+                    };
+                    let ctx = lock.deref_mut();
+                    ctx.tracer.insert(snap_key.clone(), task.clone());
+                }
+
+                let engine_store_server_helper = self.engine_store_server_helper;
+                let region = ob_ctx.region().clone();
+                let snap_key = snap_key.clone();
+                let ssts = retrieve_sst_files(snap);
+
                 // We use thread pool to do pre handling.
                 self.engine
                     .pending_applies_count
@@ -1437,7 +1438,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                         &snap_key,
                     );
                     match sender.send(res) {
-                        Err(_e) => error!("pre apply snapshot err when send to receiver"),
+                        Err(_e) => {
+                            error!("pre apply snapshot err when send to receiver";
+                                "region_id" => region.get_id(),
+                                "peer_id" => task.peer_id,
+                                "snap_key" => ?snap_key,
+                            )
+                        }
                         Ok(_) => (),
                     }
                 });
@@ -1511,7 +1518,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             None => return,
             Some(s) => s,
         };
-        let maybe_snapshot = {
+        let maybe_prehandle_task = {
             let mut lock = match self.pre_handle_snapshot_ctx.lock() {
                 Ok(l) => l,
                 Err(_) => fatal!("post_apply_snapshot poisoned"),
@@ -1520,7 +1527,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
             ctx.tracer.remove(snap_key)
         };
 
-        let need_retry = match maybe_snapshot {
+        let need_retry = match maybe_prehandle_task {
             Some(t) => {
                 let neer_retry = match t.recv.recv() {
                     Ok(snap_ptr) => {
@@ -1546,6 +1553,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                         true
                     }
                 };
+                // According to pre_apply_snapshot, if registered tracer,
+                // then we must have put it into thread pool.
                 let prev = self
                     .engine
                     .pending_applies_count
@@ -1575,7 +1584,9 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                 true
             }
         };
+
         if need_retry && !should_skip {
+            // Blocking pre handle.
             let ssts = retrieve_sst_files(snap);
             let ptr = pre_handle_snapshot_impl(
                 self.engine_store_server_helper,
