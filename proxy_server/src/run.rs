@@ -422,7 +422,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             .unwrap_or_else(|s| fatal!("failed to create kv engine: {}", s));
 
         let helper = engine_store_ffi::gen_engine_store_server_helper(engine_store_server_helper);
-        let ffi_hub = Arc::new(engine_store_ffi::observer::TiFlashFFIHub {
+        let ffi_hub = Arc::new(engine_store_ffi::TiFlashFFIHub {
             engine_store_server_helper: helper,
         });
         // engine_tiflash::RocksEngine has engine_rocks::RocksEngine inside

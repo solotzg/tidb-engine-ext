@@ -320,7 +320,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 .engine_store_server_helper;
 
             let helper = engine_store_ffi::gen_engine_store_server_helper(helper_ptr);
-            let ffi_hub = Arc::new(engine_store_ffi::observer::TiFlashFFIHub {
+            let ffi_hub = Arc::new(engine_store_ffi::TiFlashFFIHub {
                 engine_store_server_helper: helper,
             });
             (helper_ptr, ffi_hub)
