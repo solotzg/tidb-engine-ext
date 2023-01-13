@@ -226,15 +226,12 @@ impl KvEngine for RocksEngine {
                 match result {
                     Some(true) => {
                         // Do nothing.
-                        tikv_util::debug!("!!!! can_apply_snapshot do nothing";
+                        tikv_util::debug!("can_apply_snapshot no fast path. do normal checking";
                             "region_id" => region_id,
                         );
                     }
                     None | Some(false) => {
                         // Otherwise, try fast path.
-                        tikv_util::debug!("!!!! can_apply_snapshot go fast path";
-                            "region_id" => region_id,
-                        );
                         return true;
                     }
                 };

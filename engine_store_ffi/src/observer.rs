@@ -172,6 +172,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         }
         let region_id = msg.get_region_id();
         let new_peer_id = msg.get_to_peer().get_id();
+        let cached_manager = self.get_cached_manager();
         let mut is_first = false;
         let mut is_replicated = false;
         let mut has_already_inited = None;
@@ -237,7 +238,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         };
 
         // Try not acquire write lock firstly.
-        match self.get_cached_manager().get_inited_or_fallback(region_id) {
+        match cached_manager.get_inited_or_fallback(region_id) {
             Some(true) => {
                 is_first = false;
             }
@@ -326,7 +327,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     self.store_id, region_id, new_peer_id, res;
                     "region_id" => region_id,
                 );
-                self.get_cached_manager().fallback_to_slow_path(region_id);
+                cached_manager.fallback_to_slow_path(region_id);
                 return false;
             }
         };
@@ -341,7 +342,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 self.store_id, region_id, new_peer_id, res;
                 "region_id" => region_id,
             );
-            self.get_cached_manager().fallback_to_slow_path(region_id);
+            cached_manager.fallback_to_slow_path(region_id);
         }
         if let Err(_e) = new_region.merge_from_bytes(region_str) {
             error!(
@@ -349,7 +350,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 self.store_id, region_id, new_peer_id, res;
                 "region_id" => region_id,
             );
-            self.get_cached_manager().fallback_to_slow_path(region_id);
+            cached_manager.fallback_to_slow_path(region_id);
         }
 
         // Validate
@@ -361,7 +362,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 "region_id" => region_id,
                 "region" => ?new_region,
             );
-            self.get_cached_manager().fallback_to_slow_path(region_id);
+            cached_manager.fallback_to_slow_path(region_id);
             return false;
         }
 
@@ -397,7 +398,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                             self.store_id, region_id, new_peer_id, s;
                             "region_id" => region_id,
                         );
-                        self.get_cached_manager().fallback_to_slow_path(region_id);
+                        cached_manager.fallback_to_slow_path(region_id);
                         return false;
                     }
                 };
@@ -408,7 +409,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     self.store_id, region_id, new_peer_id, e;
                     "region_id" => region_id,
                 );
-                self.get_cached_manager().fallback_to_slow_path(region_id);
+                cached_manager.fallback_to_slow_path(region_id);
                 return false;
             }
         };
@@ -444,6 +445,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         apply_state: RaftApplyState,
         new_region: kvproto::metapb::Region,
     ) -> RaftStoreResult<crate::FastAddPeerStatus> {
+        let cached_manager = self.get_cached_manager();
         let inner_msg = msg.get_message();
         // Build snapshot by get_snapshot_for_building
         let (mut snap, key) = {
@@ -550,7 +552,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                     let current = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap();
-                    self.get_cached_manager()
+                    cached_manager
                         .set_snapshot_inflight(region_id, current.as_millis())
                         .unwrap();
                     // If we don't flush here, packet will lost.
