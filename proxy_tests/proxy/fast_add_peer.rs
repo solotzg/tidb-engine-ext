@@ -354,7 +354,7 @@ fn test_apply_snapshot() {
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
     must_put_and_check_key(&mut cluster, 1, 2, Some(true), None, Some(vec![1]));
 
-    // We add peer 3, it will be paused before fetching peer 2's data.
+    // We add peer 3 from peer 2, it will be paused before fetching peer 2's data.
     // However, peer 2 will apply conf change.
     fail::cfg("ffi_fast_add_peer_from_id", "return(2)").unwrap();
     fail::cfg("ffi_fast_add_peer_pause", "pause").unwrap();
@@ -369,19 +369,33 @@ fn test_apply_snapshot() {
     cluster.add_send_filter(CloneFilterFactory(
         RegionPacketFilter::new(1, 2)
             .msg_type(MessageType::MsgAppend)
-            .direction(Direction::Recv),
+            .direction(Direction::Both),
+    ));
+    cluster.add_send_filter(CloneFilterFactory(
+        RegionPacketFilter::new(1, 2)
+            .msg_type(MessageType::MsgSnapshot)
+            .direction(Direction::Both),
     ));
     cluster.must_put(b"k3", b"v3");
     cluster.must_put(b"k4", b"v4");
-    force_compact_log(&mut cluster, b"k2", Some(vec![1]));
+    cluster.must_put(b"k5", b"v5");
     // Log compacted, peer 2 will get snapshot, however, we pause when applying
     // snapshot.
+    force_compact_log(&mut cluster, b"k2", Some(vec![1]));
+    // Wait log compacted.
+    std::thread::sleep(std::time::Duration::from_millis(1000));
     fail::cfg("on_ob_post_apply_snapshot", "pause").unwrap();
     // Trigger a snapshot to 2.
     cluster.clear_send_filters();
 
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    debug!("wait applying snapshot of peer 2");
+    // Wait until peer 2 in Applying state.
+    must_wait_until_cond_node(&cluster, 1, Some(vec![2]), &|states: &States| -> bool {
+        states.in_disk_region_state.get_state() == PeerState::Applying
+    });
+
     // Now if we continue fast path, peer 2 will be in Applying state.
+    // Peer 3 can't use peer 2's data.
     // We will end up going slow path.
     fail::remove("ffi_fast_add_peer_pause");
     fail::cfg("go_fast_path_succeed", "panic").unwrap();

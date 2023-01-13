@@ -1702,6 +1702,7 @@ dependencies = [
  "log_wrappers",
  "num_cpus",
  "online_config",
+ "portable-atomic",
  "prometheus",
  "prometheus-static-metric",
  "protobuf",

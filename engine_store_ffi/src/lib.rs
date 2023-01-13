@@ -7,6 +7,7 @@ pub mod interfaces;
 pub mod basic_ffi_impls;
 pub mod domain_impls;
 pub mod encryption_impls;
+pub mod ffihub_impl;
 mod lock_cf_reader;
 pub mod observer;
 pub mod ps_engine;
@@ -27,7 +28,9 @@ pub use basic_ffi_impls::*;
 pub use domain_impls::*;
 use encryption::DataKeyManager;
 pub use encryption_impls::*;
+pub use engine_tiflash::EngineStoreConfig;
 use engine_traits::{Peekable, CF_LOCK};
+pub use ffihub_impl::TiFlashFFIHub;
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 use lazy_static::lazy_static;
 use protobuf::Message;
@@ -897,22 +900,5 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
         1
     } else {
         0
-    }
-}
-
-use serde_derive::{Deserialize, Serialize};
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-#[serde(rename_all = "kebab-case")]
-pub struct EngineStoreConfig {
-    pub enable_fast_add_peer: bool,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for EngineStoreConfig {
-    fn default() -> Self {
-        Self {
-            enable_fast_add_peer: false,
-        }
     }
 }
