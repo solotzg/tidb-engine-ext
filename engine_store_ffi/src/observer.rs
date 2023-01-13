@@ -447,8 +447,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     ) -> RaftStoreResult<crate::FastAddPeerStatus> {
         let cached_manager = self.get_cached_manager();
         let inner_msg = msg.get_message();
-        // Build snapshot by get_snapshot_for_building
-        let (mut snap, key) = {
+        // Get a snapshot object.
+        let (mut snapshot, key) = {
             // Find term of entry at applied_index.
             let applied_index = apply_state.get_applied_index();
             let applied_term =
@@ -475,18 +475,18 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // Build snapshot by do_snapshot
         let mut pb_snapshot: eraftpb::Snapshot = Default::default();
         let pb_snapshot_metadata: &mut eraftpb::SnapshotMetadata = pb_snapshot.mut_metadata();
-        let mut snap_data = kvproto::raft_serverpb::RaftSnapshotData::default();
+        let mut pb_snapshot_data = kvproto::raft_serverpb::RaftSnapshotData::default();
         {
             // eraftpb::SnapshotMetadata
             for (_, cf) in raftstore::store::snap::SNAPSHOT_CFS_ENUM_PAIR {
-                let cf_index: RaftStoreResult<usize> = snap
+                let cf_index: RaftStoreResult<usize> = snapshot
                     .cf_files()
                     .iter()
                     .position(|x| &x.cf == cf)
                     .ok_or(box_err!("can't find index for cf {}", cf));
                 let cf_index = cf_index?;
-                let cf_file = &snap.cf_files()[cf_index];
-                // Create fake file.
+                let cf_file = &snapshot.cf_files()[cf_index];
+                // Create fake cf file.
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
                 path.set_extension("sst");
@@ -494,26 +494,27 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 f.flush()?;
                 f.sync_all()?;
             }
-            snap_data.set_region(new_region.clone());
-            snap_data.set_file_size(0);
+            pb_snapshot_data.set_region(new_region.clone());
+            pb_snapshot_data.set_file_size(0);
             const SNAPSHOT_VERSION: u64 = 2;
-            snap_data.set_version(SNAPSHOT_VERSION);
+            pb_snapshot_data.set_version(SNAPSHOT_VERSION);
 
             // SnapshotMeta
             // Which is snap.meta_file.meta
-            let snapshot_meta = raftstore::store::snap::gen_snapshot_meta(snap.cf_files(), true)?;
+            let snapshot_meta =
+                raftstore::store::snap::gen_snapshot_meta(snapshot.cf_files(), true)?;
 
             // Write MetaFile
             {
                 let v = snapshot_meta.write_to_bytes()?;
-                let mut f = std::fs::File::create(snap.meta_path())?;
-                info!("!!!!! create snapshot meta file {:?}", snap.meta_path());
+                let mut f = std::fs::File::create(snapshot.meta_path())?;
+                info!("!!!!! create snapshot meta file {:?}", snapshot.meta_path());
                 f.write_all(&v[..])?;
                 f.flush()?;
                 f.sync_all()?;
             }
-            snap_data.set_meta(snapshot_meta);
-            snap.set_hold_tmp_files(false);
+            pb_snapshot_data.set_meta(snapshot_meta);
+            snapshot.set_hold_tmp_files(false);
         }
 
         pb_snapshot_metadata
@@ -521,7 +522,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         pb_snapshot_metadata.set_index(key.idx);
         pb_snapshot_metadata.set_term(key.term);
 
-        pb_snapshot.set_data(snap_data.write_to_bytes().unwrap().into());
+        pb_snapshot.set_data(pb_snapshot_data.write_to_bytes().unwrap().into());
 
         // Send reponse
         let mut response = RaftMessage::default();
@@ -543,7 +544,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             msg.get_to_peer().get_id(),
             key,
             response,
-            snap_data,
+            pb_snapshot_data,
             apply_state
         );
         match self.trans.lock() {
