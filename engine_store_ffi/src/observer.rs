@@ -506,15 +506,17 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
             // Write MetaFile
             {
-                let v = snapshot_meta.write_to_bytes()?;
-                let mut f = std::fs::File::create(snapshot.meta_path())?;
-                info!("!!!!! create snapshot meta file {:?}", snapshot.meta_path());
-                f.write_all(&v[..])?;
-                f.flush()?;
-                f.sync_all()?;
+                // let v = snapshot_meta.write_to_bytes()?;
+                // let mut f = std::fs::File::create(snapshot.meta_path())?;
+                // info!("!!!!! create snapshot meta file {:?}", snapshot.meta_path());
+                // f.write_all(&v[..])?;
+                // f.flush()?;
+                // f.sync_all()?;
+                snapshot.mut_meta_file().meta.insert(snapshot_meta.clone());
+                // snapshot.set_hold_tmp_files(false);
+                snapshot.save_meta_file()?;
             }
             pb_snapshot_data.set_meta(snapshot_meta);
-            snapshot.set_hold_tmp_files(false);
         }
 
         pb_snapshot_metadata

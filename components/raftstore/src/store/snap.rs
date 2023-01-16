@@ -812,8 +812,9 @@ impl Snapshot {
         }
     }
 
-    // Only called in `do_build`.
-    fn save_meta_file(&mut self) -> RaftStoreResult<()> {
+    // Save `SnapshotMeta` to file.
+    // Used in `do_build` and by external crates.
+    pub fn save_meta_file(&mut self) -> RaftStoreResult<()> {
         let v = box_try!(self.meta_file.meta.as_ref().unwrap().write_to_bytes());
         if let Some(mut f) = self.meta_file.file.take() {
             // `meta_file` could be None for this case: in `init_for_building` the snapshot
@@ -1123,6 +1124,10 @@ impl Snapshot {
 
     pub fn meta(&self) -> io::Result<Metadata> {
         file_system::metadata(&self.meta_file.path)
+    }
+
+    pub fn mut_meta_file(&mut self) -> &mut MetaFile {
+        &mut self.meta_file
     }
 
     pub fn meta_path(&self) -> &PathBuf {
