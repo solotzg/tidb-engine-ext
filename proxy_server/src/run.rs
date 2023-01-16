@@ -539,6 +539,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Initialize and check config
         info!("using proxy config"; "config" => ?proxy_config);
+        info!("!!!!! using proxy config 2"; "engine_store" => ?proxy_config.engine_store);
 
         let cfg_controller = Self::init_config(config, &proxy_config);
         let config = cfg_controller.get_current();

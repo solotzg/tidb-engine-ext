@@ -512,7 +512,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 // f.write_all(&v[..])?;
                 // f.flush()?;
                 // f.sync_all()?;
-                snapshot.mut_meta_file().meta.insert(snapshot_meta.clone());
+                // snapshot.mut_meta_file().meta.insert(snapshot_meta.clone());
+                snapshot.set_snapshot_meta(snapshot_meta.clone())?;
                 // snapshot.set_hold_tmp_files(false);
                 snapshot.save_meta_file()?;
             }

@@ -663,7 +663,7 @@ impl Snapshot {
         Ok(snapshot_meta)
     }
 
-    fn set_snapshot_meta(&mut self, snapshot_meta: SnapshotMeta) -> RaftStoreResult<()> {
+    pub fn set_snapshot_meta(&mut self, snapshot_meta: SnapshotMeta) -> RaftStoreResult<()> {
         let mut cf_file_count_from_meta: Vec<usize> = vec![];
         let mut file_count = 0;
         let mut current_cf = "";
@@ -1124,10 +1124,6 @@ impl Snapshot {
 
     pub fn meta(&self) -> io::Result<Metadata> {
         file_system::metadata(&self.meta_file.path)
-    }
-
-    pub fn mut_meta_file(&mut self) -> &mut MetaFile {
-        &mut self.meta_file
     }
 
     pub fn meta_path(&self) -> &PathBuf {

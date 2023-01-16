@@ -217,5 +217,6 @@ enable-fast-add-peer = true
     let proxy_config = gen_proxy_config(&cpath, false, &mut v);
 
     info!("using proxy config"; "config" => ?proxy_config);
+    info!("!!!!! using proxy config 2"; "engine_store" => ?proxy_config.engine_store);
     assert_eq!(true, proxy_config.engine_store.enable_fast_add_peer);
 }
