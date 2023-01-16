@@ -663,7 +663,7 @@ impl Snapshot {
         Ok(snapshot_meta)
     }
 
-    fn set_snapshot_meta(&mut self, snapshot_meta: SnapshotMeta) -> RaftStoreResult<()> {
+    pub fn set_snapshot_meta(&mut self, snapshot_meta: SnapshotMeta) -> RaftStoreResult<()> {
         let mut cf_file_count_from_meta: Vec<usize> = vec![];
         let mut file_count = 0;
         let mut current_cf = "";
@@ -812,8 +812,9 @@ impl Snapshot {
         }
     }
 
-    // Only called in `do_build`.
-    fn save_meta_file(&mut self) -> RaftStoreResult<()> {
+    // Save `SnapshotMeta` to file.
+    // Used in `do_build` and by external crates.
+    pub fn save_meta_file(&mut self) -> RaftStoreResult<()> {
         let v = box_try!(self.meta_file.meta.as_ref().unwrap().write_to_bytes());
         if let Some(mut f) = self.meta_file.file.take() {
             // `meta_file` could be None for this case: in `init_for_building` the snapshot
