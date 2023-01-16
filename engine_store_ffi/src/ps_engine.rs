@@ -10,7 +10,7 @@ use std::{
 
 use engine_traits::{
     Error, PerfContext, PerfContextExt, PerfContextKind, PerfLevel, RaftEngine, RaftEngineDebug,
-    RaftEngineReadOnly, RaftLogBatch, RaftLogGcTask, Result,
+    RaftEngineReadOnly, RaftLogBatch, Result,
 };
 use kvproto::{
     metapb::Region,
@@ -147,7 +147,8 @@ impl RaftLogBatch for PSEngineWriteBatch {
 
     fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
         // This function is used to clean entries that will be overwritten
-        // later. TODO: make sure overlapped entries will be overwritten
+        // later.
+        // TODO: make sure overlapped entries will be overwritten
         // by newer log. for index in from..to {
         //     let key = ps_raft_log_key(raft_group_id, index);
         //     self.del_page(&key).unwrap();
@@ -185,12 +186,36 @@ impl RaftLogBatch for PSEngineWriteBatch {
         self.del_page(keys::PREPARE_BOOTSTRAP_KEY)
     }
 
-    fn put_region_state(&mut self, raft_group_id: u64, state: &RegionLocalState) -> Result<()> {
+    fn put_region_state(
+        &mut self,
+        raft_group_id: u64,
+        _apply_index: u64,
+        state: &RegionLocalState,
+    ) -> Result<()> {
         self.put_msg(&keys::region_state_key(raft_group_id), state)
     }
 
-    fn put_apply_state(&mut self, raft_group_id: u64, state: &RaftApplyState) -> Result<()> {
+    fn put_apply_state(
+        &mut self,
+        raft_group_id: u64,
+        _apply_index: u64,
+        state: &RaftApplyState,
+    ) -> Result<()> {
         self.put_msg(&keys::apply_state_key(raft_group_id), state)
+    }
+
+    fn put_flushed_index(
+        &mut self,
+        _raft_group_id: u64,
+        _cf: &str,
+        _tablet_index: u64,
+        _apply_index: u64,
+    ) -> Result<()> {
+        panic!()
+    }
+
+    fn put_recover_state(&mut self, state: &StoreRecoverState) -> Result<()> {
+        self.put_msg(keys::RECOVER_STATE_KEY, state)
     }
 }
 
@@ -279,7 +304,13 @@ impl PSEngine {
         Ok(())
     }
 
-    fn gc_impl(&self, raft_group_id: u64, mut from: u64, to: u64) -> Result<usize> {
+    fn gc_impl(
+        &self,
+        raft_group_id: u64,
+        mut from: u64,
+        to: u64,
+        raft_wb: &mut PSEngineWriteBatch,
+    ) -> Result<usize> {
         if from == 0 {
             let start_key = keys::raft_log_key(raft_group_id, 0);
             let prefix = keys::raft_log_prefix(raft_group_id);
@@ -373,18 +404,30 @@ impl RaftEngineReadOnly for PSEngine {
         self.get_msg_cf(keys::PREPARE_BOOTSTRAP_KEY)
     }
 
-    fn get_region_state(&self, raft_group_id: u64) -> Result<Option<RegionLocalState>> {
+    fn get_region_state(
+        &self,
+        _apply_index: u64,
+        raft_group_id: u64,
+    ) -> Result<Option<RegionLocalState>> {
         let key = keys::region_state_key(raft_group_id);
         self.get_msg_cf(&key)
     }
 
-    fn get_apply_state(&self, raft_group_id: u64) -> Result<Option<RaftApplyState>> {
+    fn get_apply_state(
+        &self,
+        _apply_index: u64,
+        raft_group_id: u64,
+    ) -> Result<Option<RaftApplyState>> {
         let key = keys::apply_state_key(raft_group_id);
         self.get_msg_cf(&key)
     }
 
     fn get_recover_state(&self) -> Result<Option<StoreRecoverState>> {
         self.get_msg_cf(keys::RECOVER_STATE_KEY)
+    }
+
+    fn get_flushed_index(&self, _raft_group_id: u64, _cf: &str) -> Result<Option<u64>> {
+        panic!()
     }
 }
 
@@ -475,38 +518,21 @@ impl RaftEngine for PSEngine {
         Ok(())
     }
 
-    fn append(&self, raft_group_id: u64, entries: Vec<Entry>) -> Result<usize> {
-        let mut wb = self.log_batch(0);
-        if let Some(max_size) = entries.iter().map(|e| e.compute_size()).max() {
-            let buf = Vec::with_capacity(max_size as usize);
-            wb.append_impl(raft_group_id, &entries, buf)?;
-            return self.consume(&mut wb, false);
-        }
-        Ok(0)
-    }
-
-    fn put_raft_state(&self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
-        let mut wb = self.log_batch(0);
-        wb.put_msg(&keys::raft_state_key(raft_group_id), state);
-        self.consume(&mut wb, false);
+    fn gc(&self, raft_group_id: u64, from: u64, to: u64, batch: &mut Self::LogBatch) -> Result<()> {
+        self.gc_impl(raft_group_id, from, to, batch)?;
         Ok(())
     }
 
-    fn gc(&self, raft_group_id: u64, from: u64, to: u64) -> Result<usize> {
-        self.gc_impl(raft_group_id, from, to)
-    }
-
-    fn batch_gc(&self, groups: Vec<RaftLogGcTask>) -> Result<usize> {
-        let mut total = 0;
-        for task in groups {
-            total += self.gc(task.raft_group_id, task.from, task.to)?;
-        }
-        Ok(total)
+    fn delete_all_but_one_states_before(
+        &self,
+        _raft_group_id: u64,
+        _apply_index: u64,
+        _batch: &mut Self::LogBatch,
+    ) -> Result<()> {
+        panic!()
     }
 
     fn flush_metrics(&self, instance: &str) {}
-
-    fn reset_statistics(&self) {}
 
     fn dump_stats(&self) -> Result<String> {
         Ok(String::from(""))
@@ -518,13 +544,6 @@ impl RaftEngine for PSEngine {
 
     fn get_engine_size(&self) -> Result<u64> {
         Ok(0)
-    }
-
-    fn put_store_ident(&self, ident: &StoreIdent) -> Result<()> {
-        let mut wb = self.log_batch(0);
-        wb.put_msg(keys::STORE_IDENT_KEY, ident);
-        self.consume(&mut wb, false);
-        Ok(())
     }
 
     fn for_each_raft_group<E, F>(&self, f: &mut F) -> std::result::Result<(), E>
@@ -553,13 +572,6 @@ impl RaftEngine for PSEngine {
             None => Ok(()),
             Some(e) => Err(e),
         }
-    }
-
-    fn put_recover_state(&self, state: &StoreRecoverState) -> Result<()> {
-        let mut wb = self.log_batch(0);
-        wb.put_msg(keys::RECOVER_STATE_KEY, state);
-        self.consume(&mut wb, false);
-        Ok(())
     }
 }
 

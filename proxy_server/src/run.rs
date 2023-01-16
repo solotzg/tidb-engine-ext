@@ -395,7 +395,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             .unwrap();
 
         // Create raft engine
-        let (raft_engine, raft_statistics) = CER::build(
+        let (mut raft_engine, raft_statistics) = CER::build(
             &self.config,
             &env,
             &self.encryption_key_manager,
@@ -1739,9 +1739,9 @@ impl ConfiguredRaftEngine for PSEngine {
         _config: &TikvConfig,
         _env: &Arc<Env>,
         _key_manager: &Option<Arc<DataKeyManager>>,
-        _block_cache: &Option<Cache>,
-    ) -> Self {
-        PSEngine::new()
+        _block_cache: &Cache,
+    ) -> (Self, Option<Arc<RocksStatistics>>) {
+        (PSEngine::new(), None)
     }
 
     fn as_ps_engine(&mut self) -> Option<&mut PSEngine> {

@@ -154,7 +154,6 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
                 &cluster,
                 Some(vec![3]),
                 &mut |_, _, ffi: &mut FFIHelperSet| {
-                    let server = &ffi.engine_store_server;
                     (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
                         assert_eq!(1, e.fast_add_peer_count.load(Ordering::SeqCst));
                     });
