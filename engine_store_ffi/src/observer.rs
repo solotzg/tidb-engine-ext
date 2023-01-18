@@ -203,7 +203,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                             } else {
                                 false
                             };
-                            info!("fast path: ongoing {}:{} {}, MsgAppend duplicated.",
+                            info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
                                 self.store_id, region_id, new_peer_id;
                                     "to_peer_id" => msg.get_to_peer().get_id(),
                                     "from_peer_id" => msg.get_from_peer().get_id(),
