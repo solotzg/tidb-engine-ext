@@ -178,24 +178,54 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let mut has_already_inited = None;
         let mut early_skip = false;
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
+            let current = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap();
             match info {
                 MapEntry::Occupied(mut o) => {
+                    // Test if a fast path is timeout
+                    let fast_path_start = o.get().fast_add_peer_start.load(Ordering::SeqCst);
+                    if fast_path_start != 0 {
+                        let elapsed = current.as_millis() - fast_path_start;
+                        #[cfg(any(test, feature = "testexport"))]
+                        const TRACE_SLOW_MILLIS: u128 = 0;
+                        #[cfg(any(test, feature = "testexport"))]
+                        const FALLBACK_MILLIS: u128 = 1000 * 2;
+                        #[cfg(not(any(test, feature = "testexport")))]
+                        const TRACE_SLOW_MILLIS: u128 = 1000 * 60 * 3;
+                        #[cfg(not(any(test, feature = "testexport")))]
+                        const FALLBACK_MILLIS: u128 = 1000 * 60 * 5;
+                        if elapsed >= TRACE_SLOW_MILLIS {
+                            let need_fallback = elapsed > FALLBACK_MILLIS;
+                            let do_fallback = if need_fallback {
+                                // TODO If snapshot is sent, we can't fallback?
+                                true
+                            } else {
+                                false
+                            };
+                            info!("fast path: ongoing {}:{} {}, MsgAppend duplicated.",
+                                self.store_id, region_id, new_peer_id;
+                                    "to_peer_id" => msg.get_to_peer().get_id(),
+                                    "from_peer_id" => msg.get_from_peer().get_id(),
+                                    "region_id" => region_id,
+                                    "inner_msg" => ?inner_msg,
+                                    "is_replicated" => is_replicated,
+                                    "has_already_inited" => has_already_inited,
+                                    "is_first" => is_first,
+                                    "elapsed" => elapsed,
+                                    "do_fallback" => do_fallback,
+                            );
+                            if do_fallback {
+                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                                is_first = false;
+                                early_skip = false;
+                                return;
+                            }
+                        }
+                    }
+                    // If a snapshot is sent, we must skip further handling.
                     let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
                     if last != 0 {
-                        let current = SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap();
-                        info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
-                            self.store_id, region_id, new_peer_id;
-                                "to_peer_id" => msg.get_to_peer().get_id(),
-                                "from_peer_id" => msg.get_from_peer().get_id(),
-                                "region_id" => region_id,
-                                "inner_msg" => ?inner_msg,
-                                "is_replicated" => is_replicated,
-                                "has_already_inited" => has_already_inited,
-                                "is_first" => is_first,
-                                "elapsed" => current.as_millis() - last,
-                        );
                         early_skip = true;
                         // We must return here to avoid changing `inited_or_fallback`.
                         // Otherwise will cause different value in pre/post_apply_snapshot.
@@ -221,6 +251,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         } else {
                             (false, None)
                         };
+                    if is_first {
+                        o.get_mut().fast_add_peer_start.compare_exchange(
+                            0,
+                            current.as_millis(),
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        );
+                    }
                     // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                 }
@@ -231,7 +269,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         "region_id" => region_id,
                         "inner_msg" => ?inner_msg,
                     );
-                    v.insert(Arc::new(CachedRegionInfo::default()));
+                    let mut c = CachedRegionInfo::default();
+                    c.fast_add_peer_start
+                        .store(current.as_millis(), Ordering::SeqCst);
+                    v.insert(Arc::new(c));
                     is_first = true;
                 }
             }
@@ -240,6 +281,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // Try not acquire write lock firstly.
         match cached_manager.get_inited_or_fallback(region_id) {
             Some(true) => {
+                // Most cases, when the peer is already inited.
                 is_first = false;
             }
             None | Some(false) => self
@@ -286,18 +328,16 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             return false;
         }
 
-        {
-            // Peer is not created by Peer::replicate, will cause RegionNotRegistered error,
-            // see `check_msg`.
-            if !is_replicated {
-                info!("fast path: ongoing {}:{} {}, wait replicating peer", self.store_id, region_id, new_peer_id;
-                    "to_peer_id" => msg.get_to_peer().get_id(),
-                    "from_peer_id" => msg.get_from_peer().get_id(),
-                    "region_id" => region_id,
-                    "inner_msg" => ?inner_msg,
-                );
-                return true;
-            }
+        // Peer is not created by Peer::replicate, will cause RegionNotRegistered error,
+        // see `check_msg`.
+        if !is_replicated {
+            info!("fast path: ongoing {}:{} {}, wait replicating peer", self.store_id, region_id, new_peer_id;
+                "to_peer_id" => msg.get_to_peer().get_id(),
+                "from_peer_id" => msg.get_from_peer().get_id(),
+                "region_id" => region_id,
+                "inner_msg" => ?inner_msg,
+            );
+            return true;
         }
 
         info!("fast path: ongoing {}:{} {}, fetch data from remote peer", self.store_id, region_id, new_peer_id;
@@ -377,7 +417,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             Ok(s) => {
                 match s {
                     crate::FastAddPeerStatus::Ok => {
-                        fail::fail_point!("go_fast_path_succeed", |_| { return false });
+                        fail::fail_point!("go_fast_path_not_allow", |_| { return false });
                         info!("fast path: ongoing {}:{} {}, finish build and send", self.store_id, region_id, new_peer_id;
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
@@ -447,6 +487,29 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     ) -> RaftStoreResult<crate::FastAddPeerStatus> {
         let cached_manager = self.get_cached_manager();
         let inner_msg = msg.get_message();
+
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            let fake_send: bool = (|| {
+                fail::fail_point!("fast_add_peer_fake_send", |t| {
+                    let t = t.unwrap().parse::<u64>().unwrap();
+                    t
+                });
+                0
+            })() != 0;
+            if fake_send {
+                // A handling snapshot may block handling later MsgAppend.
+                // So we fake send.
+                let current = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
+                cached_manager
+                    .set_snapshot_inflight(region_id, current.as_millis())
+                    .unwrap();
+                return Ok(crate::FastAddPeerStatus::Ok);
+            }
+        }
+
         // Get a snapshot object.
         let (mut snapshot, key) = {
             // Find term of entry at applied_index.
@@ -550,6 +613,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             pb_snapshot_data,
             apply_state
         );
+
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
                 Ok(_) => {
@@ -1269,7 +1333,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                     MapEntry::Occupied(o) => {
                         let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
                         if is_first_snapsot {
-                            info!("fast path: prehandle first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
+                            info!("fast path: prehandle first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
                             );
@@ -1373,16 +1437,19 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                         let is_first_snapsot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
                         if is_first_snapsot {
                             let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                            let total = o.get().fast_add_peer_start.load(Ordering::SeqCst);
                             let current = SystemTime::now()
                                 .duration_since(SystemTime::UNIX_EPOCH)
                                 .unwrap();
                             info!("fast path: applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
-                                "cost" => current.as_millis() - last,
+                                "cost_snapshot" => current.as_millis() - last,
+                                "cost_total" => current.as_millis() - last,
                             );
                             should_skip = true;
                             o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
+                            o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
                             o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                         }
                     }
