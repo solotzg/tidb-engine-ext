@@ -191,16 +191,17 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
             iter_ffi_helpers(
                 &cluster,
                 Some(vec![3]),
-                &mut |_, _, ffi: &mut FFIHelperSet| {
-                    let server = &ffi.engine_store_server;
-                    (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
-                        // Not actually the case, since we allow handling
-                        // MsgAppend multiple times.
-                        // So the following fires when:
-                        // (DelayedLearner, false, ApplySnapshot)
-                        // assert_eq!(1,
-                        // e.fast_add_peer_count.load(Ordering::SeqCst));
-                    });
+                &mut |_, _, _ffi: &mut FFIHelperSet| {
+                    // Not actually the case, since we allow handling
+                    // MsgAppend multiple times.
+                    // So the following fires when:
+                    // (DelayedLearner, false, ApplySnapshot)
+
+                    // let server = &ffi.engine_store_server;
+                    // (*ffi.engine_store_server).mutate_region_states(1, |e:
+                    // &mut RegionStats| { assert_eq!(1,
+                    // e.fast_add_peer_count.load(Ordering::SeqCst));
+                    // });
                 },
             );
         }
@@ -250,7 +251,7 @@ fn simple_fast_add_peer(source_type: SourceType, block_wait: bool, pause: PauseT
     iter_ffi_helpers(
         &cluster,
         Some(vec![3]),
-        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
+        &mut |_, _, ffi: &mut FFIHelperSet| {
             (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
                 assert!(e.fast_add_peer_count.load(Ordering::SeqCst) > 0);
             });
@@ -495,8 +496,8 @@ fn test_split_no_fast_add() {
     must_wait_until_cond_node(&cluster, 1000, None, &|states: &States| -> bool {
         states.in_disk_region_state.get_region().get_peers().len() == 3
     });
-    let r1_new = cluster.get_region(b"k1"); // 1000
-    let r3_new = cluster.get_region(b"k3"); // 1
+    let _r1_new = cluster.get_region(b"k1"); // 1000
+    let _r3_new = cluster.get_region(b"k3"); // 1
     cluster.must_put(b"k0", b"v0");
     check_key(&cluster, b"k0", b"v0", Some(true), None, None);
 

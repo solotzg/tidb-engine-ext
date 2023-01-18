@@ -676,13 +676,13 @@ pub fn must_not_merged(pd_client: Arc<TestPdClient>, from: u64, duration: Durati
     let timer = tikv_util::time::Instant::now();
     loop {
         let region = futures::executor::block_on(pd_client.get_region_by_id(from)).unwrap();
-        if let Some(r) = region {
+        if let Some(_) = region {
             if timer.saturating_elapsed() > duration {
                 return;
             }
         } else {
             panic!("region {} is merged.", from);
         }
-        std::thread::sleep_ms(10);
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }

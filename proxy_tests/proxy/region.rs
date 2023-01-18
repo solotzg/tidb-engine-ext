@@ -373,7 +373,7 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     iter_ffi_helpers(
         cluster,
         Some(vec![from]),
-        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
+        &mut |_, _, ffi: &mut FFIHelperSet| {
             let server = &mut ffi.engine_store_server;
             maybe_source_region = server.kvstore.get(&region_id).cloned();
         },

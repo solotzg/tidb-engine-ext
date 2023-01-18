@@ -450,6 +450,7 @@ mod restart {
     /// This test is currently not valid, since we can't abort in apply_snap by
     /// failpoint now.
     // #[test]
+    #[warn(dead_code)]
     fn test_snap_restart() {
         let (mut cluster, pd_client) = new_mock_cluster(0, 3);
 
