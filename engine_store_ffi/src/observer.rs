@@ -252,7 +252,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                             (false, None)
                         };
                     if is_first {
-                        o.get_mut().fast_add_peer_start.compare_exchange(
+                        // Don't care if the exchange succeeds.
+                        let _ = o.get_mut().fast_add_peer_start.compare_exchange(
                             0,
                             current.as_millis(),
                             Ordering::SeqCst,
@@ -269,7 +270,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         "region_id" => region_id,
                         "inner_msg" => ?inner_msg,
                     );
-                    let mut c = CachedRegionInfo::default();
+                    let c = CachedRegionInfo::default();
                     c.fast_add_peer_start
                         .store(current.as_millis(), Ordering::SeqCst);
                     v.insert(Arc::new(c));
@@ -1445,7 +1446,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
                                 "cost_snapshot" => current.as_millis() - last,
-                                "cost_total" => current.as_millis() - last,
+                                "cost_total" => current.as_millis() - total,
                             );
                             should_skip = true;
                             o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
