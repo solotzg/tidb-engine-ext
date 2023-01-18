@@ -568,14 +568,16 @@ fn test_fall_back_to_slow_path() {
     // Can always apply snapshot immediately
     fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
     fail::cfg("on_pre_persist_with_finish", "return").unwrap();
-    fail::cfg("ffi_fast_add_peer_fail_after_write", "return(1)").unwrap();
-    fail::cfg("go_fast_path_not_allow", "panic").unwrap();
 
     let _ = cluster.run_conf_change();
 
     cluster.must_put(b"k1", b"v1");
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
     cluster.must_put(b"k2", b"v2");
+
+    fail::cfg("ffi_fast_add_peer_fail_after_write", "return(1)").unwrap();
+    fail::cfg("go_fast_path_not_allow", "panic").unwrap();
+
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
     check_key(&cluster, b"k2", b"v2", Some(true), None, Some(vec![1, 2]));
     must_wait_until_cond_node(&cluster, 1, Some(vec![2]), &|states: &States| -> bool {

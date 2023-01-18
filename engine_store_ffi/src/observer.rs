@@ -346,7 +346,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             "from_peer_id" => msg.get_from_peer().get_id(),
             "region_id" => region_id,
         );
-        fail::fail_point!("go_fast_path_not_allow", |_| { return false });
         fail::fail_point!("ffi_fast_add_peer_pause", |_| { return false });
         // Feed data
         let res = self
