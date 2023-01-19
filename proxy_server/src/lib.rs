@@ -34,7 +34,8 @@ fn proxy_version_info() -> String {
          \nRust Version:      {}\
          \nStorage Engine:    {}\
          \nPrometheus Prefix: {}\
-         \nProfile:           {}",
+         \nProfile:           {}\
+         \nEnable Features:   {}",
         option_env!("PROXY_BUILD_GIT_HASH").unwrap_or(fallback),
         option_env!("PROXY_BUILD_GIT_BRANCH").unwrap_or(fallback),
         option_env!("PROXY_BUILD_TIME").unwrap_or(fallback),
@@ -42,6 +43,7 @@ fn proxy_version_info() -> String {
         option_env!("ENGINE_LABEL_VALUE").unwrap_or(fallback),
         option_env!("PROMETHEUS_METRIC_NAME_PREFIX").unwrap_or(fallback),
         option_env!("PROXY_PROFILE").unwrap_or(fallback),
+        option_env!("ENABLE_FEATURES").unwrap_or(fallback),
     )
 }
 
