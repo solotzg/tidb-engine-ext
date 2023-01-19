@@ -1505,13 +1505,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                 };
                 // According to pre_apply_snapshot, if registered tracer,
                 // then we must have put it into thread pool.
-                let prev = self
+                let _prev = self
                     .engine
                     .pending_applies_count
                     .fetch_sub(1, Ordering::SeqCst);
 
                 #[cfg(any(test, feature = "testexport"))]
-                assert!(prev > 0);
+                assert!(_prev > 0);
 
                 info!("apply snapshot finished";
                     "peer_id" => peer_id,
