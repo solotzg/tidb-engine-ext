@@ -488,6 +488,9 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         let cached_manager = self.get_cached_manager();
         let inner_msg = msg.get_message();
 
+        let current = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
         #[cfg(any(test, feature = "testexport"))]
         {
             let fake_send: bool = (|| {
@@ -500,9 +503,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             if fake_send {
                 // A handling snapshot may block handling later MsgAppend.
                 // So we fake send.
-                let current = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap();
                 cached_manager
                     .set_snapshot_inflight(region_id, current.as_millis())
                     .unwrap();
@@ -617,9 +617,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
                 Ok(_) => {
-                    let current = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap();
                     cached_manager
                         .set_snapshot_inflight(region_id, current.as_millis())
                         .unwrap();
