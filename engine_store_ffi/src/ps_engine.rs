@@ -296,14 +296,13 @@ impl PSEngine {
         if from >= to {
             return Ok(0);
         }
-        // info!("gc_impl raft_group_id {} from {} to {}", raft_group_id, from ,to);
 
         let mut raft_wb = self.log_batch(0);
         for idx in from..to {
-            raft_wb.del_page(&keys::raft_log_key(raft_group_id, idx));
+            raft_wb.del_page(&keys::raft_log_key(raft_group_id, idx))?;
         }
         // TODO: keep the max size of raft_wb under some threshold
-        self.consume(&mut raft_wb, false);
+        self.consume(&mut raft_wb, false)?;
         Ok((to - from) as usize)
     }
 
@@ -399,7 +398,7 @@ impl RaftEngineDebug for PSEngine {
             let mut entry = Entry::default();
             entry.merge_from_bytes(value)?;
             f(&entry)
-        });
+        })?;
         Ok(())
     }
 }
@@ -468,10 +467,10 @@ impl RaftEngine for PSEngine {
         // TODO: find the first raft log index of this raft group
         if first_index <= state.last_index {
             for index in first_index..=state.last_index {
-                batch.del_page(&keys::raft_log_key(raft_group_id, index));
+                batch.del_page(&keys::raft_log_key(raft_group_id, index))?;
             }
         }
-        self.consume(batch, true);
+        self.consume(batch, true)?;
         Ok(())
     }
 
@@ -487,8 +486,8 @@ impl RaftEngine for PSEngine {
 
     fn put_raft_state(&self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
         let mut wb = self.log_batch(0);
-        wb.put_msg(&keys::raft_state_key(raft_group_id), state);
-        self.consume(&mut wb, false);
+        wb.put_msg(&keys::raft_state_key(raft_group_id), state)?;
+        self.consume(&mut wb, false)?;
         Ok(())
     }
 
@@ -522,8 +521,8 @@ impl RaftEngine for PSEngine {
 
     fn put_store_ident(&self, ident: &StoreIdent) -> Result<()> {
         let mut wb = self.log_batch(0);
-        wb.put_msg(keys::STORE_IDENT_KEY, ident);
-        self.consume(&mut wb, false);
+        wb.put_msg(keys::STORE_IDENT_KEY, ident)?;
+        self.consume(&mut wb, false)?;
         Ok(())
     }
 
@@ -557,8 +556,8 @@ impl RaftEngine for PSEngine {
 
     fn put_recover_state(&self, state: &StoreRecoverState) -> Result<()> {
         let mut wb = self.log_batch(0);
-        wb.put_msg(keys::RECOVER_STATE_KEY, state);
-        self.consume(&mut wb, false);
+        wb.put_msg(keys::RECOVER_STATE_KEY, state)?;
+        self.consume(&mut wb, false)?;
         Ok(())
     }
 }

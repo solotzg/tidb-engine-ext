@@ -58,8 +58,8 @@ pub struct RocksWriteBatchVec {
 impl RocksWriteBatchVec {
     pub fn new(
         db: Arc<DB>,
-        ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
-        ps_wb: RawPSWriteBatchWrapper,
+        _ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+        _ps_wb: RawPSWriteBatchWrapper,
         batch_size_limit: usize,
         cap: usize,
         support_write_batch_vec: bool,
