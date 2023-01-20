@@ -327,14 +327,13 @@ impl PSEngine {
         if from >= to {
             return Ok(0);
         }
-        // info!("gc_impl raft_group_id {} from {} to {}", raft_group_id, from ,to);
 
         let mut raft_wb = self.log_batch(0);
         for idx in from..to {
-            raft_wb.del_page(&keys::raft_log_key(raft_group_id, idx));
+            raft_wb.del_page(&keys::raft_log_key(raft_group_id, idx))?;
         }
         // TODO: keep the max size of raft_wb under some threshold
-        self.consume(&mut raft_wb, false);
+        self.consume(&mut raft_wb, false)?;
         Ok((to - from) as usize)
     }
 
@@ -442,7 +441,7 @@ impl RaftEngineDebug for PSEngine {
             let mut entry = Entry::default();
             entry.merge_from_bytes(value)?;
             f(&entry)
-        });
+        })?;
         Ok(())
     }
 }
@@ -511,10 +510,10 @@ impl RaftEngine for PSEngine {
         // TODO: find the first raft log index of this raft group
         if first_index <= state.last_index {
             for index in first_index..=state.last_index {
-                batch.del_page(&keys::raft_log_key(raft_group_id, index));
+                batch.del_page(&keys::raft_log_key(raft_group_id, index))?;
             }
         }
-        self.consume(batch, true);
+        self.consume(batch, true)?;
         Ok(())
     }
 

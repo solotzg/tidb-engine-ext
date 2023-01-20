@@ -25,6 +25,7 @@ pub struct CachedRegionInfo {
     // Otherwise, a normal snapshot will be neglect in `post_apply_snapshot` and cause data loss.
     pub inited_or_fallback: AtomicBool,
     pub snapshot_inflight: portable_atomic::AtomicU128,
+    pub fast_add_peer_start: portable_atomic::AtomicU128,
 }
 
 pub type CachedRegionInfoMap = HashMap<u64, Arc<CachedRegionInfo>>;

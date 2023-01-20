@@ -163,6 +163,12 @@ impl EngineStoreServer {
             }
         }
     }
+
+    pub unsafe fn write_to_db_by_region_id(&mut self, region_id: u64, reason: String) {
+        let kv = &mut self.engines.as_mut().unwrap().kv;
+        let region = self.kvstore.get_mut(&region_id).unwrap();
+        write_to_db_data_by_engine(self.id, kv, region, reason)
+    }
 }
 
 pub struct EngineStoreServerWrap {
@@ -1507,7 +1513,10 @@ unsafe extern "C" fn ffi_fast_add_peer(
                     return;
                 }
             };
-            debug!("recover from remote peer: data from {} to {}", from_store, store_id; "region_id" => region_id);
+            debug!("recover from remote peer: begin data from {} to {}", from_store, store_id; 
+                "region_id" => region_id,
+                "apply_state" => ?apply_state,
+            );
             // TODO In TiFlash we should take care of write batch size
             if let Err(e) = copy_data_from(
                 &source_engines,
