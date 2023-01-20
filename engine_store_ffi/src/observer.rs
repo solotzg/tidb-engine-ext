@@ -24,9 +24,8 @@ use raftstore::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
         BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
         BoxRoleObserver, BoxUpdateSafeTsObserver, Cmd, Coprocessor, CoprocessorHost,
-        ObserverContext, PdTaskObserver, PeerCreateEvent, QueryObserver, RegionChangeEvent,
-        RegionChangeObserver, RegionState, RoleChange, RoleObserver, StoreSizeInfo,
-        UpdateSafeTsObserver,
+        ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent, RegionChangeObserver,
+        RegionState, RoleChange, RoleObserver, StoreSizeInfo, UpdateSafeTsObserver,
     },
     store::{
         self, check_sst_for_ingestion,
@@ -1195,8 +1194,6 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         }
         false
     }
-
-    fn on_peer_created(&self, region_id: u64, peer_id: u64, event: PeerCreateEvent) {}
 }
 
 impl<T: Transport + 'static, ER: RaftEngine> PdTaskObserver for TiFlashObserver<T, ER> {
