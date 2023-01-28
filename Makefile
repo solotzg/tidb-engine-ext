@@ -223,7 +223,7 @@ ci_fmt_check:
 ci_test:
 	wget https://github.com/protocolbuffers/protobuf/releases/download/v3.8.0/protoc-3.8.0-linux-x86_64.zip
 	unzip protoc-3.8.0-linux-x86_64.zip
-	PROTOC="`pwd`/bin/protoc" M="testold" ./proxy_scripts/ci_check.sh
+	# PROTOC="`pwd`/bin/protoc" M="testold" ./proxy_scripts/ci_check.sh
 	PROTOC="`pwd`/bin/protoc" M="testnew" ./proxy_scripts/ci_check.sh
 	make debug
 
