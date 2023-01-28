@@ -163,6 +163,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             // fast path not enabled
             return false;
         }
+        let inner_msg = msg.get_message();
+        if inner_msg.get_commit() == 0 && inner_msg.get_msg_type() == MessageType::MsgHeartbeat {
+            return false;
+        } else if inner_msg.get_msg_type() == MessageType::MsgAppend {
+        } else {
+            return false;
+        }
         // TODO We don't need to recover all region infomation from restart,
         // since we have `has_already_inited`.
         let inner_msg = msg.get_message();
@@ -1187,12 +1194,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
     }
 
     fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
-        let inner_msg = msg.get_message();
-        if inner_msg.get_commit() == 0 && inner_msg.get_msg_type() == MessageType::MsgHeartbeat {
-        } else if inner_msg.get_msg_type() == MessageType::MsgAppend {
-            return self.maybe_fast_path(&msg);
-        }
-        false
+        self.maybe_fast_path(&msg)
     }
 }
 
