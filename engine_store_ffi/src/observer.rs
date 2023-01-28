@@ -23,9 +23,9 @@ use raftstore::{
     coprocessor::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
         BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
-        BoxUpdateSafeTsObserver, Cmd, Coprocessor, CoprocessorHost, ObserverContext,
-        PdTaskObserver, PeerCreateEvent, QueryObserver, RegionChangeEvent, RegionChangeObserver,
-        RegionState, StoreSizeInfo, UpdateSafeTsObserver,
+        BoxRoleObserver, BoxUpdateSafeTsObserver, Cmd, Coprocessor, CoprocessorHost,
+        ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent, RegionChangeObserver,
+        RegionState, RoleChange, RoleObserver, StoreSizeInfo, UpdateSafeTsObserver,
     },
     store::{
         self, check_sst_for_ingestion,
@@ -161,6 +161,13 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
     pub fn maybe_fast_path(&self, msg: &RaftMessage) -> bool {
         if !self.engine_store_cfg.enable_fast_add_peer {
             // fast path not enabled
+            return false;
+        }
+        let inner_msg = msg.get_message();
+        if inner_msg.get_commit() == 0 && inner_msg.get_msg_type() == MessageType::MsgHeartbeat {
+            return false;
+        } else if inner_msg.get_msg_type() == MessageType::MsgAppend {
+        } else {
             return false;
         }
         // TODO We don't need to recover all region infomation from restart,
@@ -697,6 +704,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             TIFLASH_OBSERVER_PRIORITY,
             BoxUpdateSafeTsObserver::new(self.clone()),
         );
+        coprocessor_host.registry.register_role_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxRoleObserver::new(self.clone()),
+        );
     }
 
     fn handle_ingest_sst_for_engine_store(
@@ -1183,37 +1194,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
     }
 
     fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
-        let inner_msg = msg.get_message();
-        if inner_msg.get_commit() == 0 && inner_msg.get_msg_type() == MessageType::MsgHeartbeat {
-        } else if inner_msg.get_msg_type() == MessageType::MsgAppend {
-            return self.maybe_fast_path(&msg);
-        }
-        false
-    }
-
-    fn on_peer_created(&self, region_id: u64, peer_id: u64, event: PeerCreateEvent) {
-        if event == PeerCreateEvent::Replicate {
-            let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {
-                    o.get_mut()
-                        .replicated_or_created
-                        .store(true, Ordering::SeqCst);
-                }
-                MapEntry::Vacant(v) => {
-                    let c = CachedRegionInfo::default();
-                    c.replicated_or_created.store(true, Ordering::SeqCst);
-                    v.insert(Arc::new(c));
-                }
-            };
-            info!("fast path: ongoing {}:{} {}, peer created",
-                self.store_id, region_id, peer_id;
-                "region_id" => region_id,
-            );
-            // TODO remove unwrap
-            self.get_cached_manager()
-                .access_cached_region_info_mut(region_id, f)
-                .unwrap();
-        }
+        self.maybe_fast_path(&msg)
     }
 }
 
@@ -1563,5 +1544,44 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
 
     fn should_pre_apply_snapshot(&self) -> bool {
         true
+    }
+}
+
+impl<T: Transport + 'static, ER: RaftEngine> RoleObserver for TiFlashObserver<T, ER> {
+    fn on_role_change(&self, ctx: &mut ObserverContext<'_>, r: &RoleChange) {
+        let region_id = ctx.region().get_id();
+        let is_replicated = !r.initialized;
+        let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+            MapEntry::Occupied(mut o) => {
+                // Note the region info may be registered by maybe_fast_path
+                info!("fast path: ongoing {}:{} {}, peer created",
+                    self.store_id, region_id, 0;
+                    "region_id" => region_id,
+                    "is_replicated" => is_replicated,
+                );
+                if is_replicated {
+                    o.get_mut()
+                        .replicated_or_created
+                        .store(true, Ordering::SeqCst);
+                }
+            }
+            MapEntry::Vacant(v) => {
+                // TODO support peer_id
+                info!("fast path: ongoing {}:{} {}, peer created",
+                    self.store_id, region_id, 0;
+                    "region_id" => region_id,
+                    "is_replicated" => is_replicated,
+                );
+                if is_replicated {
+                    let c = CachedRegionInfo::default();
+                    c.replicated_or_created.store(true, Ordering::SeqCst);
+                    v.insert(Arc::new(c));
+                }
+            }
+        };
+        // TODO remove unwrap
+        self.get_cached_manager()
+            .access_cached_region_info_mut(region_id, f)
+            .unwrap();
     }
 }

@@ -33,7 +33,7 @@ pub use self::{
     dispatcher::{
         BoxAdminObserver, BoxApplySnapshotObserver, BoxCmdObserver, BoxConsistencyCheckObserver,
         BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, BoxRoleObserver,
-        BoxSplitCheckObserver, BoxUpdateSafeTsObserver, CoprocessorHost, Registry,
+        BoxSplitCheckObserver, BoxUpdateSafeTsObserver, CoprocessorHost, Registry, StoreHandle,
     },
     error::{Error, Result},
     region_info_accessor::{
@@ -268,15 +268,18 @@ pub struct RoleChange {
     pub prev_lead_transferee: u64,
     /// Which peer is voted by itself.
     pub vote: u64,
+    pub initialized: bool,
 }
 
 impl RoleChange {
+    #[cfg(feature = "testexport")]
     pub fn new(state: StateRole) -> Self {
         RoleChange {
             state,
             leader_id: raft::INVALID_ID,
             prev_lead_transferee: raft::INVALID_ID,
             vote: raft::INVALID_ID,
+            initialized: true,
         }
     }
 }
@@ -307,11 +310,6 @@ pub enum RegionChangeEvent {
     UpdateBuckets(usize),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PeerCreateEvent {
-    Replicate,
-    Create,
-}
 pub trait RegionChangeObserver: Coprocessor {
     /// Hook to call when a region changed on this TiKV
     fn on_region_changed(&self, _: &mut ObserverContext<'_>, _: RegionChangeEvent, _: StateRole) {}
@@ -337,8 +335,6 @@ pub trait RegionChangeObserver: Coprocessor {
     fn should_skip_raft_message(&self, _: &RaftMessage) -> bool {
         false
     }
-
-    fn on_peer_created(&self, _: u64, _: u64, _: PeerCreateEvent) {}
 }
 
 #[derive(Clone, Debug, Default)]

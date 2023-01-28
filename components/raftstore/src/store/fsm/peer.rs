@@ -54,7 +54,7 @@ use tikv_util::{
     box_err, debug, defer, error, escape, info, is_zero_duration,
     mpsc::{self, LooseBoundedSender, Receiver},
     store::{find_peer, is_learner, region_on_same_stores},
-    sys::{disk::DiskUsage, memory_usage_reaches_high_water},
+    sys::disk::DiskUsage,
     time::{duration_to_sec, monotonic_raw_now, Instant as TiInstant},
     trace, warn,
     worker::{ScheduleError, Scheduler},
@@ -67,7 +67,7 @@ use self::memtrace::*;
 #[cfg(any(test, feature = "testexport"))]
 use crate::store::PeerInternalStat;
 use crate::{
-    coprocessor::{CoprocessorHost, PeerCreateEvent, RegionChangeEvent, RegionChangeReason},
+    coprocessor::{RegionChangeEvent, RegionChangeReason},
     store::{
         cmd_resp::{bind_term, new_error},
         entry_storage::MAX_WARMED_UP_CACHE_KEEP_TIME,
@@ -247,7 +247,6 @@ where
         raftlog_fetch_scheduler: Scheduler<ReadTask<EK>>,
         engines: Engines<EK, ER>,
         region: &metapb::Region,
-        coprocessor_host: &CoprocessorHost<EK>,
     ) -> Result<SenderFsmPair<EK, ER>> {
         let meta_peer = match find_peer(region, store_id) {
             None => {
@@ -267,11 +266,6 @@ where
         );
         HIBERNATED_PEER_STATE_GAUGE.awaken.inc();
         let (tx, rx) = mpsc::loose_bounded(cfg.notify_capacity);
-        coprocessor_host.on_peer_created(
-            region.get_id(),
-            meta_peer.get_id(),
-            PeerCreateEvent::Create,
-        );
         Ok((
             tx,
             Box::new(PeerFsm {
@@ -313,7 +307,6 @@ where
         engines: Engines<EK, ER>,
         region_id: u64,
         peer: metapb::Peer,
-        coprocessor_host: &CoprocessorHost<EK>,
     ) -> Result<SenderFsmPair<EK, ER>> {
         // We will remove tombstone key when apply snapshot
         info!(
@@ -327,7 +320,6 @@ where
 
         HIBERNATED_PEER_STATE_GAUGE.awaken.inc();
         let (tx, rx) = mpsc::loose_bounded(cfg.notify_capacity);
-        coprocessor_host.on_peer_created(region_id, peer.get_id(), PeerCreateEvent::Replicate);
         Ok((
             tx,
             Box::new(PeerFsm {
@@ -1133,6 +1125,8 @@ where
                     store.apply_state(),
                     self.fsm.hibernate_state.group_state(),
                     peer.raft_group.status(),
+                    peer.raft_group.raft.raft_log.last_index(),
+                    peer.raft_group.raft.raft_log.persisted,
                 ))
             }
             CasualMessage::QueryRegionLeaderResp { region, leader } => {
@@ -1345,7 +1339,7 @@ where
             new_read_index_request(region_id, region_epoch.clone(), self.fsm.peer.peer.clone());
         // Allow to capture change even is in flashback state.
         // TODO: add a test case for this kind of situation.
-        if self.fsm.peer.is_in_flashback {
+        if self.region().is_in_flashback {
             let mut flags = WriteBatchFlags::from_bits_check(msg.get_header().get_flags());
             flags.insert(WriteBatchFlags::FLASHBACK);
             msg.mut_header().set_flags(flags.bits());
@@ -4021,7 +4015,6 @@ where
                 self.ctx.raftlog_fetch_scheduler.clone(),
                 self.ctx.engines.clone(),
                 &new_region,
-                &self.ctx.coprocessor_host,
             ) {
                 Ok((sender, new_peer)) => (sender, new_peer),
                 Err(e) => {
@@ -4906,9 +4899,7 @@ where
                 }
                 ExecResult::IngestSst { ssts } => self.on_ingest_sst_result(ssts),
                 ExecResult::TransferLeader { term } => self.on_transfer_leader(term),
-                ExecResult::SetFlashbackState { region } => {
-                    self.on_set_flashback_state(region.get_is_in_flashback())
-                }
+                ExecResult::SetFlashbackState { region } => self.on_set_flashback_state(region),
             }
         }
 
@@ -4999,7 +4990,7 @@ where
         msg: &RaftCmdRequest,
     ) -> Result<Option<RaftCmdResponse>> {
         // Check store_id, make sure that the msg is dispatched to the right place.
-        if let Err(e) = util::check_store_id(msg, self.store_id()) {
+        if let Err(e) = util::check_store_id(msg.get_header(), self.store_id()) {
             self.ctx
                 .raft_metrics
                 .invalid_proposal
@@ -5018,7 +5009,7 @@ where
         let request = msg.get_requests();
 
         // peer_id must be the same as peer's.
-        if let Err(e) = util::check_peer_id(msg, self.fsm.peer.peer_id()) {
+        if let Err(e) = util::check_peer_id(msg.get_header(), self.fsm.peer.peer_id()) {
             self.ctx
                 .raft_metrics
                 .invalid_proposal
@@ -5042,13 +5033,12 @@ where
         // ReadIndex can be processed on the replicas.
         let is_read_index_request =
             request.len() == 1 && request[0].get_cmd_type() == CmdType::ReadIndex;
-        let mut read_only = true;
-        for r in msg.get_requests() {
-            match r.get_cmd_type() {
-                CmdType::Get | CmdType::Snap | CmdType::ReadIndex => (),
-                _ => read_only = false,
-            }
-        }
+        let read_only = msg.get_requests().iter().all(|r| {
+            matches!(
+                r.get_cmd_type(),
+                CmdType::Get | CmdType::Snap | CmdType::ReadIndex,
+            )
+        });
         let region_id = self.region_id();
         let allow_replica_read = read_only && msg.get_header().get_replica_read();
         let flags = WriteBatchFlags::from_bits_check(msg.get_header().get_flags());
@@ -5099,12 +5089,12 @@ where
             )));
         }
         // Check whether the term is stale.
-        if let Err(e) = util::check_term(msg, self.fsm.peer.term()) {
+        if let Err(e) = util::check_term(msg.get_header(), self.fsm.peer.term()) {
             self.ctx.raft_metrics.invalid_proposal.stale_command.inc();
             return Err(e);
         }
 
-        match util::check_region_epoch(msg, self.fsm.peer.region(), true) {
+        match util::check_req_region_epoch(msg, self.fsm.peer.region(), true) {
             Err(Error::EpochNotMatch(m, mut new_regions)) => {
                 // Attach the region which might be split from the current region. But it
                 // doesn't matter if the region is not split from the current region. If the
@@ -5119,8 +5109,15 @@ where
             _ => {}
         };
         // Check whether the region is in the flashback state and the request could be
-        // proposed.
-        if let Err(e) = util::check_flashback_state(self.fsm.peer.is_in_flashback, msg, region_id) {
+        // proposed. Skip the not prepared error because the
+        // `self.region().is_in_flashback` may not be the latest right after applying
+        // the `PrepareFlashback` admin command, we will let it pass here and check in
+        // the apply phase and because a read-only request doesn't need to be applied,
+        // so it will be allowed during the flashback progress, for example, a snapshot
+        // request.
+        if let Err(e) =
+            util::check_flashback_state(self.region().is_in_flashback, msg, region_id, true)
+        {
             match e {
                 Error::FlashbackInProgress(_) => self
                     .ctx
@@ -5431,12 +5428,9 @@ where
         fail_point!("on_entry_cache_evict_tick", |_| {});
         if needs_evict_entry_cache(self.ctx.cfg.evict_cache_on_memory_ratio) {
             self.fsm.peer.mut_store().evict_entry_cache(true);
-        }
-        let mut _usage = 0;
-        if memory_usage_reaches_high_water(&mut _usage)
-            && !self.fsm.peer.get_store().is_entry_cache_empty()
-        {
-            self.register_entry_cache_evict_tick();
+            if !self.fsm.peer.get_store().is_entry_cache_empty() {
+                self.register_entry_cache_evict_tick();
+            }
         }
     }
 
@@ -5561,7 +5555,34 @@ where
             "split_keys" => %KeysInfoFormatter(split_keys.iter()),
             "source" => source,
         );
-        if let Err(e) = self.validate_split_region(&region_epoch, &split_keys) {
+
+        if !self.fsm.peer.is_leader() {
+            // region on this store is no longer leader, skipped.
+            info!(
+                "not leader, skip proposing split";
+                "region_id" => self.fsm.region_id(),
+                "peer_id" => self.fsm.peer_id(),
+            );
+            cb.invoke_with_response(new_error(Error::NotLeader(
+                self.region_id(),
+                self.fsm.peer.get_peer_from_cache(self.fsm.peer.leader_id()),
+            )));
+            return;
+        }
+        if let Err(e) = util::validate_split_region(
+            self.fsm.region_id(),
+            self.fsm.peer_id(),
+            self.region(),
+            &region_epoch,
+            &split_keys,
+        ) {
+            info!(
+                "invalid split request";
+                "err" => ?e,
+                "region_id" => self.fsm.region_id(),
+                "peer_id" => self.fsm.peer_id(),
+                "source" => %source
+            );
             cb.invoke_with_response(new_error(e));
             return;
         }
@@ -5589,70 +5610,6 @@ where
                 _ => unreachable!(),
             }
         }
-    }
-
-    fn validate_split_region(
-        &mut self,
-        epoch: &metapb::RegionEpoch,
-        split_keys: &[Vec<u8>],
-    ) -> Result<()> {
-        if split_keys.is_empty() {
-            error!(
-                "no split key is specified.";
-                "region_id" => self.fsm.region_id(),
-                "peer_id" => self.fsm.peer_id(),
-            );
-            return Err(box_err!("{} no split key is specified.", self.fsm.peer.tag));
-        }
-        for key in split_keys {
-            if key.is_empty() {
-                error!(
-                    "split key should not be empty!!!";
-                    "region_id" => self.fsm.region_id(),
-                    "peer_id" => self.fsm.peer_id(),
-                );
-                return Err(box_err!(
-                    "{} split key should not be empty",
-                    self.fsm.peer.tag
-                ));
-            }
-        }
-        if !self.fsm.peer.is_leader() {
-            // region on this store is no longer leader, skipped.
-            info!(
-                "not leader, skip.";
-                "region_id" => self.fsm.region_id(),
-                "peer_id" => self.fsm.peer_id(),
-            );
-            return Err(Error::NotLeader(
-                self.region_id(),
-                self.fsm.peer.get_peer_from_cache(self.fsm.peer.leader_id()),
-            ));
-        }
-
-        let region = self.fsm.peer.region();
-        let latest_epoch = region.get_region_epoch();
-
-        // This is a little difference for `check_region_epoch` in region split case.
-        // Here we just need to check `version` because `conf_ver` will be update
-        // to the latest value of the peer, and then send to PD.
-        if latest_epoch.get_version() != epoch.get_version() {
-            info!(
-                "epoch changed, retry later";
-                "region_id" => self.fsm.region_id(),
-                "peer_id" => self.fsm.peer_id(),
-                "prev_epoch" => ?region.get_region_epoch(),
-                "epoch" => ?epoch,
-            );
-            return Err(Error::EpochNotMatch(
-                format!(
-                    "{} epoch changed {:?} != {:?}, retry later",
-                    self.fsm.peer.tag, latest_epoch, epoch
-                ),
-                vec![region.to_owned()],
-            ));
-        }
-        Ok(())
     }
 
     fn on_approximate_region_size(&mut self, size: u64) {
@@ -6288,9 +6245,17 @@ where
         self.fsm.has_ready = true;
     }
 
-    fn on_set_flashback_state(&mut self, is_in_flashback: bool) {
-        // Set flashback memory
-        self.fsm.peer.is_in_flashback = is_in_flashback;
+    fn on_set_flashback_state(&mut self, region: metapb::Region) {
+        // Update the region meta.
+        self.update_region((|| {
+            #[cfg(feature = "failpoints")]
+            fail_point!("keep_peer_fsm_flashback_state_false", |_| {
+                let mut region = region.clone();
+                region.is_in_flashback = false;
+                region
+            });
+            region
+        })());
         // Let the leader lease to None to ensure that local reads are not executed.
         self.fsm.peer.leader_lease_mut().expire_remote_lease();
     }
