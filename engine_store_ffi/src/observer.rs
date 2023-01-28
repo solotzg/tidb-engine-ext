@@ -708,6 +708,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             TIFLASH_OBSERVER_PRIORITY,
             BoxRoleObserver::new(self.clone()),
         );
+        coprocessor_host.registry.register_message_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            raftstore::coprocessor::BoxMessageObserver::new(self.clone()),
+        );
     }
 
     fn handle_ingest_sst_for_engine_store(
@@ -1192,9 +1196,13 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         fail::fail_point!("on_pre_persist_with_finish", |_| { true });
         false
     }
+}
 
+impl<T: Transport + 'static, ER: RaftEngine> raftstore::coprocessor::MessageObserver
+    for TiFlashObserver<T, ER>
+{
     fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
-        self.maybe_fast_path(&msg)
+        self.maybe_fast_path(msg)
     }
 }
 

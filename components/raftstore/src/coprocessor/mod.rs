@@ -32,8 +32,9 @@ pub use self::{
     consistency_check::{ConsistencyCheckObserver, Raw as RawConsistencyCheckObserver},
     dispatcher::{
         BoxAdminObserver, BoxApplySnapshotObserver, BoxCmdObserver, BoxConsistencyCheckObserver,
-        BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver, BoxRoleObserver,
-        BoxSplitCheckObserver, BoxUpdateSafeTsObserver, CoprocessorHost, Registry, StoreHandle,
+        BoxMessageObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
+        BoxRoleObserver, BoxSplitCheckObserver, BoxUpdateSafeTsObserver, CoprocessorHost, Registry,
+        StoreHandle,
     },
     error::{Error, Result},
     region_info_accessor::{
@@ -331,7 +332,9 @@ pub trait RegionChangeObserver: Coprocessor {
     fn pre_write_apply_state(&self, _: &mut ObserverContext<'_>) -> bool {
         true
     }
+}
 
+pub trait MessageObserver: Coprocessor {
     fn should_skip_raft_message(&self, _: &RaftMessage) -> bool {
         false
     }
