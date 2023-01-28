@@ -145,8 +145,9 @@ fn test_get_region_local_state() {
 }
 
 /// This test is very important.
-/// If make sure we can add learner peer for a store which is not started
+/// It make sure we can add learner peer for a store which is not started
 /// actually.
+/// We don't start the absent learner peer in this test.
 #[test]
 fn test_add_absent_learner_peer_by_simple() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
@@ -181,8 +182,9 @@ fn test_add_absent_learner_peer_by_simple() {
 }
 
 /// This test is very important.
-/// If make sure we can add learner peer for a store which is not started
+/// It make sure we can add learner peer for a store which is not started
 /// actually.
+/// We don't start the absent learner peer in this test.
 #[test]
 fn test_add_absent_learner_peer_by_joint() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
@@ -317,6 +319,8 @@ fn later_bootstrap_learner_peer(
     }
 }
 
+/// We start the absent learner peer in this test.
+/// We don't try to reuse data from other learner peer.
 #[test]
 fn test_add_delayed_started_learner_by_joint() {
     let (mut cluster, pd_client) = new_later_add_learner_cluster(
@@ -429,6 +433,9 @@ fn recover_from_peer(cluster: &Cluster<NodeCluster>, from: u64, to: u64, region_
     }
 }
 
+/// We start the absent learner peer in this test.
+/// We try to reuse data from other learner peer.
+/// We don't use a snapshot to initialize a peer.
 #[test]
 fn test_add_delayed_started_learner_no_snapshot() {
     // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
@@ -471,6 +478,8 @@ fn test_add_delayed_started_learner_no_snapshot() {
     later_bootstrap_learner_peer(&mut cluster, vec![5], 1);
     // After that, we manually compose data, to avoid snapshot sending.
     recover_from_peer(&cluster, 4, 5, 1);
+
+    cluster.must_put(b"m1", b"v1");
     // Add node 5 to cluster.
     pd_client.must_add_peer(1, new_learner_peer(5, 5));
 
@@ -515,6 +524,9 @@ fn test_add_delayed_started_learner_no_snapshot() {
     // fail::remove("before_tiflash_do_write");
 }
 
+/// We start the absent learner peer in this test.
+/// We try to reuse data from other learner peer.
+/// We use a snapshot to initialize a peer.
 #[test]
 fn test_add_delayed_started_learner_snapshot() {
     let (mut cluster, pd_client) = new_later_add_learner_cluster(
