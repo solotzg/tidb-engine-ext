@@ -609,8 +609,32 @@ pub fn must_wait_until_cond_node(
                         break;
                     }
                 }
+            } else {
+                // If region not exists in some store.
+                ok = false;
             }
         }
+        if ok {
+            break new_states;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        retry += 1;
+        if retry >= 30 {
+            panic!("states not as expect after timeout")
+        }
+    }
+}
+
+pub fn must_wait_until_cond_generic(
+    cluster: &Cluster<NodeCluster>,
+    region_id: u64,
+    store_ids: Option<Vec<u64>>,
+    pred: &dyn Fn(&HashMap<u64, States>) -> bool,
+) -> HashMap<u64, States> {
+    let mut retry = 0;
+    loop {
+        let new_states = maybe_collect_states(&cluster, region_id, store_ids.clone());
+        let ok = pred(&new_states);
         if ok {
             break new_states;
         }

@@ -1189,7 +1189,11 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
     }
 
     fn pre_write_apply_state(&self, _ob_ctx: &mut ObserverContext<'_>) -> bool {
-        fail::fail_point!("on_pre_persist_with_finish", |_| { true });
+        fail::fail_point!("on_pre_persist_with_finish", |_| {
+            // Some test need persist apply state for Leader logic,
+            // including fast add peer.
+            true
+        });
         false
     }
 
