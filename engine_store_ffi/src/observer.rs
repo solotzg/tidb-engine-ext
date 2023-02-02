@@ -82,6 +82,11 @@ unsafe impl Sync for PrehandleTask {}
 // avoid being bypassed.
 const TIFLASH_OBSERVER_PRIORITY: u32 = 0;
 
+pub struct PackedEnvs {
+    pub engine_store_cfg: crate::EngineStoreConfig,
+    pub pd_endpoints: Vec<String>,
+}
+
 pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub store_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
@@ -95,7 +100,7 @@ pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     // TODO should we use a Mutex here?
     pub trans: Arc<Mutex<T>>,
     pub snap_mgr: Arc<SnapManager>,
-    pub engine_store_cfg: crate::EngineStoreConfig,
+    pub packed_envs: Arc<PackedEnvs>,
 }
 
 pub fn get_region_local_state<EK: engine_traits::KvEngine>(
@@ -133,7 +138,7 @@ impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
             pending_delete_ssts: self.pending_delete_ssts.clone(),
             trans: self.trans.clone(),
             snap_mgr: self.snap_mgr.clone(),
-            engine_store_cfg: self.engine_store_cfg.clone(),
+            packed_envs: self.packed_envs.clone(),
         }
     }
 }
@@ -159,7 +164,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
 
     // Returns whether we need to ignore this message and run fast path instead.
     pub fn maybe_fast_path(&self, msg: &RaftMessage) -> bool {
-        if !self.engine_store_cfg.enable_fast_add_peer {
+        if !self.packed_envs.engine_store_cfg.enable_fast_add_peer {
             // fast path not enabled
             return false;
         }
@@ -650,7 +655,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         snap_handle_pool_size: usize,
         trans: T,
         snap_mgr: SnapManager,
-        engine_store_cfg: crate::EngineStoreConfig,
+        packed_envs: PackedEnvs,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
@@ -671,7 +676,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
             trans: Arc::new(Mutex::new(trans)),
             snap_mgr: Arc::new(snap_mgr),
-            engine_store_cfg,
+            packed_envs: Arc::new(packed_envs),
         }
     }
 
@@ -1143,7 +1148,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
             );
             self.engine_store_server_helper
                 .handle_destroy(ob_ctx.region().get_id());
-            if self.engine_store_cfg.enable_fast_add_peer {
+            if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
                 self.get_cached_manager()
                     .remove_cached_region_info(region_id);
             }
@@ -1308,7 +1313,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
 
         let mut should_skip = false;
         #[allow(clippy::collapsible_if)]
-        if self.engine_store_cfg.enable_fast_add_peer {
+        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
             if self.get_cached_manager().access_cached_region_info_mut(
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
@@ -1411,7 +1416,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
         );
         let mut should_skip = false;
         #[allow(clippy::collapsible_if)]
-        if self.engine_store_cfg.enable_fast_add_peer {
+        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
             if self.get_cached_manager().access_cached_region_info_mut(
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
