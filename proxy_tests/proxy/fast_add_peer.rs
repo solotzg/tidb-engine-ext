@@ -590,3 +590,61 @@ fn test_fall_back_to_slow_path() {
     fail::remove("go_fast_path_not_allow");
     cluster.shutdown();
 }
+
+#[test]
+fn test_single_replica_migrate() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+    pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("on_can_apply_snapshot", "return(true)").unwrap();
+    fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+
+    // Fast add peer 2
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
+    must_wait_until_cond_node(&cluster, 1, Some(vec![2]), &|states: &States| -> bool {
+        find_peer_by_id(states.in_disk_region_state.get_region(), 2).is_some()
+    });
+
+    fail::cfg("ffi_fast_add_peer_from_id", "return(2)").unwrap();
+
+    // Remove peer 2.
+    pd_client.must_remove_peer(1, new_learner_peer(2, 2));
+    must_wait_until_cond_generic(
+        &cluster,
+        1,
+        None,
+        &|states: &HashMap<u64, States>| -> bool { states.get(&2).is_none() },
+    );
+
+    // Remove peer 2 and then add some new logs.
+    cluster.must_put(b"krm2", b"v");
+    check_key(&cluster, b"krm2", b"v", Some(true), None, Some(vec![1]));
+
+    // Try fast add peer from removed peer 2.
+    // TODO It will fallback to slow path if we don't support single replica
+    // migration.
+    fail::cfg("go_fast_path_not_allow", "panic").unwrap();
+    pd_client.must_add_peer(1, new_learner_peer(3, 3));
+    check_key(&cluster, b"krm2", b"v", Some(true), None, Some(vec![3]));
+    std::thread::sleep(std::time::Duration::from_millis(2000));
+    must_wait_until_cond_generic(
+        &cluster,
+        1,
+        None,
+        &|states: &HashMap<u64, States>| -> bool { states.get(&3).is_some() },
+    );
+    fail::remove("go_fast_path_not_allow");
+
+    fail::remove("on_can_apply_snapshot");
+    fail::remove("on_pre_persist_with_finish");
+    cluster.shutdown();
+}
