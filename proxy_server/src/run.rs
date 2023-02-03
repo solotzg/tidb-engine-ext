@@ -1230,8 +1230,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
 
         let packed_envs = engine_store_ffi::observer::PackedEnvs {
-            engine_store_cfg: cfg.proxy_cfg.engine_store.clone(),
-            pd_endpoints: cfg.pd.endpoints.clone(),
+            engine_store_cfg: self.proxy_config.engine_store.clone(),
+            pd_endpoints: self.config.pd.endpoints.clone(),
         };
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node.id(),
