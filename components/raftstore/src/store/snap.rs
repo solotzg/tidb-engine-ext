@@ -207,6 +207,8 @@ fn retry_delete_snapshot(mgr: &SnapManagerCore, key: &SnapKey, snap: &Snapshot) 
     false
 }
 
+// Create a SnapshotMeta that can be later put into RaftSnapshotData or written
+// into file.
 pub fn gen_snapshot_meta(cf_files: &[CfFile], for_balance: bool) -> RaftStoreResult<SnapshotMeta> {
     let mut meta = Vec::with_capacity(cf_files.len());
     for cf_file in cf_files {
@@ -420,7 +422,7 @@ impl CfFile {
 }
 
 #[derive(Default)]
-pub struct MetaFile {
+struct MetaFile {
     pub meta: Option<SnapshotMeta>,
     pub path: PathBuf,
     pub file: Option<File>,
@@ -663,6 +665,7 @@ impl Snapshot {
         Ok(snapshot_meta)
     }
 
+    // Validate and set SnapshotMeta of this Snapshot.
     pub fn set_snapshot_meta(&mut self, snapshot_meta: SnapshotMeta) -> RaftStoreResult<()> {
         let mut cf_file_count_from_meta: Vec<usize> = vec![];
         let mut file_count = 0;
@@ -2003,7 +2006,12 @@ impl TabletSnapManager {
             {
                 continue;
             }
-            for e in file_system::read_dir(path)? {
+            let entries = match file_system::read_dir(path) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(Error::from(e)),
+            };
+            for e in entries {
                 match e.and_then(|e| e.metadata()) {
                     Ok(m) => total_size += m.len(),
                     Err(e) if e.kind() == ErrorKind::NotFound => continue,
@@ -2154,7 +2162,7 @@ pub mod tests {
             apply_entry.set_term(0);
             apply_state.mut_truncated_state().set_index(10);
             kv.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
-            lb.append(region_id, vec![apply_entry])?;
+            lb.append(region_id, None, vec![apply_entry])?;
 
             // Put region info into kv engine.
             let region = gen_test_region(region_id, 1, 1);

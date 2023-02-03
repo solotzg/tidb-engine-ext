@@ -1545,7 +1545,8 @@ unsafe extern "C" fn ffi_fast_add_peer(
                     "from" => from,
                     "to" => to,
                 );
-                raft_wb.cut_logs(region_id, from, to);
+                // raft_wb.cut_logs(region_id, from, to);
+                target_engines.raft.gc(region_id, from, to, &mut raft_wb).unwrap();
                 target_engines.raft.consume(&mut raft_wb, true).unwrap();
             }
             let apply_state_bytes = apply_state.write_to_bytes().unwrap();
