@@ -22,10 +22,11 @@ use raft::{eraftpb, eraftpb::MessageType, StateRole};
 use raftstore::{
     coprocessor::{
         AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
-        BoxApplySnapshotObserver, BoxPdTaskObserver, BoxQueryObserver, BoxRegionChangeObserver,
-        BoxRoleObserver, BoxUpdateSafeTsObserver, Cmd, Coprocessor, CoprocessorHost,
-        ObserverContext, PdTaskObserver, QueryObserver, RegionChangeEvent, RegionChangeObserver,
-        RegionState, RoleChange, RoleObserver, StoreSizeInfo, UpdateSafeTsObserver,
+        BoxApplySnapshotObserver, BoxMessageObserver, BoxPdTaskObserver, BoxQueryObserver,
+        BoxRegionChangeObserver, BoxRoleObserver, BoxUpdateSafeTsObserver, Cmd, Coprocessor,
+        CoprocessorHost, MessageObserver, ObserverContext, PdTaskObserver, QueryObserver,
+        RegionChangeEvent, RegionChangeObserver, RegionState, RoleChange, RoleObserver,
+        StoreSizeInfo, UpdateSafeTsObserver,
     },
     store::{
         self, check_sst_for_ingestion,
@@ -709,6 +710,10 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             TIFLASH_OBSERVER_PRIORITY,
             BoxRoleObserver::new(self.clone()),
         );
+        coprocessor_host.registry.register_message_observer(
+            TIFLASH_OBSERVER_PRIORITY,
+            BoxMessageObserver::new(self.clone()),
+        );
     }
 
     fn handle_ingest_sst_for_engine_store(
@@ -1197,9 +1202,11 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         });
         false
     }
+}
 
-    fn should_skip_raft_message(&self, msg: &RaftMessage) -> bool {
-        self.maybe_fast_path(&msg)
+impl<T: Transport + 'static, ER: RaftEngine> MessageObserver for TiFlashObserver<T, ER> {
+    fn on_raft_message(&self, msg: &RaftMessage) -> bool {
+        !self.maybe_fast_path(&msg)
     }
 }
 

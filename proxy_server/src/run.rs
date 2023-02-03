@@ -398,7 +398,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             .unwrap();
 
         // Create raft engine
-        let (raft_engine, raft_statistics) = CER::build(
+        let (mut raft_engine, raft_statistics) = CER::build(
             &self.config,
             &env,
             &self.encryption_key_manager,
@@ -412,7 +412,6 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
                 ps_engine.init(engine_store_server_helper);
             }
         }
-        self.raft_statistics = raft_statistics;
 
         // Create kv engine.
         let builder = KvEngineFactoryBuilder::new(env, &self.config, block_cache)

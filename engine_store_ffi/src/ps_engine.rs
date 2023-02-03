@@ -137,22 +137,26 @@ impl PSEngineWriteBatch {
 }
 
 impl RaftLogBatch for PSEngineWriteBatch {
-    fn append(&mut self, raft_group_id: u64, entries: Vec<Entry>) -> Result<()> {
+    fn append(
+        &mut self,
+        raft_group_id: u64,
+        overwrite_to: Option<u64>,
+        entries: Vec<Entry>,
+    ) -> Result<()> {
+        let overwrite_to = overwrite_to.unwrap_or(0);
+        if let Some(last) = entries.last() && last.get_index() + 1 < overwrite_to {
+            // TODO
+            panic!("PSEngineWriteBatch has no delete method !!!!!");
+            // for index in last.get_index() + 1..overwrite_to {
+            //     let key = keys::raft_log_key(raft_group_id, index);
+            //     self.delete(&key).unwrap();
+            // }
+        }
         if let Some(max_size) = entries.iter().map(|e| e.compute_size()).max() {
             let ser_buf = Vec::with_capacity(max_size as usize);
             return self.append_impl(raft_group_id, &entries, ser_buf);
         }
         Ok(())
-    }
-
-    fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
-        // This function is used to clean entries that will be overwritten
-        // later.
-        // TODO: make sure overlapped entries will be overwritten
-        // by newer log. for index in from..to {
-        //     let key = ps_raft_log_key(raft_group_id, index);
-        //     self.del_page(&key).unwrap();
-        // }
     }
 
     fn put_raft_state(&mut self, raft_group_id: u64, state: &RaftLocalState) -> Result<()> {
@@ -210,6 +214,15 @@ impl RaftLogBatch for PSEngineWriteBatch {
         _cf: &str,
         _tablet_index: u64,
         _apply_index: u64,
+    ) -> Result<()> {
+        panic!()
+    }
+
+    fn put_dirty_mark(
+        &mut self,
+        _raft_group_id: u64,
+        _tablet_index: u64,
+        _dirty: bool,
     ) -> Result<()> {
         panic!()
     }
@@ -425,6 +438,10 @@ impl RaftEngineReadOnly for PSEngine {
     fn get_flushed_index(&self, _raft_group_id: u64, _cf: &str) -> Result<Option<u64>> {
         panic!()
     }
+
+    fn get_dirty_mark(&self, _raft_group_id: u64, _tablet_index: u64) -> Result<bool> {
+        panic!()
+    }
 }
 
 impl RaftEngineDebug for PSEngine {
@@ -574,7 +591,7 @@ impl RaftEngine for PSEngine {
 impl PerfContextExt for PSEngine {
     type PerfContext = PSPerfContext;
 
-    fn get_perf_context(&self, level: PerfLevel, kind: PerfContextKind) -> Self::PerfContext {
+    fn get_perf_context(level: PerfLevel, kind: PerfContextKind) -> Self::PerfContext {
         PSPerfContext::new(level, kind)
     }
 }
