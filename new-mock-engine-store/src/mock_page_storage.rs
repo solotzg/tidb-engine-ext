@@ -39,10 +39,10 @@ pub struct MockPSUniversalPage {
     data: Vec<u8>,
 }
 
-impl Into<MockPSUniversalPage> for BaseBuffView {
-    fn into(self) -> MockPSUniversalPage {
+impl From<BaseBuffView> for MockPSUniversalPage {
+    fn from(val: BaseBuffView) -> Self {
         MockPSUniversalPage {
-            data: self.to_slice().to_owned(),
+            data: val.to_slice().to_owned(),
         }
     }
 }
@@ -115,13 +115,13 @@ pub unsafe extern "C" fn ffi_mockps_write_batch_size(wb: RawVoidPtr) -> u64 {
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_is_empty(wb: RawVoidPtr) -> u8 {
     let wb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
-    if wb.data.is_empty() { 1 } else { 0 }
+    u8::from(wb.data.is_empty())
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_merge(lwb: RawVoidPtr, rwb: RawVoidPtr) {
     let lwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(lwb);
     let rwb: _ = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(rwb);
-    lwb.data.extend(rwb.data.drain(..));
+    lwb.data.append(&mut rwb.data);
 }
 
 pub unsafe extern "C" fn ffi_mockps_write_batch_clear(wb: RawVoidPtr) {
@@ -238,5 +238,5 @@ pub unsafe extern "C" fn ffi_mockps_ps_is_empty(
         .data
         .read()
         .unwrap();
-    if guard.is_empty() { 1 } else { 0 }
+    u8::from(guard.is_empty())
 }

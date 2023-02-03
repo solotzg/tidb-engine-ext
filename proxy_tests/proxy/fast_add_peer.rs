@@ -324,7 +324,9 @@ fn test_fast_add_peer_from_delayed_learner_blocked() {
 #[test]
 fn test_fast_add_peer_from_learner_blocked_paused_build() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();
+    fail::cfg("apply_on_handle_snapshot_sync", "return(true)").unwrap();
     simple_fast_add_peer(SourceType::Learner, true, PauseType::Build);
+    fail::remove("apply_on_handle_snapshot_sync");
     fail::remove("fallback_to_slow_path_not_allow");
 }
 
@@ -337,7 +339,7 @@ fn test_fast_add_peer_from_delayed_learner_blocked_paused_build() {
 
 // Delay when applying snapshot
 // This test is origianlly aimed to test multiple MsgSnapshot.
-// However,
+// However, we observed less repeated MsgAppend than in real cluster.
 #[test]
 fn test_fast_add_peer_from_learner_blocked_paused_apply() {
     fail::cfg("fallback_to_slow_path_not_allow", "panic").unwrap();

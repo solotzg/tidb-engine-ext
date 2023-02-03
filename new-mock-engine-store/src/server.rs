@@ -535,6 +535,10 @@ impl ServerCluster {
         let max_grpc_thread_count = cfg.server.grpc_concurrency;
         let server_cfg = Arc::new(VersionTrack::new(cfg.server.clone()));
 
+        let packed_envs = engine_store_ffi::observer::PackedEnvs {
+            engine_store_cfg: cfg.proxy_cfg.engine_store.clone(),
+            pd_endpoints: cfg.pd.endpoints.clone(),
+        };
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
             node_id,
             engines.kv.clone(),
@@ -543,7 +547,7 @@ impl ServerCluster {
             cfg.proxy_cfg.raft_store.snap_handle_pool_size,
             simulate_trans.clone(),
             snap_mgr.clone(),
-            cfg.proxy_cfg.engine_store.clone(),
+            packed_envs,
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

@@ -80,11 +80,7 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
         for i in 0..values.len {
             let value = unsafe { &*arr.offset(i as isize) };
             if value.page_view.len != 0 {
-                f(
-                    &value.key_view.to_slice().to_vec(),
-                    &value.page_view.to_slice().to_vec(),
-                )
-                .unwrap();
+                f(value.key_view.to_slice(), value.page_view.to_slice()).unwrap();
             }
         }
     }
