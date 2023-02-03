@@ -15,9 +15,7 @@
 //!
 //! Please read the engine_trait crate docs before hacking.
 #![allow(dead_code)]
-#![feature(backtrace)]
 #![cfg_attr(test, feature(test))]
-#![feature(generic_associated_types)]
 #![feature(let_chains)]
 #![feature(option_get_or_insert_default)]
 
@@ -56,8 +54,17 @@ mod status;
 pub use crate::status::*;
 mod table_properties;
 pub use crate::table_properties::*;
+
+#[cfg(not(feature = "enable-pagestorage"))]
 mod write_batch;
+#[cfg(not(feature = "enable-pagestorage"))]
 pub use crate::write_batch::*;
+
+#[cfg(feature = "enable-pagestorage")]
+mod ps_write_batch;
+#[cfg(feature = "enable-pagestorage")]
+pub use crate::ps_write_batch::*;
+
 pub mod mvcc_properties;
 pub use crate::mvcc_properties::*;
 pub mod perf_context;
@@ -118,6 +125,8 @@ pub mod raw;
 
 mod proxy_utils;
 pub use proxy_utils::*;
+mod cached_region_info_manager;
+pub use cached_region_info_manager::*;
 pub use rocksdb::DB;
 
 pub fn get_env(
