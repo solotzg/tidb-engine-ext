@@ -470,7 +470,7 @@ impl Drop for RawCppPtrArr {
 
 impl Drop for RawCppPtrCarr {
     fn drop(&mut self) {
-        if self.inner != std::ptr::null_mut() {
+        if !self.inner.is_null() {
             let helper = get_engine_store_server_helper();
             helper.gc_raw_cpp_ptr_carr(self.inner as RawVoidPtr, self.type_, self.len);
             self.inner = std::ptr::null_mut();

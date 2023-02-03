@@ -82,6 +82,7 @@ impl Default for ChannelTransport {
 
 impl Transport for ChannelTransport {
     #[allow(clippy::significant_drop_in_scrutinee)]
+    #[allow(clippy::redundant_closure_call)]
     fn send(&mut self, msg: RaftMessage) -> Result<()> {
         let mut from_store = msg.get_from_peer().get_store_id();
         let to_store = msg.get_to_peer().get_store_id();

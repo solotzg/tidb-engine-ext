@@ -127,7 +127,7 @@ impl PSEngineWriteBatch {
 
     fn data_size(&self) -> usize {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        return helper.write_batch_size(self.raw_write_batch.ptr) as usize;
+        helper.write_batch_size(self.raw_write_batch.ptr) as usize
     }
 
     fn clear(&self) {
@@ -219,7 +219,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PSEngine {
     pub engine_store_server_helper: isize,
 }
@@ -292,13 +292,10 @@ impl PSEngine {
         let arr = values.inner as *mut PageAndCppStrWithView;
         for i in 0..values.len {
             let value = unsafe { &*arr.offset(i as isize) };
-            if value.page_view.len != 0 {
-                if !f(
-                    &value.key_view.to_slice().to_vec(),
-                    &value.page_view.to_slice().to_vec(),
-                )? {
-                    break;
-                }
+            if value.page_view.len != 0
+                && !f(value.key_view.to_slice(), value.page_view.to_slice())?
+            {
+                break;
             }
         }
         Ok(())
@@ -376,7 +373,7 @@ impl RaftEngineReadOnly for PSEngine {
             Ok(total_size < max_size)
         })?;
 
-        return Ok(count);
+        Ok(count)
     }
 
     fn get_all_entries_to(&self, region_id: u64, buf: &mut Vec<Entry>) -> Result<()> {

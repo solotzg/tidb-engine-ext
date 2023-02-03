@@ -209,12 +209,8 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                         const FALLBACK_MILLIS: u128 = 1000 * 60 * 5;
                         if elapsed >= TRACE_SLOW_MILLIS {
                             let need_fallback = elapsed > FALLBACK_MILLIS;
-                            let do_fallback = if need_fallback {
-                                // TODO If snapshot is sent, we can't fallback?
-                                true
-                            } else {
-                                false
-                            };
+                            // TODO If snapshot is sent, we need fallback but can't do fallback?
+                            let do_fallback = need_fallback;
                             info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",
                                 self.store_id, region_id, new_peer_id;
                                     "to_peer_id" => msg.get_to_peer().get_id(),
