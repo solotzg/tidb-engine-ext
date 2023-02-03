@@ -537,9 +537,9 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
             defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
             let snapshot = self.snap_mgr.get_snapshot_for_building(&key)?;
-            for cf in snapshot.cf_files().iter() {
-                info!("!!!! snapshot cf_file of {} size {:?}", cf.cf, cf.size);
-            }
+            // for cf in snapshot.cf_files().iter() {
+            //     info!("!!!! snapshot cf_file of {} size {:?}", cf.cf, cf.size);
+            // }
 
             (snapshot, key.clone())
         };
@@ -614,14 +614,14 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         // If no set, will result in a MsgResponse to peer 0.
         message.set_from(msg.get_from_peer().get_id());
         message.set_to(msg.get_to_peer().get_id());
-        debug!(
-            "!!!! send snapshot to {} key {} raft message {:?} snap data {:?} apply_state {:?}",
-            msg.get_to_peer().get_id(),
-            key,
-            response,
-            pb_snapshot_data,
-            apply_state
-        );
+        // debug!(
+        //     "!!!! send snapshot to {} key {} raft message {:?} snap data {:?}
+        // apply_state {:?}",     msg.get_to_peer().get_id(),
+        //     key,
+        //     response,
+        //     pb_snapshot_data,
+        //     apply_state
+        // );
 
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {

@@ -19,6 +19,9 @@ impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
     }
 
     fn create_write_batch(&self) -> RawPSWriteBatchWrapper {
+        // TODO There are too many dummy write batch created in non-uni-ps impl.
+        // Need to work out a solution for this.
+        // See engine_tiflash/src/write_batch.rs.
         self.engine_store_server_helper.create_write_batch().into()
     }
 
