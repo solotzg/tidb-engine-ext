@@ -21,8 +21,6 @@ impl WriteBatchExt for RocksEngine {
     fn write_batch(&self) -> RocksWriteBatchVec {
         RocksWriteBatchVec::new(
             Arc::clone(self.as_inner()),
-            self.ffi_hub.clone(),
-            self.ffi_hub.as_ref().unwrap().create_write_batch(),
             WRITE_BATCH_LIMIT,
             1,
             self.support_multi_batch_write(),
@@ -30,11 +28,7 @@ impl WriteBatchExt for RocksEngine {
     }
 
     fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::with_unit_capacity(
-            self,
-            self.ffi_hub.as_ref().unwrap().create_write_batch(),
-            cap,
-        )
+        RocksWriteBatchVec::with_unit_capacity(self, cap)
     }
 }
 
@@ -58,8 +52,6 @@ pub struct RocksWriteBatchVec {
 impl RocksWriteBatchVec {
     pub fn new(
         db: Arc<DB>,
-        _ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
-        _ps_wb: RawPSWriteBatchWrapper,
         batch_size_limit: usize,
         cap: usize,
         support_write_batch_vec: bool,
@@ -75,15 +67,9 @@ impl RocksWriteBatchVec {
         }
     }
 
-    pub fn with_unit_capacity(
-        engine: &RocksEngine,
-        ps_wb: RawPSWriteBatchWrapper,
-        cap: usize,
-    ) -> RocksWriteBatchVec {
+    pub fn with_unit_capacity(engine: &RocksEngine, cap: usize) -> RocksWriteBatchVec {
         Self::new(
             engine.as_inner().clone(),
-            engine.ffi_hub.clone(),
-            ps_wb,
             WRITE_BATCH_LIMIT,
             cap,
             engine.support_multi_batch_write(),

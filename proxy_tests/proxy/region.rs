@@ -323,7 +323,7 @@ fn later_bootstrap_learner_peer(
 /// We don't try to reuse data from other learner peer.
 #[test]
 fn test_add_delayed_started_learner_by_joint() {
-    let (mut cluster, pd_client) = new_later_add_learner_cluster(
+    let (mut cluster, _pd_client) = new_later_add_learner_cluster(
         |c: &mut Cluster<NodeCluster>| {
             c.must_put(b"k1", b"v1");
             check_key(c, b"k1", b"v1", Some(true), None, Some(vec![1]));
@@ -615,7 +615,7 @@ fn test_add_delayed_started_learner_snapshot() {
     iter_ffi_helpers(
         &cluster,
         Some(vec![5]),
-        &mut |id: u64, _, ffi: &mut FFIHelperSet| {
+        &mut |_: u64, _, ffi: &mut FFIHelperSet| {
             (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
                 assert_eq!(e.pre_handle_count.load(Ordering::SeqCst), 1);
             });
