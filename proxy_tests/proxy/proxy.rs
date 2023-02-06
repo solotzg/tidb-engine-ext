@@ -400,6 +400,12 @@ pub fn compare_states<F: Fn(&States, &States)>(
     }
 }
 
+pub fn check_state<F: Fn(&States)>(states: &HashMap<u64, States>, f: F) {
+    for i in states.keys() {
+        f(states.get(i).unwrap());
+    }
+}
+
 pub fn must_unaltered_memory_apply_term(
     prev_states: &HashMap<u64, States>,
     new_states: &HashMap<u64, States>,
