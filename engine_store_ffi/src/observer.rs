@@ -38,7 +38,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         engine: engine_tiflash::RocksEngine,
         raft_engine: ER,
         sst_importer: Arc<SstImporter>,
-        snap_handle_pool_size: usize,
         trans: T,
         snap_mgr: SnapManager,
         packed_envs: PackedEnvs,
@@ -50,7 +49,6 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
                 engine,
                 raft_engine,
                 sst_importer,
-                snap_handle_pool_size,
                 trans,
                 snap_mgr,
                 packed_envs,
@@ -160,7 +158,8 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
 
 impl<T: Transport + 'static, ER: RaftEngine> UpdateSafeTsObserver for TiFlashObserver<T, ER> {
     fn on_update_safe_ts(&self, region_id: u64, self_safe_ts: u64, leader_safe_ts: u64) {
-        self.on_update_safe_ts(region_id, self_safe_ts, leader_safe_ts)
+        self.forwarder
+            .on_update_safe_ts(region_id, self_safe_ts, leader_safe_ts)
     }
 }
 

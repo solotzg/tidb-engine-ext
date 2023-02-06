@@ -30,6 +30,7 @@ unsafe impl Sync for PrehandleTask {}
 pub struct PackedEnvs {
     pub engine_store_cfg: crate::EngineStoreConfig,
     pub pd_endpoints: Vec<String>,
+    pub snap_handle_pool_size: usize,
 }
 
 #[derive(Debug, Default)]
@@ -44,7 +45,6 @@ pub struct ProxyForwarder<T: Transport, ER: RaftEngine> {
     pub raft_engine: ER,
     pub sst_importer: Arc<SstImporter>,
     pub pre_handle_snapshot_ctx: Arc<Mutex<PrehandleContext>>,
-    pub snap_handle_pool_size: usize,
     pub apply_snap_pool: Option<Arc<ThreadPool<TaskCell>>>,
     pub pending_delete_ssts: Arc<RwLock<Vec<SstMetaInfo>>>,
     // TODO should we use a Mutex here?
@@ -78,7 +78,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         engine: engine_tiflash::RocksEngine,
         raft_engine: ER,
         sst_importer: Arc<SstImporter>,
-        snap_handle_pool_size: usize,
         trans: T,
         snap_mgr: SnapManager,
         packed_envs: PackedEnvs,
@@ -88,7 +87,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             gen_engine_store_server_helper(engine.engine_store_server_helper);
         // start thread pool for pre handle snapshot
         let snap_pool = Builder::new(tikv_util::thd_name!("region-task"))
-            .max_thread_count(snap_handle_pool_size)
+            .max_thread_count(packed_envs.snap_handle_pool_size)
             .build_future_pool();
 
         ProxyForwarder {
@@ -98,7 +97,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             raft_engine,
             sst_importer,
             pre_handle_snapshot_ctx: Arc::new(Mutex::new(PrehandleContext::default())),
-            snap_handle_pool_size,
             apply_snap_pool: Some(Arc::new(snap_pool)),
             pending_delete_ssts: Arc::new(RwLock::new(vec![])),
             trans: Arc::new(Mutex::new(trans)),
@@ -123,7 +121,6 @@ impl<T: Transport + 'static, ER: RaftEngine> Clone for ProxyForwarder<T, ER> {
             raft_engine: self.raft_engine.clone(),
             sst_importer: self.sst_importer.clone(),
             pre_handle_snapshot_ctx: self.pre_handle_snapshot_ctx.clone(),
-            snap_handle_pool_size: self.snap_handle_pool_size,
             apply_snap_pool: self.apply_snap_pool.clone(),
             pending_delete_ssts: self.pending_delete_ssts.clone(),
             trans: self.trans.clone(),

@@ -12,7 +12,7 @@ pub use std::{
 
 pub use collections::HashMap;
 pub use engine_tiflash::{CachedRegionInfo, CachedRegionInfoManager};
-pub use engine_traits::{RaftEngine, SstMetaInfo, CF_RAFT};
+pub use engine_traits::{RaftEngine, SstMetaInfo, CF_LOCK, CF_RAFT};
 pub use kvproto::{
     metapb::Region,
     raft_cmdpb::{AdminCmdType, AdminRequest, AdminResponse, CmdType, RaftCmdRequest},
@@ -21,14 +21,7 @@ pub use kvproto::{
 pub use protobuf::Message;
 pub use raft::{eraftpb, eraftpb::MessageType, StateRole};
 pub use raftstore::{
-    coprocessor::{
-        AdminObserver, ApplyCtxInfo, ApplySnapshotObserver, BoxAdminObserver,
-        BoxApplySnapshotObserver, BoxMessageObserver, BoxPdTaskObserver, BoxQueryObserver,
-        BoxRegionChangeObserver, BoxRoleObserver, BoxUpdateSafeTsObserver, Cmd, Coprocessor,
-        CoprocessorHost, MessageObserver, ObserverContext, PdTaskObserver, QueryObserver,
-        RegionChangeEvent, RegionChangeObserver, RegionState, RoleChange, RoleObserver,
-        StoreSizeInfo, UpdateSafeTsObserver,
-    },
+    coprocessor::{ApplyCtxInfo, Cmd, RegionChangeEvent, RegionState, RoleChange, StoreSizeInfo},
     store::{
         self, check_sst_for_ingestion,
         snap::{plain_file_used, SnapEntry},
@@ -46,5 +39,5 @@ pub use yatp::{
 pub(crate) use crate::{
     gen_engine_store_server_helper, interfaces::root::DB::EngineStoreApplyRes, name_to_cf,
     ColumnFamilyType, EngineStoreServerHelper, RaftCmdHeader, RawCppPtr, TiFlashEngine,
-    WriteCmdType, WriteCmds, CF_LOCK,
+    WriteCmdType, WriteCmds,
 };
