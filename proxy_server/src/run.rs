@@ -27,8 +27,9 @@ use engine_rocks::{
 };
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
-    self, ps_engine::PSEngine, EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus,
-    RaftStoreProxy, RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
+    self, observer::DebugStruct, ps_engine::PSEngine, EngineStoreServerHelper,
+    EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy, RaftStoreProxyFFI,
+    RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
 };
 use engine_traits::{
     CachedTablet, CfOptionsExt, Engines, FlowControlFactorsExt, KvEngine, MiscExt, RaftEngine,
@@ -1273,6 +1274,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             server.transport().clone(),
             snap_mgr.clone(),
             packed_envs,
+            DebugStruct::default(),
         );
         tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 

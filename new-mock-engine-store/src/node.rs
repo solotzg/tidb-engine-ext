@@ -9,6 +9,7 @@ use collections::{HashMap, HashSet};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::DataKeyManager;
 use engine_rocks::RocksSnapshot;
+use engine_store_ffi::observer::DebugStruct;
 use engine_traits::{Engines, MiscExt, Peekable};
 use kvproto::{
     metapb,
@@ -345,6 +346,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             simulate_trans.clone(),
             snap_mgr.clone(),
             packed_envs,
+            DebugStruct::default(),
         );
         tiflash_ob.register_to(&mut coprocessor_host);
 

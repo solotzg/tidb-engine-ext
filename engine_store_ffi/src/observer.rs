@@ -88,6 +88,11 @@ pub struct PackedEnvs {
     pub pd_endpoints: Vec<String>,
 }
 
+#[derive(Debug, Default)]
+pub struct DebugStruct {}
+
+impl DebugStruct {}
+
 pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub store_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,
@@ -102,6 +107,7 @@ pub struct TiFlashObserver<T: Transport, ER: RaftEngine> {
     pub trans: Arc<Mutex<T>>,
     pub snap_mgr: Arc<SnapManager>,
     pub packed_envs: Arc<PackedEnvs>,
+    pub debug_struct: Arc<DebugStruct>,
 }
 
 pub fn get_region_local_state<EK: engine_traits::KvEngine>(
@@ -140,6 +146,7 @@ impl<T: Transport + 'static, ER: RaftEngine> Clone for TiFlashObserver<T, ER> {
             trans: self.trans.clone(),
             snap_mgr: self.snap_mgr.clone(),
             packed_envs: self.packed_envs.clone(),
+            debug_struct: self.debug_struct.clone(),
         }
     }
 }
@@ -653,6 +660,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
         trans: T,
         snap_mgr: SnapManager,
         packed_envs: PackedEnvs,
+        debug_struct: DebugStruct,
     ) -> Self {
         let engine_store_server_helper =
             gen_engine_store_server_helper(engine.engine_store_server_helper);
@@ -674,6 +682,7 @@ impl<T: Transport + 'static, ER: RaftEngine> TiFlashObserver<T, ER> {
             trans: Arc::new(Mutex::new(trans)),
             snap_mgr: Arc::new(snap_mgr),
             packed_envs: Arc::new(packed_envs),
+            debug_struct: Arc::new(debug_struct),
         }
     }
 
@@ -849,6 +858,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
         fail::fail_point!("on_post_exec_admin", |e| {
             e.unwrap().parse::<bool>().unwrap()
         });
+        let region_id = ob_ctx.region().get_id();
         let request = cmd.request.get_admin_request();
         let response = &cmd.response;
         let admin_reponse = response.get_admin_response();
@@ -866,7 +876,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
             AdminCmdType::CompactLog | AdminCmdType::ComputeHash | AdminCmdType::VerifyHash => {
                 info!(
                     "observe useless admin command";
-                    "region_id" => ob_ctx.region().get_id(),
+                    "region_id" => region_id,
                     "peer_id" => region_state.peer_id,
                     "term" => cmd.term,
                     "index" => cmd.index,
@@ -876,7 +886,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
             _ => {
                 info!(
                     "observe admin command";
-                    "region_id" => ob_ctx.region().get_id(),
+                    "region_id" => region_id,
                     "peer_id" => region_state.peer_id,
                     "term" => cmd.term,
                     "index" => cmd.index,
@@ -896,7 +906,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
                     Some(region) => r.mut_split().set_left(region.clone()),
                     None => {
                         error!("empty modified region";
-                            "region_id" => ob_ctx.region().get_id(),
+                            "region_id" => region_id,
                             "peer_id" => region_state.peer_id,
                             "term" => cmd.term,
                             "index" => cmd.index,
@@ -915,12 +925,12 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
                 Some(r) => self.engine_store_server_helper.handle_admin_raft_cmd(
                     request,
                     &r,
-                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                    RaftCmdHeader::new(region_id, cmd.index, cmd.term),
                 ),
                 None => self.engine_store_server_helper.handle_admin_raft_cmd(
                     request,
                     admin_reponse,
-                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                    RaftCmdHeader::new(region_id, cmd.index, cmd.term),
                 ),
             }
         };
@@ -931,7 +941,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
                     // tests. Formal code should never return None for
                     // CompactLog now. If CompactLog can't be done, the
                     // engine-store should return `false` in previous `try_flush_data`.
-                    error!("applying CompactLog should not return None"; "region_id" => ob_ctx.region().get_id(),
+                    error!("applying CompactLog should not return None"; "region_id" => region_id,
                             "peer_id" => region_state.peer_id, "apply_state" => ?apply_state, "cmd" => ?cmd);
                 }
                 false
@@ -940,7 +950,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
             EngineStoreApplyRes::NotFound => {
                 error!(
                     "region not found in engine-store, maybe have exec `RemoveNode` first";
-                    "region_id" => ob_ctx.region().get_id(),
+                    "region_id" => region_id,
                     "peer_id" => region_state.peer_id,
                     "term" => cmd.term,
                     "index" => cmd.index,
@@ -949,7 +959,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
             }
         };
         if persist {
-            info!("should persist admin"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
+            info!("should persist admin"; "region_id" => region_id, "peer_id" => region_state.peer_id, "state" => ?apply_state);
         }
         persist
     }
@@ -957,6 +967,7 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
 
 impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T, ER> {
     fn on_empty_cmd(&self, ob_ctx: &mut ObserverContext<'_>, index: u64, term: u64) {
+        let region_id = ob_ctx.region().get_id();
         fail::fail_point!("on_empty_cmd_normal", |_| {});
         debug!("encounter empty cmd, maybe due to leadership change";
             "region" => ?ob_ctx.region(),
@@ -965,10 +976,8 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
         );
         // We still need to pass a dummy cmd, to forward updates.
         let cmd_dummy = WriteCmds::new();
-        self.engine_store_server_helper.handle_write_raft_cmd(
-            &cmd_dummy,
-            RaftCmdHeader::new(ob_ctx.region().get_id(), index, term),
-        );
+        self.engine_store_server_helper
+            .handle_write_raft_cmd(&cmd_dummy, RaftCmdHeader::new(region_id, index, term));
     }
 
     fn post_exec_query(
@@ -982,6 +991,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
         fail::fail_point!("on_post_exec_normal", |e| {
             e.unwrap().parse::<bool>().unwrap()
         });
+        let region_id = ob_ctx.region().get_id();
         const NONE_STR: &str = "";
         let requests = cmd.request.get_requests();
         let response = &cmd.response;
@@ -1065,7 +1075,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
                     };
                     info!(
                         "skip persist for ingest sst";
-                        "region_id" => ob_ctx.region().get_id(),
+                        "region_id" => region_id,
                         "peer_id" => region_state.peer_id,
                         "term" => cmd.term,
                         "index" => cmd.index,
@@ -1076,7 +1086,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
                 EngineStoreApplyRes::NotFound | EngineStoreApplyRes::Persist => {
                     info!(
                         "ingest sst success";
-                        "region_id" => ob_ctx.region().get_id(),
+                        "region_id" => region_id,
                         "peer_id" => region_state.peer_id,
                         "term" => cmd.term,
                         "index" => cmd.index,
@@ -1089,9 +1099,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
                                 .pending_delete_ssts
                                 .write()
                                 .expect("lock error")
-                                .drain_filter(|e| {
-                                    e.meta.get_region_id() == ob_ctx.region().get_id()
-                                })
+                                .drain_filter(|e| e.meta.get_region_id() == region_id)
                                 .collect();
                             apply_ctx_info.delete_ssts.append(&mut sst_in_region);
                             apply_ctx_info.delete_ssts.append(v);
@@ -1104,7 +1112,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
             let flash_res = {
                 self.engine_store_server_helper.handle_write_raft_cmd(
                     &cmds,
-                    RaftCmdHeader::new(ob_ctx.region().get_id(), cmd.index, cmd.term),
+                    RaftCmdHeader::new(region_id, cmd.index, cmd.term),
                 )
             };
             match flash_res {
@@ -1117,7 +1125,7 @@ impl<T: Transport + 'static, ER: RaftEngine> QueryObserver for TiFlashObserver<T
             e.unwrap().parse::<bool>().unwrap()
         });
         if persist {
-            info!("should persist query"; "region_id" => ob_ctx.region().get_id(), "peer_id" => region_state.peer_id, "state" => ?apply_state);
+            info!("should persist query"; "region_id" => region_id, "peer_id" => region_state.peer_id, "state" => ?apply_state);
         }
         persist
     }
@@ -1147,8 +1155,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
                 "region_id" => region_id,
                 "store_id" => self.store_id,
             );
-            self.engine_store_server_helper
-                .handle_destroy(ob_ctx.region().get_id());
+            self.engine_store_server_helper.handle_destroy(region_id);
             if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
                 self.get_cached_manager()
                     .remove_cached_region_info(region_id);
@@ -1163,6 +1170,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         is_finished: bool,
         cmd: Option<&RaftCmdRequest>,
     ) -> bool {
+        let region_id = ob_ctx.region().get_id();
         let should_persist = if is_finished {
             true
         } else {
@@ -1180,13 +1188,13 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         if should_persist {
             debug!(
             "observe pre_persist, persist";
-            "region_id" => ob_ctx.region().get_id(),
+            "region_id" => region_id,
             "store_id" => self.store_id,
             );
         } else {
             debug!(
             "observe pre_persist";
-            "region_id" => ob_ctx.region().get_id(),
+            "region_id" => region_id,
             "store_id" => self.store_id,
             "is_finished" => is_finished,
             );
@@ -1393,7 +1401,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ApplySnapshotObserver for TiFlashOb
                 // quit background pre handling
                 warn!("apply_snap_pool is not initialized";
                     "peer_id" => peer_id,
-                    "region_id" => ob_ctx.region().get_id()
+                    "region_id" => region_id
                 );
             }
         }
