@@ -93,7 +93,7 @@ impl Transport for ChannelTransport {
 
         if is_snapshot {
             let fake_self_snapshot = (|| {
-                fail::fail_point!("fast_add_peer_fake_snapshot", |t| {
+                fail::fail_point!("fap_mock_fake_snapshot", |t| {
                     let t = t.unwrap().parse::<u64>().unwrap();
                     t
                 });

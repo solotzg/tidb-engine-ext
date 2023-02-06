@@ -633,7 +633,7 @@ mod persist {
         must_altered_memory_apply_index(&prev_states, &new_states, 1);
         must_altered_disk_apply_index(&prev_states, &new_states, 0);
 
-        fail::cfg("on_pre_persist_with_finish", "return").unwrap();
+        fail::cfg("on_pre_write_apply_state", "return").unwrap();
         cluster.must_put(b"k2", b"v2");
         // Because we flush when batch ends.
         check_key(&cluster, b"k2", b"v2", Some(true), Some(false), None);
@@ -649,7 +649,7 @@ mod persist {
         std::thread::sleep(std::time::Duration::from_millis(1000));
         let new_states = collect_all_states(&cluster, region_id);
         must_apply_index_advanced_diff(&prev_states, &new_states, 0);
-        fail::remove("on_pre_persist_with_finish");
+        fail::remove("on_pre_write_apply_state");
     }
 
     #[test]

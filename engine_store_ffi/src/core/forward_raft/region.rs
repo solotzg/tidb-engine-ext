@@ -66,7 +66,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
     }
 
     pub fn pre_write_apply_state(&self, _ob_region: &Region) -> bool {
-        fail::fail_point!("on_pre_persist_with_finish", |_| {
+        fail::fail_point!("on_pre_write_apply_state", |_| {
             // Some test need persist apply state for Leader logic,
             // including fast add peer.
             true

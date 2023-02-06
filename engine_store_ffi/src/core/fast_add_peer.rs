@@ -225,7 +225,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "from_peer_id" => msg.get_from_peer().get_id(),
             "region_id" => region_id,
         );
-        fail::fail_point!("ffi_fast_add_peer_pause", |_| { return false });
+        fail::fail_point!("fap_ffi_pause", |_| { return false });
         // Feed data
         let res = self
             .engine_store_server_helper
@@ -296,7 +296,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             Ok(s) => {
                 match s {
                     crate::FastAddPeerStatus::Ok => {
-                        fail::fail_point!("go_fast_path_not_allow", |_| { return false });
+                        fail::fail_point!("fap_core_no_fast_path", |_| { return false });
                         info!("fast path: ongoing {}:{} {}, finish build and send", self.store_id, region_id, new_peer_id;
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
@@ -373,7 +373,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         #[cfg(any(test, feature = "testexport"))]
         {
             let fake_send: bool = (|| {
-                fail::fail_point!("fast_add_peer_fake_send", |t| {
+                fail::fail_point!("fap_core_fake_send", |t| {
                     let t = t.unwrap().parse::<u64>().unwrap();
                     t
                 });
