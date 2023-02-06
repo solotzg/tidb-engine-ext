@@ -38,6 +38,7 @@ pub struct DebugStruct {}
 
 impl DebugStruct {}
 
+// This object can be safely cloned.
 pub struct ProxyForwarder<T: Transport, ER: RaftEngine> {
     pub store_id: u64,
     pub engine_store_server_helper: &'static EngineStoreServerHelper,

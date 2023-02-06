@@ -78,8 +78,17 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         const TRACE_SLOW_MILLIS: u128 = 1000 * 60 * 3;
                         #[cfg(not(any(test, feature = "testexport")))]
                         const FALLBACK_MILLIS: u128 = 1000 * 60 * 5;
+
+                        #[allow(clippy::redundant_closure_call)]
+                        let fallback_millis = (|| {
+                            fail::fail_point!("fap_core_fallback_millis", |t| {
+                                let t = t.unwrap().parse::<u128>().unwrap();
+                                t
+                            });
+                            FALLBACK_MILLIS
+                        })();
                         if elapsed >= TRACE_SLOW_MILLIS {
-                            let need_fallback = elapsed > FALLBACK_MILLIS;
+                            let need_fallback = elapsed > fallback_millis;
                             // TODO If snapshot is sent, we need fallback but can't do fallback?
                             let do_fallback = need_fallback;
                             info!("fast path: ongoing {}:{} {}, MsgAppend duplicated",

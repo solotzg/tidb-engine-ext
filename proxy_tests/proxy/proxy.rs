@@ -173,6 +173,7 @@ pub fn must_get_mem(
                 Some(vec![node_id]),
                 &mut |_, _, ffi: &mut FFIHelperSet| {
                     let server = &ffi.engine_store_server;
+                    // If the region not exists in the node, will return None.
                     let res = server.get_mem(region_id, cf, &key.to_vec());
                     if let (Some(value), Some(last_res)) = (value, res) {
                         assert_eq!(value, &last_res[..]);
@@ -592,6 +593,7 @@ pub fn must_wait_until_cond_states(
 }
 
 // Must wait until some node satisfy cond given by `pref`.
+// If region not exists in store, consider pred is not satisfied.
 pub fn must_wait_until_cond_node(
     cluster: &Cluster<NodeCluster>,
     region_id: u64,
