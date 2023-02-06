@@ -2,6 +2,7 @@
 #![feature(drain_filter)]
 #![feature(let_chains)]
 
+pub mod core;
 pub mod ffi;
 pub mod observer;
 pub mod ps_engine;

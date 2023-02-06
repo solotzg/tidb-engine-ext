@@ -27,9 +27,9 @@ use engine_rocks::{
 };
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
-    self, observer::DebugStruct, ps_engine::PSEngine, EngineStoreServerHelper,
-    EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy, RaftStoreProxyFFI,
-    RaftStoreProxyFFIHelper, ReadIndexClient, TiFlashEngine,
+    self, core::DebugStruct, ps_engine::PSEngine, EngineStoreServerHelper, EngineStoreServerStatus,
+    RaftProxyStatus, RaftStoreProxy, RaftStoreProxyFFI, RaftStoreProxyFFIHelper, ReadIndexClient,
+    TiFlashEngine,
 };
 use engine_traits::{
     CachedTablet, CfOptionsExt, Engines, FlowControlFactorsExt, KvEngine, MiscExt, RaftEngine,
@@ -1261,7 +1261,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         )
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
 
-        let packed_envs = engine_store_ffi::observer::PackedEnvs {
+        let packed_envs = engine_store_ffi::core::PackedEnvs {
             engine_store_cfg: self.proxy_config.engine_store.clone(),
             pd_endpoints: self.config.pd.endpoints.clone(),
         };

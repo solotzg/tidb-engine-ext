@@ -1467,7 +1467,7 @@ unsafe extern "C" fn ffi_fast_add_peer(
                     info!("recover from remote peer: preparing from {} to {}:{}, ok peer state {:?}", from_store, store_id, new_peer_id, peer_state; "region_id" => region_id);
                 }
             };
-            if !engine_store_ffi::observer::validate_remote_peer_region(
+            if !engine_store_ffi::core::validate_remote_peer_region(
                 new_region_meta,
                 store_id,
                 new_peer_id,

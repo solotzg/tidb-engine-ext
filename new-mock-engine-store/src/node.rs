@@ -9,7 +9,7 @@ use collections::{HashMap, HashSet};
 use concurrency_manager::ConcurrencyManager;
 use encryption_export::DataKeyManager;
 use engine_rocks::RocksSnapshot;
-use engine_store_ffi::observer::DebugStruct;
+use engine_store_ffi::core::DebugStruct;
 use engine_traits::{Engines, MiscExt, Peekable};
 use kvproto::{
     metapb,
@@ -333,7 +333,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             f(node_id, &mut coprocessor_host);
         }
 
-        let packed_envs = engine_store_ffi::observer::PackedEnvs {
+        let packed_envs = engine_store_ffi::core::PackedEnvs {
             engine_store_cfg: cfg.proxy_cfg.engine_store.clone(),
             pd_endpoints: cfg.pd.endpoints.clone(),
         };
