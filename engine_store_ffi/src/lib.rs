@@ -21,7 +21,7 @@ use std::{
 use encryption::DataKeyManager;
 pub use engine::{ffihub_impl::TiFlashFFIHub, ps_engine};
 pub use engine_tiflash::EngineStoreConfig;
-use engine_traits::{Peekable, CF_LOCK};
+use engine_traits::Peekable;
 use ffi::lock_cf_reader;
 pub use ffi::{
     basic_ffi_impls::*, domain_impls::*, encryption_impls::*, interfaces, sst_reader_impls::*,
