@@ -7,10 +7,10 @@ use engine_traits::{IterOptions, Iterator, RefIterable, SstReader};
 
 use super::{
     interfaces::root::DB::{
-        BaseBuffView, ColumnFamilyType, RaftStoreProxyPtr, SSTReaderInterfaces, SSTReaderPtr,
-        SSTView, SSTViewVec,
+        BaseBuffView, ColumnFamilyType, RaftStoreProxyPtr, RawVoidPtr, SSTReaderInterfaces,
+        SSTReaderPtr, SSTView, SSTViewVec,
     },
-    LockCFFileReader, RawVoidPtr,
+    LockCFFileReader,
 };
 
 #[allow(clippy::clone_on_copy)]

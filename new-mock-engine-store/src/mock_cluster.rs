@@ -12,8 +12,11 @@ use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
 // mock cluster
 pub use engine_store_ffi::ffi::{
-    interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
-    RawCppPtr, UnwrapExternCFunc,
+    interfaces::root::DB as ffi_interfaces,
+    interfaces_ffi::{
+        EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
+    },
+    UnwrapExternCFunc,
 };
 pub use engine_store_ffi::TiFlashEngine;
 use engine_tiflash::DB;
@@ -73,18 +76,18 @@ use crate::{
 
 pub struct FFIHelperSet {
     pub proxy: Box<engine_store_ffi::ffi::RaftStoreProxy>,
-    pub proxy_helper: Box<engine_store_ffi::ffi::RaftStoreProxyFFIHelper>,
+    pub proxy_helper: Box<RaftStoreProxyFFIHelper>,
     pub engine_store_server: Box<EngineStoreServer>,
     // Make interface happy, don't own proxy and server.
     pub engine_store_server_wrap: Box<EngineStoreServerWrap>,
-    pub engine_store_server_helper: Box<engine_store_ffi::ffi::EngineStoreServerHelper>,
+    pub engine_store_server_helper: Box<EngineStoreServerHelper>,
     pub engine_store_server_helper_ptr: isize,
 }
 
 pub struct EngineHelperSet {
     pub engine_store_server: Box<EngineStoreServer>,
     pub engine_store_server_wrap: Box<EngineStoreServerWrap>,
-    pub engine_store_server_helper: Box<engine_store_ffi::ffi::EngineStoreServerHelper>,
+    pub engine_store_server_helper: Box<EngineStoreServerHelper>,
 }
 
 pub struct TestData {
@@ -173,7 +176,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     ) -> (FFIHelperSet, TikvConfig) {
         // We must allocate on heap to avoid move.
         let proxy = Box::new(engine_store_ffi::ffi::RaftStoreProxy {
-            status: AtomicU8::new(engine_store_ffi::ffi::RaftProxyStatus::Idle as u8),
+            status: AtomicU8::new(RaftProxyStatus::Idle as u8),
             key_manager: key_mgr.clone(),
             read_index_client: match router {
                 Some(r) => Some(Box::new(
@@ -187,8 +190,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             kv_engine: std::sync::RwLock::new(Some(engines.kv.clone())),
         });
 
-        let mut proxy_helper =
-            Box::new(engine_store_ffi::ffi::RaftStoreProxyFFIHelper::new(&proxy));
+        let mut proxy_helper = Box::new(RaftStoreProxyFFIHelper::new(&proxy));
         let mut engine_store_server = Box::new(EngineStoreServer::new(id, Some(engines)));
         engine_store_server.proxy_compat = proxy_compat;
         engine_store_server.mock_cfg = mock_cfg;
@@ -489,8 +491,7 @@ pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     let engine_store_server_helper = Box::new(gen_engine_store_server_helper(std::pin::Pin::new(
         &*engine_store_server_wrap,
     )));
-    let ptr = &*engine_store_server_helper as *const engine_store_ffi::ffi::EngineStoreServerHelper
-        as *mut u8;
+    let ptr = &*engine_store_server_helper as *const EngineStoreServerHelper as *mut u8;
     // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
     (
         EngineHelperSet {

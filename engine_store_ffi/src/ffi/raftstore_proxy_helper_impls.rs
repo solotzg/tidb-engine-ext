@@ -22,13 +22,26 @@ use super::{
     interfaces,
     interfaces::root::DB::{
         BaseBuffView, ConstRawVoidPtr, CppStrVecView, KVGetStatus, RaftProxyStatus,
-        RaftStoreProxyFFIHelper, RaftStoreProxyPtr, RawCppPtr, RawCppStringPtr,
-        SSTReaderInterfaces,
+        RaftStoreProxyFFIHelper, RaftStoreProxyPtr, RawCppPtr, RawCppStringPtr, RawRustPtr,
+        RawVoidPtr, SSTReaderInterfaces,
     },
     sst_reader_impls::*,
-    RaftStoreProxyFFI, UnwrapExternCFunc,
+    UnwrapExternCFunc,
 };
 use crate::{read_index_helper, utils, TiFlashEngine};
+
+pub fn set_server_info_resp(res: &kvproto::diagnosticspb::ServerInfoResponse, ptr: RawVoidPtr) {
+    get_engine_store_server_helper().set_server_info_resp(res, ptr)
+}
+
+pub trait RaftStoreProxyFFI: Sync {
+    fn set_status(&mut self, s: RaftProxyStatus);
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnOnce(Result<Option<&[u8]>, String>);
+    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>);
+}
+
 pub struct RaftStoreProxy {
     pub status: AtomicU8,
     pub key_manager: Option<Arc<DataKeyManager>>,

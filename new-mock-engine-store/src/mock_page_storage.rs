@@ -7,8 +7,11 @@ use std::{
 };
 
 pub use engine_store_ffi::ffi::{
-    interfaces::root::DB as ffi_interfaces, BaseBuffView, CppStrWithView, EngineStoreServerHelper,
-    PageAndCppStrWithView, RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrCarr, RawVoidPtr,
+    interfaces::root::DB as ffi_interfaces,
+    interfaces_ffi::{
+        BaseBuffView, CppStrWithView, EngineStoreServerHelper, PageAndCppStrWithView,
+        RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrCarr, RawVoidPtr,
+    },
 };
 
 use crate::{

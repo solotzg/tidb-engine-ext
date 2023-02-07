@@ -2,10 +2,12 @@
 
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 
-use super::interfaces;
-pub use super::interfaces::root::DB::{
-    BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, WriteCmdType,
-    WriteCmdsView,
+use super::{
+    interfaces,
+    interfaces::root::DB::{
+        BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, WriteCmdType,
+        WriteCmdsView,
+    },
 };
 
 pub fn name_to_cf(cf: &str) -> ColumnFamilyType {

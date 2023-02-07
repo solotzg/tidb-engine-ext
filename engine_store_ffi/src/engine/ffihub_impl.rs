@@ -2,8 +2,8 @@
 use engine_tiflash::{FsStatsExt, RawPSWriteBatchPtr, RawPSWriteBatchWrapper};
 
 use crate::ffi::{
-    interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, PageAndCppStrWithView,
-    RawCppPtr,
+    interfaces::root::DB as ffi_interfaces,
+    interfaces_ffi::{EngineStoreServerHelper, PageAndCppStrWithView, RawCppPtr},
 };
 
 pub struct TiFlashFFIHub {

@@ -31,8 +31,11 @@ use engine_store_ffi::{
     core::DebugStruct,
     engine::ps_engine::PSEngine,
     ffi::{
-        EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
-        RaftStoreProxyFFI, RaftStoreProxyFFIHelper,
+        interfaces_ffi::{
+            EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus,
+            RaftStoreProxyFFIHelper,
+        },
+        RaftStoreProxy, RaftStoreProxyFFI,
     },
     read_index_helper::ReadIndexClient,
     TiFlashEngine,

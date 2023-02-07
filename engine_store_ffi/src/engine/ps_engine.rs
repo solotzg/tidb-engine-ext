@@ -23,7 +23,10 @@ use raft::eraftpb::Entry;
 use tikv_util::{box_try, info};
 use tracker::TrackerToken;
 
-use crate::ffi::{gen_engine_store_server_helper, PageAndCppStrWithView, RawCppPtr};
+use crate::ffi::{
+    gen_engine_store_server_helper,
+    interfaces_ffi::{PageAndCppStrWithView, RawCppPtr},
+};
 
 pub struct PSEngineWriteBatch {
     pub engine_store_server_helper: isize,
