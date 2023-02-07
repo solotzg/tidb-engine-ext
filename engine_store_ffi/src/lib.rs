@@ -14,6 +14,5 @@ mod utils;
 // Thus it is better to directly refer to the mod itself.
 
 // TODO We may integrate engine_tiflash if possible.
-pub use engine::{ffihub_impl::TiFlashFFIHub, ps_engine};
 pub use engine_tiflash::EngineStoreConfig;
 pub type TiFlashEngine = engine_tiflash::RocksEngine;

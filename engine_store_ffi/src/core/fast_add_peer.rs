@@ -49,7 +49,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         } else {
             return false;
         }
-        // TODO We don't need to recover all region infomation from restart,
+        // We don't need to recover all region infomation from restart,
         // since we have `has_already_inited`.
         let inner_msg = msg.get_message();
         if inner_msg.get_msg_type() != MessageType::MsgAppend {

@@ -29,11 +29,11 @@ use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
     self,
     core::DebugStruct,
+    engine::ps_engine::PSEngine,
     ffi::{
         EngineStoreServerHelper, EngineStoreServerStatus, RaftProxyStatus, RaftStoreProxy,
         RaftStoreProxyFFI, RaftStoreProxyFFIHelper,
     },
-    ps_engine::PSEngine,
     read_index_helper::ReadIndexClient,
     TiFlashEngine,
 };
@@ -436,7 +436,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
 
         let helper =
             engine_store_ffi::ffi::gen_engine_store_server_helper(engine_store_server_helper);
-        let ffi_hub = Arc::new(engine_store_ffi::TiFlashFFIHub {
+        let ffi_hub = Arc::new(engine_store_ffi::engine::TiFlashFFIHub {
             engine_store_server_helper: helper,
         });
         // engine_tiflash::RocksEngine has engine_rocks::RocksEngine inside
