@@ -5,8 +5,8 @@ use encryption::DataKeyManager;
 use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
 use engine_traits::{IterOptions, Iterator, RefIterable, SstReader};
 
-pub use crate::interfaces::root::DB::{BaseBuffView, ColumnFamilyType};
-use crate::{
+pub use super::interfaces::root::DB::{BaseBuffView, ColumnFamilyType};
+use super::{
     interfaces::root::DB::SSTReaderInterfaces, LockCFFileReader, RaftStoreProxyPtr, RawVoidPtr,
     SSTReaderPtr, SSTView, SSTViewVec,
 };

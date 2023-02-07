@@ -23,7 +23,7 @@ use raft::eraftpb::Entry;
 use tikv_util::{box_try, info};
 use tracker::TrackerToken;
 
-use crate::{gen_engine_store_server_helper, PageAndCppStrWithView, RawCppPtr};
+use crate::ffi::{gen_engine_store_server_helper, PageAndCppStrWithView, RawCppPtr};
 
 // 1. STORE_IDENT 0
 // 2. PREPARE_BOOTSTRAP 1

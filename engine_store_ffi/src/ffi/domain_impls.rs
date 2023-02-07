@@ -2,7 +2,8 @@
 
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 
-pub use crate::interfaces::root::DB::{
+use super::interfaces;
+pub use super::interfaces::root::DB::{
     BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, WriteCmdType,
     WriteCmdsView,
 };
@@ -102,10 +103,7 @@ impl Into<u32> for RawRustPtrType {
     }
 }
 
-pub extern "C" fn ffi_gc_rust_ptr(
-    data: RawVoidPtr,
-    type_: crate::interfaces::root::DB::RawRustPtrType,
-) {
+pub extern "C" fn ffi_gc_rust_ptr(data: RawVoidPtr, type_: interfaces::root::DB::RawRustPtrType) {
     if data.is_null() {
         return;
     }

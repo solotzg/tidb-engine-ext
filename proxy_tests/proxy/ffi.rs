@@ -1,6 +1,6 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_store_ffi::{
+use engine_store_ffi::ffi::{
     get_engine_store_server_helper, RawCppPtr, RawCppPtrArr, RawCppPtrTuple, RawVoidPtr,
     UnwrapExternCFunc,
 };

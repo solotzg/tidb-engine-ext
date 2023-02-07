@@ -13,7 +13,7 @@ pub use std::{
 
 use assert_type_eq;
 use collections::{HashMap, HashSet};
-pub use engine_store_ffi::{
+pub use engine_store_ffi::ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, RaftStoreProxyFFIHelper,
     RawCppPtr, RawVoidPtr, UnwrapExternCFunc,
 };
@@ -651,10 +651,10 @@ impl EngineStoreServerWrap {
                 );
                 let _data = &mut region.data[cf_index as usize];
                 match tp {
-                    engine_store_ffi::WriteCmdType::Put => {
+                    engine_store_ffi::ffi::WriteCmdType::Put => {
                         write_kv_in_mem(region.as_mut(), cf_index as usize, k, v);
                     }
-                    engine_store_ffi::WriteCmdType::Del => {
+                    engine_store_ffi::ffi::WriteCmdType::Del => {
                         delete_kv_in_mem(region.as_mut(), cf_index as usize, k);
                     }
                 }

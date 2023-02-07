@@ -1,7 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use engine_tiflash::{FsStatsExt, RawPSWriteBatchPtr, RawPSWriteBatchWrapper};
 
-use crate::{
+use crate::ffi::{
     interfaces::root::DB as ffi_interfaces, EngineStoreServerHelper, PageAndCppStrWithView,
     RawCppPtr,
 };
