@@ -23,6 +23,17 @@ pub fn name_to_cf(cf: &str) -> ColumnFamilyType {
     }
 }
 
+impl From<usize> for ColumnFamilyType {
+    fn from(i: usize) -> Self {
+        match i {
+            0 => ColumnFamilyType::Lock,
+            1 => ColumnFamilyType::Write,
+            2 => ColumnFamilyType::Default,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct WriteCmds {
     keys: Vec<BaseBuffView>,
