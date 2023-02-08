@@ -8,6 +8,7 @@ use super::{
         BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, WriteCmdType,
         WriteCmdsView,
     },
+    read_index_helper, utils,
 };
 
 pub fn name_to_cf(cf: &str) -> ColumnFamilyType {
@@ -123,15 +124,13 @@ pub extern "C" fn ffi_gc_rust_ptr(data: RawVoidPtr, type_: interfaces_ffi::RawRu
     let type_: RawRustPtrType = type_.into();
     match type_ {
         RawRustPtrType::ReadIndexTask => unsafe {
-            drop(Box::from_raw(
-                data as *mut crate::read_index_helper::ReadIndexTask,
-            ));
+            drop(Box::from_raw(data as *mut read_index_helper::ReadIndexTask));
         },
         RawRustPtrType::ArcFutureWaker => unsafe {
-            drop(Box::from_raw(data as *mut crate::utils::ArcNotifyWaker));
+            drop(Box::from_raw(data as *mut utils::ArcNotifyWaker));
         },
         RawRustPtrType::TimerTask => unsafe {
-            drop(Box::from_raw(data as *mut crate::utils::TimerTask));
+            drop(Box::from_raw(data as *mut utils::TimerTask));
         },
         _ => unreachable!(),
     }
