@@ -240,6 +240,7 @@ fn test_read_index() {
 #[test]
 fn test_util() {
     // test timer
+    new_mock_engine_store::mock_cluster::init_global_ffi_helper_set();
     {
         let timeout = 128;
         let task = RawRustPtrWrap::new(ffi_make_timer_task(timeout));
