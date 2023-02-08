@@ -55,9 +55,9 @@ fn test_interaction() {
     must_altered_memory_apply_state(&prev_states, &new_states);
     must_unaltered_memory_apply_term(&prev_states, &new_states);
 
+    cluster.shutdown();
     fail::remove("try_flush_data");
     fail::remove("on_empty_cmd_normal");
-    cluster.shutdown();
 }
 
 enum TransferLeaderRunMode {
@@ -163,10 +163,10 @@ fn leadership_change_impl(mode: TransferLeaderRunMode) {
     must_altered_memory_apply_state(&prev_states, &new_states);
     must_altered_memory_apply_term(&prev_states, &new_states);
 
+    cluster.shutdown();
     fail::remove("try_flush_data");
     fail::remove("on_post_exec_normal");
     fail::remove("no_persist_compact_log");
-    cluster.shutdown();
 }
 
 #[test]
@@ -201,8 +201,8 @@ fn test_kv_write_always_persist() {
         must_altered_disk_apply_state(&prev_states, &new_states);
         prev_states = new_states;
     }
-    fail::remove("on_post_exec_normal_end");
     cluster.shutdown();
+    fail::remove("on_post_exec_normal_end");
 }
 
 #[test]
@@ -327,14 +327,14 @@ fn test_kv_write() {
     //     assert_eq!(states.in_memory_apply_state.get_commit_index(),
     // states.in_memory_apply_state.get_applied_index()); });
 
-    fail::remove("no_persist_compact_log");
     cluster.shutdown();
+    fail::remove("no_persist_compact_log");
 }
 
 #[test]
 fn test_unsupport_admin_cmd() {
     // ComputeHash and VerifyHash shall be filtered.
-    let (mut cluster, _pd_client) = new_mock_cluster(0, 2);
+    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
 
     cluster.run();
 
@@ -355,6 +355,7 @@ fn test_unsupport_admin_cmd() {
         .unwrap();
 
     cluster.must_put(b"k2", b"v2");
+    check_key(&cluster, b"k2", b"v2", Some(true), None, None);
     cluster.shutdown();
 }
 
@@ -464,8 +465,8 @@ mod mix_mode {
         must_altered_memory_apply_state(&prev_state, &new_state);
         must_unaltered_disk_apply_state(&prev_state, &new_state);
 
-        fail::remove("no_persist_compact_log");
         cluster.shutdown();
+        fail::remove("no_persist_compact_log");
     }
 
     #[test]
@@ -501,7 +502,7 @@ mod mix_mode {
         must_altered_memory_apply_state(&prev_states, &new_states);
         must_unaltered_disk_apply_state(&prev_states, &new_states);
 
-        fail::remove("no_persist_compact_log");
         cluster.shutdown();
+        fail::remove("no_persist_compact_log");
     }
 }
