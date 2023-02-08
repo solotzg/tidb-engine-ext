@@ -271,3 +271,60 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
         0
     }
 }
+
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum RawRustPtrType {
+    None = 0,
+    ReadIndexTask = 1,
+    ArcFutureWaker = 2,
+    TimerTask = 3,
+}
+
+impl From<u32> for RawRustPtrType {
+    fn from(x: u32) -> Self {
+        unsafe { std::mem::transmute(x) }
+    }
+}
+
+// TODO remove this warn.
+#[allow(clippy::from_over_into)]
+impl Into<u32> for RawRustPtrType {
+    fn into(self) -> u32 {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+pub extern "C" fn ffi_gc_rust_ptr(data: RawVoidPtr, type_: interfaces_ffi::RawRustPtrType) {
+    if data.is_null() {
+        return;
+    }
+    let type_: RawRustPtrType = type_.into();
+    match type_ {
+        RawRustPtrType::ReadIndexTask => unsafe {
+            drop(Box::from_raw(data as *mut read_index_helper::ReadIndexTask));
+        },
+        RawRustPtrType::ArcFutureWaker => unsafe {
+            drop(Box::from_raw(data as *mut utils::ArcNotifyWaker));
+        },
+        RawRustPtrType::TimerTask => unsafe {
+            drop(Box::from_raw(data as *mut utils::TimerTask));
+        },
+        _ => unreachable!(),
+    }
+}
+
+impl Default for RawRustPtr {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            type_: RawRustPtrType::None.into(),
+        }
+    }
+}
+
+impl RawRustPtr {
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
