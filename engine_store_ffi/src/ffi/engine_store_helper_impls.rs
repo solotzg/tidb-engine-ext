@@ -44,6 +44,10 @@ pub unsafe fn init_engine_store_server_helper(engine_store_server_helper: *const
 
 unsafe impl Sync for EngineStoreServerHelper {}
 
+pub fn set_server_info_resp(res: &kvproto::diagnosticspb::ServerInfoResponse, ptr: RawVoidPtr) {
+    get_engine_store_server_helper().set_server_info_resp(res, ptr)
+}
+
 impl EngineStoreServerHelper {
     pub fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
