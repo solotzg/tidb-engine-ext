@@ -5,8 +5,8 @@ use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 
 use super::{
     basic_ffi_impls::*,
-    interfaces,
-    interfaces::root::DB::{
+    interfaces_ffi,
+    interfaces_ffi::{
         BaseBuffView, ColumnFamilyType, CppStrWithView, EngineStoreApplyRes,
         EngineStoreServerHelper, EngineStoreServerStatus, FastAddPeerRes, HttpRequestRes,
         RaftCmdHeader, RaftStoreProxyFFIHelper, RawCppPtr, RawCppPtrCarr, RawCppPtrType,
@@ -311,7 +311,7 @@ impl EngineStoreServerHelper {
     pub fn set_read_index_resp(&self, ptr: RawVoidPtr, r: &kvrpcpb::ReadIndexResponse) {
         let buff = ProtoMsgBaseBuff::new(r);
         self.set_pb_msg_by_bytes(
-            interfaces::root::DB::MsgPBType::ReadIndexResponse,
+            interfaces_ffi::MsgPBType::ReadIndexResponse,
             ptr,
             Pin::new(&buff).into(),
         )
@@ -351,7 +351,7 @@ impl EngineStoreServerHelper {
 
     pub fn set_pb_msg_by_bytes(
         &self,
-        type_: interfaces::root::DB::MsgPBType,
+        type_: interfaces_ffi::MsgPBType,
         ptr: RawVoidPtr,
         buff: BaseBuffView,
     ) {
@@ -366,7 +366,7 @@ impl EngineStoreServerHelper {
     ) {
         let buff = ProtoMsgBaseBuff::new(res);
         self.set_pb_msg_by_bytes(
-            interfaces::root::DB::MsgPBType::ServerInfoResponse,
+            interfaces_ffi::MsgPBType::ServerInfoResponse,
             ptr,
             Pin::new(&buff).into(),
         )

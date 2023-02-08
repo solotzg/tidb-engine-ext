@@ -19,8 +19,8 @@ use super::{
     domain_impls::*,
     encryption_impls::*,
     engine_store_helper_impls::*,
-    interfaces,
-    interfaces::root::DB::{
+    interfaces_ffi,
+    interfaces_ffi::{
         BaseBuffView, ConstRawVoidPtr, CppStrVecView, KVGetStatus, RaftProxyStatus,
         RaftStoreProxyFFIHelper, RaftStoreProxyPtr, RawCppPtr, RawCppStringPtr, RawRustPtr,
         RawVoidPtr, SSTReaderInterfaces,
@@ -173,7 +173,7 @@ unsafe extern "C" fn ffi_get_region_local_state(
                 Ok(v) => {
                     if let Some(buff) = v {
                         get_engine_store_server_helper().set_pb_msg_by_bytes(
-                            interfaces::root::DB::MsgPBType::RegionLocalState,
+                            interfaces_ffi::MsgPBType::RegionLocalState,
                             data,
                             buff.into(),
                         );

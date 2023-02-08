@@ -1,4 +1,4 @@
-use engine_store_ffi::interfaces::root::DB::RawRustPtr;
+use engine_store_ffi::interfaces_ffi::RawRustPtr;
 use engine_store_ffi::{
     ffi_gc_rust_ptr, ffi_make_async_waker, ffi_make_read_index_task, ffi_make_timer_task,
     ffi_poll_read_index_task, ffi_poll_timer_task, ProtoMsgBaseBuff, RawVoidPtr,

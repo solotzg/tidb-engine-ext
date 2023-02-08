@@ -12,7 +12,7 @@ use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
 // mock cluster
 pub use engine_store_ffi::ffi::{
-    interfaces::root::DB as ffi_interfaces,
+    interfaces_ffi,
     interfaces_ffi::{
         EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     },
