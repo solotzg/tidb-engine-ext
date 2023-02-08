@@ -15,14 +15,6 @@ use super::{
 };
 use crate::TiFlashEngine;
 
-pub trait RaftStoreProxyFFI: Sync {
-    fn set_status(&mut self, s: RaftProxyStatus);
-    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
-    where
-        F: FnOnce(Result<Option<&[u8]>, String>);
-    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>);
-}
-
 pub struct RaftStoreProxy {
     pub status: AtomicU8,
     pub key_manager: Option<Arc<DataKeyManager>>,
@@ -46,7 +38,7 @@ impl RaftStoreProxy {
     }
 }
 
-impl RaftStoreProxyFFI for RaftStoreProxy {
+impl RaftStoreProxyFFI<TiFlashEngine> for RaftStoreProxy {
     fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
         let mut lock = self.kv_engine.write().unwrap();
         *lock = kv_engine;

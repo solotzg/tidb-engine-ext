@@ -21,7 +21,7 @@ use super::{
     },
     read_index_helper,
     sst_reader_impls::*,
-    utils, RaftStoreProxyFFI, UnwrapExternCFunc,
+    utils, UnwrapExternCFunc,
 };
 
 impl Clone for RaftStoreProxyPtr {
@@ -33,6 +33,14 @@ impl Clone for RaftStoreProxyPtr {
 }
 
 impl Copy for RaftStoreProxyPtr {}
+
+pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
+    fn set_status(&mut self, s: RaftProxyStatus);
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnOnce(Result<Option<&[u8]>, String>);
+    fn set_kv_engine(&mut self, kv_engine: Option<EK>);
+}
 
 impl RaftStoreProxyFFIHelper {
     pub fn new(proxy: RaftStoreProxyPtr) -> Self {

@@ -1,15 +1,37 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use std::pin::Pin;
+
 use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 
 use super::{
     interfaces_ffi,
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, WriteCmdType,
-        WriteCmdsView,
+        BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, SSTView, SSTViewVec,
+        WriteCmdType, WriteCmdsView,
     },
     read_index_helper, utils,
 };
+
+pub fn into_sst_views(snaps: Vec<(&[u8], ColumnFamilyType)>) -> Vec<SSTView> {
+    let mut snaps_view = vec![];
+    for (path, cf) in snaps {
+        snaps_view.push(SSTView {
+            type_: cf,
+            path: path.into(),
+        })
+    }
+    snaps_view
+}
+
+impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
+    fn from(snaps_view: Pin<&Vec<SSTView>>) -> Self {
+        Self {
+            views: snaps_view.as_ptr(),
+            len: snaps_view.len() as u64,
+        }
+    }
+}
 
 pub fn name_to_cf(cf: &str) -> ColumnFamilyType {
     if cf.is_empty() {
