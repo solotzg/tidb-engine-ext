@@ -4,7 +4,7 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicU8, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     time,
 };
@@ -49,6 +49,7 @@ pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
     where
         F: FnOnce(Result<Option<&[u8]>, String>);
     fn set_kv_engine(&mut self, kv_engine: Option<EK>);
+    fn kv_engine(&self) -> &RwLock<Option<EK>>;
 }
 
 impl RaftStoreProxyFFIHelper {

@@ -206,7 +206,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
         let engine_store_server_helper_ptr = &*engine_store_server_helper as *const _ as isize;
         proxy
-            .kv_engine
+            .kv_engine()
             .write()
             .unwrap()
             .as_mut()
@@ -321,7 +321,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         let (helper_ptr, ffi_hub) = {
             let helper_ptr = ffi_helper_set
                 .proxy
-                .kv_engine
+                .kv_engine()
                 .write()
                 .unwrap()
                 .as_mut()

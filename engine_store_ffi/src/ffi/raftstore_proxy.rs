@@ -2,7 +2,7 @@
 
 use std::sync::{
     atomic::{AtomicU8, Ordering},
-    Arc,
+    Arc, RwLock,
 };
 
 use encryption::DataKeyManager;
@@ -19,7 +19,7 @@ pub struct RaftStoreProxy {
     status: AtomicU8,
     key_manager: Option<Arc<DataKeyManager>>,
     read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-    pub kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
+    kv_engine: RwLock<Option<TiFlashEngine>>,
 }
 
 impl RaftStoreProxy {
@@ -27,7 +27,7 @@ impl RaftStoreProxy {
         status: AtomicU8,
         key_manager: Option<Arc<DataKeyManager>>,
         read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-        kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
+        kv_engine: RwLock<Option<TiFlashEngine>>,
     ) -> Self {
         RaftStoreProxy {
             status,
@@ -58,6 +58,10 @@ impl RaftStoreProxyFFI<TiFlashEngine> for RaftStoreProxy {
     fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
         let mut lock = self.kv_engine.write().unwrap();
         *lock = kv_engine;
+    }
+
+    fn kv_engine(&self) -> &RwLock<Option<TiFlashEngine>> {
+        &self.kv_engine
     }
 
     fn set_status(&mut self, s: RaftProxyStatus) {
