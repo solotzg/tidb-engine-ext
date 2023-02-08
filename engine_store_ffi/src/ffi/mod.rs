@@ -10,7 +10,7 @@ pub mod interfaces;
 pub mod basic_ffi_impls;
 // All ffi impls that within raft domain, but without proxy helper context.
 pub mod domain_impls;
-// All ffi impls that within proxy helper context.
+// All ffi impls that within engine store helper context.
 pub mod context_impls;
 pub mod encryption_impls;
 // FFI directly related with EngineStoreServerHelper.

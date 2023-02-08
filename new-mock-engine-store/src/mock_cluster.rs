@@ -16,7 +16,7 @@ pub use engine_store_ffi::ffi::{
     interfaces_ffi::{
         EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper, RawCppPtr,
     },
-    RaftStoreProxy, UnwrapExternCFunc,
+    RaftStoreProxy, RaftStoreProxyFFI, UnwrapExternCFunc,
 };
 pub use engine_store_ffi::TiFlashEngine;
 use engine_tiflash::DB;
@@ -175,10 +175,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         mock_cfg: MockConfig,
     ) -> (FFIHelperSet, TikvConfig) {
         // We must allocate on heap to avoid move.
-        let proxy = Box::new(engine_store_ffi::ffi::RaftStoreProxy {
-            status: AtomicU8::new(RaftProxyStatus::Idle as u8),
-            key_manager: key_mgr.clone(),
-            read_index_client: match router {
+        let proxy = Box::new(engine_store_ffi::ffi::RaftStoreProxy::new(
+            AtomicU8::new(RaftProxyStatus::Idle as u8),
+            key_mgr.clone(),
+            match router {
                 Some(r) => Some(Box::new(
                     engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
                         r.clone(),
@@ -187,8 +187,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 )),
                 None => None,
             },
-            kv_engine: std::sync::RwLock::new(Some(engines.kv.clone())),
-        });
+            std::sync::RwLock::new(Some(engines.kv.clone())),
+        ));
 
         let proxy_ref = proxy.as_ref();
         let mut proxy_helper = Box::new(RaftStoreProxyFFIHelper::new(proxy_ref.into()));
@@ -418,12 +418,12 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             let router = self.sim.rl().get_router(node_id).unwrap();
             let mut lock = self.ffi_helper_set.lock().unwrap();
             let ffi_helper_set = lock.get_mut(&node_id).unwrap();
-            ffi_helper_set.proxy.read_index_client = Some(Box::new(
+            ffi_helper_set.proxy.set_read_index_client(Some(Box::new(
                 engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
                     router.clone(),
                     SysQuota::cpu_cores_quota() as usize * 2,
                 ),
-            ));
+            )));
         }
 
         // Try start new nodes.

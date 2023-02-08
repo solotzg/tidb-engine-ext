@@ -2,10 +2,14 @@
 
 use std::{
     pin::Pin,
-    sync::{atomic::Ordering, Arc},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
     time,
 };
 
+use encryption::DataKeyManager;
 use kvproto::kvrpcpb;
 use protobuf::Message;
 
@@ -35,6 +39,11 @@ impl Clone for RaftStoreProxyPtr {
 impl Copy for RaftStoreProxyPtr {}
 
 pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
+    fn status(&self) -> &AtomicU8;
+    fn maybe_key_manager(&self) -> &Option<Arc<DataKeyManager>>;
+    fn maybe_read_index_client(&self) -> &Option<Box<dyn read_index_helper::ReadIndex>>;
+    // Only for test.
+    fn set_read_index_client(&mut self, _: Option<Box<dyn read_index_helper::ReadIndex>>);
     fn set_status(&mut self, s: RaftProxyStatus);
     fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
     where
@@ -45,7 +54,7 @@ pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
 impl RaftStoreProxyFFIHelper {
     pub fn new(proxy: RaftStoreProxyPtr) -> Self {
         RaftStoreProxyFFIHelper {
-            proxy_ptr: proxy.into(),
+            proxy_ptr: proxy,
             fn_handle_get_proxy_status: Some(ffi_handle_get_proxy_status),
             fn_is_encryption_enabled: Some(ffi_is_encryption_enabled),
             fn_encryption_method: Some(ffi_encryption_method),
@@ -113,7 +122,7 @@ unsafe extern "C" fn ffi_get_region_local_state(
 
 pub extern "C" fn ffi_handle_get_proxy_status(proxy_ptr: RaftStoreProxyPtr) -> RaftProxyStatus {
     unsafe {
-        let r = proxy_ptr.as_ref().status.load(Ordering::SeqCst);
+        let r = proxy_ptr.as_ref().status().load(Ordering::SeqCst);
         std::mem::transmute(r)
     }
 }
@@ -127,7 +136,7 @@ pub extern "C" fn ffi_batch_read_index(
 ) {
     assert!(!proxy_ptr.is_null());
     unsafe {
-        if proxy_ptr.as_ref().read_index_client.is_none() {
+        if proxy_ptr.as_ref().maybe_read_index_client().is_none() {
             return;
         }
     }
@@ -147,7 +156,7 @@ pub extern "C" fn ffi_batch_read_index(
         }
         let resp = proxy_ptr
             .as_ref()
-            .read_index_client
+            .maybe_read_index_client()
             .as_ref()
             .unwrap()
             .batch_read_index(req_vec, time::Duration::from_millis(timeout_ms));
@@ -165,7 +174,7 @@ pub extern "C" fn ffi_make_read_index_task(
 ) -> RawRustPtr {
     assert!(!proxy_ptr.is_null());
     unsafe {
-        if proxy_ptr.as_ref().read_index_client.is_none() {
+        if proxy_ptr.as_ref().maybe_read_index_client().is_none() {
             return RawRustPtr::default();
         }
     }
@@ -174,7 +183,7 @@ pub extern "C" fn ffi_make_read_index_task(
     let task = unsafe {
         proxy_ptr
             .as_ref()
-            .read_index_client
+            .maybe_read_index_client()
             .as_ref()
             .unwrap()
             .make_read_index_task(req)
@@ -224,7 +233,7 @@ pub extern "C" fn ffi_poll_read_index_task(
 ) -> u8 {
     assert!(!proxy_ptr.is_null());
     unsafe {
-        if proxy_ptr.as_ref().read_index_client.is_none() {
+        if proxy_ptr.as_ref().maybe_read_index_client().is_none() {
             return 0;
         }
     }
@@ -237,7 +246,7 @@ pub extern "C" fn ffi_poll_read_index_task(
     if let Some(res) = unsafe {
         proxy_ptr
             .as_ref()
-            .read_index_client
+            .maybe_read_index_client()
             .as_ref()
             .unwrap()
             .poll_read_index_task(task, waker)

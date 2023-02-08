@@ -16,9 +16,9 @@ use super::{
 use crate::TiFlashEngine;
 
 pub struct RaftStoreProxy {
-    pub status: AtomicU8,
-    pub key_manager: Option<Arc<DataKeyManager>>,
-    pub read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
+    status: AtomicU8,
+    key_manager: Option<Arc<DataKeyManager>>,
+    read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
     pub kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
 }
 
@@ -39,6 +39,22 @@ impl RaftStoreProxy {
 }
 
 impl RaftStoreProxyFFI<TiFlashEngine> for RaftStoreProxy {
+    fn maybe_read_index_client(&self) -> &Option<Box<dyn read_index_helper::ReadIndex>> {
+        &self.read_index_client
+    }
+
+    fn set_read_index_client(&mut self, v: Option<Box<dyn read_index_helper::ReadIndex>>) {
+        self.read_index_client = v;
+    }
+
+    fn status(&self) -> &AtomicU8 {
+        &self.status
+    }
+
+    fn maybe_key_manager(&self) -> &Option<Arc<DataKeyManager>> {
+        &self.key_manager
+    }
+
     fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
         let mut lock = self.kv_engine.write().unwrap();
         *lock = kv_engine;

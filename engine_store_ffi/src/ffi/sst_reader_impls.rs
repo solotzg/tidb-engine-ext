@@ -10,7 +10,7 @@ use super::{
         BaseBuffView, ColumnFamilyType, RaftStoreProxyPtr, RawVoidPtr, SSTReaderInterfaces,
         SSTReaderPtr, SSTView,
     },
-    LockCFFileReader,
+    LockCFFileReader, RaftStoreProxyFFI,
 };
 
 #[allow(clippy::clone_on_copy)]
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn ffi_make_sst_reader(
     proxy_ptr: RaftStoreProxyPtr,
 ) -> SSTReaderPtr {
     let path = std::str::from_utf8_unchecked(view.path.to_slice());
-    let key_manager = &proxy_ptr.as_ref().key_manager;
+    let key_manager = proxy_ptr.as_ref().maybe_key_manager();
     match view.type_ {
         ColumnFamilyType::Lock => {
             LockCFFileReader::ffi_get_cf_file_reader(path, key_manager.as_ref()).into()
