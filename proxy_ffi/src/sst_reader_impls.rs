@@ -1,5 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use std::{cell::RefCell, pin::Pin, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 
 use encryption::DataKeyManager;
 use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
@@ -8,7 +8,7 @@ use engine_traits::{IterOptions, Iterator, RefIterable, SstReader};
 use super::{
     interfaces_ffi::{
         BaseBuffView, ColumnFamilyType, RaftStoreProxyPtr, RawVoidPtr, SSTReaderInterfaces,
-        SSTReaderPtr, SSTView, SSTViewVec,
+        SSTReaderPtr, SSTView,
     },
     LockCFFileReader,
 };
@@ -120,26 +120,6 @@ pub unsafe extern "C" fn ffi_gc_sst_reader(reader: SSTReaderPtr, type_: ColumnFa
         }
         _ => {
             drop(Box::from_raw(reader.inner as *mut SSTFileReader));
-        }
-    }
-}
-
-pub fn into_sst_views(snaps: Vec<(&[u8], ColumnFamilyType)>) -> Vec<SSTView> {
-    let mut snaps_view = vec![];
-    for (path, cf) in snaps {
-        snaps_view.push(SSTView {
-            type_: cf,
-            path: path.into(),
-        })
-    }
-    snaps_view
-}
-
-impl From<Pin<&Vec<SSTView>>> for SSTViewVec {
-    fn from(snaps_view: Pin<&Vec<SSTView>>) -> Self {
-        Self {
-            views: snaps_view.as_ptr(),
-            len: snaps_view.len() as u64,
         }
     }
 }

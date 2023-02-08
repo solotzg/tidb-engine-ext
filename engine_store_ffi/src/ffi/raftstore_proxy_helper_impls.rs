@@ -2,15 +2,10 @@
 
 use std::{
     pin::Pin,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
     time,
 };
 
-use encryption::DataKeyManager;
-use engine_traits::Peekable;
 use kvproto::kvrpcpb;
 use protobuf::Message;
 
@@ -21,98 +16,13 @@ use super::{
     engine_store_helper_impls::*,
     interfaces_ffi,
     interfaces_ffi::{
-        BaseBuffView, ConstRawVoidPtr, CppStrVecView, KVGetStatus, RaftProxyStatus,
-        RaftStoreProxyFFIHelper, RaftStoreProxyPtr, RawCppPtr, RawCppStringPtr, RawRustPtr,
-        RawVoidPtr, SSTReaderInterfaces,
+        BaseBuffView, CppStrVecView, KVGetStatus, RaftProxyStatus, RaftStoreProxyFFIHelper,
+        RaftStoreProxyPtr, RawCppPtr, RawCppStringPtr, RawRustPtr, RawVoidPtr, SSTReaderInterfaces,
     },
+    read_index_helper,
     sst_reader_impls::*,
-    UnwrapExternCFunc,
+    utils, UnwrapExternCFunc,
 };
-use crate::{read_index_helper, utils, TiFlashEngine};
-
-pub trait RaftStoreProxyFFI: Sync {
-    fn set_status(&mut self, s: RaftProxyStatus);
-    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
-    where
-        F: FnOnce(Result<Option<&[u8]>, String>);
-    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>);
-}
-
-pub struct RaftStoreProxy {
-    pub status: AtomicU8,
-    pub key_manager: Option<Arc<DataKeyManager>>,
-    pub read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-    pub kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
-}
-
-impl RaftStoreProxy {
-    pub fn new(
-        status: AtomicU8,
-        key_manager: Option<Arc<DataKeyManager>>,
-        read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
-        kv_engine: std::sync::RwLock<Option<TiFlashEngine>>,
-    ) -> Self {
-        RaftStoreProxy {
-            status,
-            key_manager,
-            read_index_client,
-            kv_engine,
-        }
-    }
-}
-
-impl RaftStoreProxyFFI for RaftStoreProxy {
-    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
-        let mut lock = self.kv_engine.write().unwrap();
-        *lock = kv_engine;
-    }
-
-    fn set_status(&mut self, s: RaftProxyStatus) {
-        self.status.store(s as u8, Ordering::SeqCst);
-    }
-
-    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
-    where
-        F: FnOnce(Result<Option<&[u8]>, String>),
-    {
-        let kv_engine_lock = self.kv_engine.read().unwrap();
-        let kv_engine = kv_engine_lock.as_ref();
-        if kv_engine.is_none() {
-            cb(Err("KV engine is not initialized".to_string()));
-            return;
-        }
-        let value = kv_engine.unwrap().get_value_cf(cf, key);
-        match value {
-            Ok(v) => {
-                if let Some(x) = v {
-                    cb(Ok(Some(&x)));
-                } else {
-                    cb(Ok(None));
-                }
-            }
-            Err(e) => {
-                cb(Err(format!("{}", e)));
-            }
-        }
-    }
-}
-
-impl RaftStoreProxyPtr {
-    pub unsafe fn as_ref(&self) -> &RaftStoreProxy {
-        &*(self.inner as *const RaftStoreProxy)
-    }
-    pub fn is_null(&self) -> bool {
-        self.inner.is_null()
-    }
-}
-
-impl From<&RaftStoreProxy> for RaftStoreProxyPtr {
-    fn from(ptr: &RaftStoreProxy) -> Self {
-        Self {
-            inner: ptr as *const _ as ConstRawVoidPtr,
-        }
-    }
-}
 
 impl Clone for RaftStoreProxyPtr {
     fn clone(&self) -> RaftStoreProxyPtr {
@@ -124,8 +34,16 @@ impl Clone for RaftStoreProxyPtr {
 
 impl Copy for RaftStoreProxyPtr {}
 
+pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
+    fn set_status(&mut self, s: RaftProxyStatus);
+    fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
+    where
+        F: FnOnce(Result<Option<&[u8]>, String>);
+    fn set_kv_engine(&mut self, kv_engine: Option<EK>);
+}
+
 impl RaftStoreProxyFFIHelper {
-    pub fn new(proxy: &RaftStoreProxy) -> Self {
+    pub fn new(proxy: RaftStoreProxyPtr) -> Self {
         RaftStoreProxyFFIHelper {
             proxy_ptr: proxy.into(),
             fn_handle_get_proxy_status: Some(ffi_handle_get_proxy_status),
@@ -351,5 +269,62 @@ pub unsafe extern "C" fn ffi_poll_timer_task(task_ptr: RawVoidPtr, waker: RawVoi
         1
     } else {
         0
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum RawRustPtrType {
+    None = 0,
+    ReadIndexTask = 1,
+    ArcFutureWaker = 2,
+    TimerTask = 3,
+}
+
+impl From<u32> for RawRustPtrType {
+    fn from(x: u32) -> Self {
+        unsafe { std::mem::transmute(x) }
+    }
+}
+
+// TODO remove this warn.
+#[allow(clippy::from_over_into)]
+impl Into<u32> for RawRustPtrType {
+    fn into(self) -> u32 {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+pub extern "C" fn ffi_gc_rust_ptr(data: RawVoidPtr, type_: interfaces_ffi::RawRustPtrType) {
+    if data.is_null() {
+        return;
+    }
+    let type_: RawRustPtrType = type_.into();
+    match type_ {
+        RawRustPtrType::ReadIndexTask => unsafe {
+            drop(Box::from_raw(data as *mut read_index_helper::ReadIndexTask));
+        },
+        RawRustPtrType::ArcFutureWaker => unsafe {
+            drop(Box::from_raw(data as *mut utils::ArcNotifyWaker));
+        },
+        RawRustPtrType::TimerTask => unsafe {
+            drop(Box::from_raw(data as *mut utils::TimerTask));
+        },
+        _ => unreachable!(),
+    }
+}
+
+impl Default for RawRustPtr {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            type_: RawRustPtrType::None.into(),
+        }
+    }
+}
+
+impl RawRustPtr {
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
     }
 }

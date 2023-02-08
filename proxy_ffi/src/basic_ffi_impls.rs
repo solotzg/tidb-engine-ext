@@ -1,7 +1,18 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use std::pin::Pin;
 
-pub use super::interfaces_ffi::BaseBuffView;
+use super::interfaces_ffi::BaseBuffView;
+
+#[allow(clippy::wrong_self_convention)]
+pub trait UnwrapExternCFunc<T> {
+    unsafe fn into_inner(&self) -> &T;
+}
+
+impl<T> UnwrapExternCFunc<T> for std::option::Option<T> {
+    unsafe fn into_inner(&self) -> &T {
+        std::mem::transmute::<&Self, &T>(self)
+    }
+}
 
 impl From<&[u8]> for BaseBuffView {
     fn from(s: &[u8]) -> Self {
