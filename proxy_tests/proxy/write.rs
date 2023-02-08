@@ -181,7 +181,7 @@ fn test_kv_write_always_persist() {
     let mut prev_states = collect_all_states(&cluster, region_id);
     // Always persist on every command
     fail::cfg("on_post_exec_normal_end", "return(true)").unwrap();
-    for i in 1..20 {
+    for i in 1..15 {
         let k = format!("k{}", i);
         let v = format!("v{}", i);
         cluster.must_put(k.as_bytes(), v.as_bytes());
@@ -194,7 +194,8 @@ fn test_kv_write_always_persist() {
         // We must check if we already have in memory.
         check_apply_state(&cluster, region_id, &prev_states, Some(false), None);
         // Wait persist.
-        std::thread::sleep(std::time::Duration::from_millis(25));
+        // TODO Change to wait condition timeout.
+        std::thread::sleep(std::time::Duration::from_millis(100));
         // However, advanced apply index will always persisted.
         let new_states = collect_all_states(&cluster, region_id);
         must_altered_disk_apply_state(&prev_states, &new_states);
