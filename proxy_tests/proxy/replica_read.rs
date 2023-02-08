@@ -30,7 +30,7 @@ impl GcMonitor {
         let data = &*self.data.lock().unwrap();
         for (k, v) in data {
             if *v != 0 {
-                error!("GcMonitor::valid_clean failed at {}:{}", k, v);
+                error!("GcMonitor::valid_clean failed at type {} refcount {}", k, v);
                 return false;
             }
         }
@@ -184,8 +184,9 @@ fn test_read_index() {
     let r1 = cluster.run_conf_change();
     let p1 = new_peer(1, 1);
     let p2 = new_peer(2, 2);
-    cluster.pd_client.must_add_peer(r1, p2.clone());
     let p3 = new_peer(3, 3);
+
+    cluster.pd_client.must_add_peer(r1, p2.clone());
     cluster.pd_client.must_add_peer(r1, p3.clone());
     cluster.must_put(b"k0", b"v0");
     cluster.pd_client.must_none_pending_peer(p2.clone());
@@ -238,6 +239,7 @@ fn test_read_index() {
 #[test]
 fn test_util() {
     // test timer
+    new_mock_engine_store::mock_cluster::init_global_ffi_helper_set();
     {
         let timeout = 128;
         let task = RawRustPtrWrap::new(ffi_make_timer_task(timeout));

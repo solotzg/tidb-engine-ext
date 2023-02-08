@@ -21,7 +21,7 @@ use super::{
     },
     read_index_helper,
     sst_reader_impls::*,
-    utils, UnwrapExternCFunc,
+    utils, RaftStoreProxyFFI, UnwrapExternCFunc,
 };
 
 impl Clone for RaftStoreProxyPtr {
