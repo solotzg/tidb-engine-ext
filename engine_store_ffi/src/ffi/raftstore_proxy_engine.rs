@@ -1,18 +1,8 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc, RwLock,
-};
-
-use encryption::DataKeyManager;
 use engine_traits::Peekable;
 
-use super::{
-    interfaces_ffi::{ConstRawVoidPtr, RaftProxyStatus, RaftStoreProxyPtr},
-    raftstore_proxy::*,
-    raftstore_proxy_helper_impls::*,
-};
+use super::raftstore_proxy::*;
 use crate::TiFlashEngine;
 
 pub struct RaftStoreProxyEngine {

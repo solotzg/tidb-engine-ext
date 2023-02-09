@@ -6,7 +6,6 @@ use std::sync::{
 };
 
 use encryption::DataKeyManager;
-use engine_traits::Peekable;
 
 use super::{
     interfaces_ffi::{ConstRawVoidPtr, RaftProxyStatus, RaftStoreProxyPtr},
