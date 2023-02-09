@@ -38,7 +38,7 @@ impl Clone for RaftStoreProxyPtr {
 
 impl Copy for RaftStoreProxyPtr {}
 
-pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
+pub trait RaftStoreProxyFFI: Sync {
     fn status(&self) -> &AtomicU8;
     fn maybe_key_manager(&self) -> &Option<Arc<DataKeyManager>>;
     fn maybe_read_index_client(&self) -> &Option<Box<dyn read_index_helper::ReadIndex>>;
@@ -48,8 +48,8 @@ pub trait RaftStoreProxyFFI<EK: engine_traits::KvEngine>: Sync {
     fn get_value_cf<F>(&self, cf: &str, key: &[u8], cb: F)
     where
         F: FnOnce(Result<Option<&[u8]>, String>);
-    fn set_kv_engine(&mut self, kv_engine: Option<EK>);
-    fn kv_engine(&self) -> &RwLock<Option<EK>>;
+    // fn set_kv_engine(&mut self, kv_engine: Option<EK>);
+    // fn kv_engine(&self) -> &RwLock<Option<EK>>;
 }
 
 impl RaftStoreProxyFFIHelper {

@@ -38,7 +38,18 @@ impl RaftStoreProxy {
     }
 }
 
-impl RaftStoreProxyFFI<TiFlashEngine> for RaftStoreProxy {
+impl RaftStoreProxy {
+    pub fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
+        let mut lock = self.kv_engine.write().unwrap();
+        *lock = kv_engine;
+    }
+
+    pub fn kv_engine(&self) -> &RwLock<Option<TiFlashEngine>> {
+        &self.kv_engine
+    }
+}
+
+impl RaftStoreProxyFFI for RaftStoreProxy {
     fn maybe_read_index_client(&self) -> &Option<Box<dyn read_index_helper::ReadIndex>> {
         &self.read_index_client
     }
@@ -53,15 +64,6 @@ impl RaftStoreProxyFFI<TiFlashEngine> for RaftStoreProxy {
 
     fn maybe_key_manager(&self) -> &Option<Arc<DataKeyManager>> {
         &self.key_manager
-    }
-
-    fn set_kv_engine(&mut self, kv_engine: Option<TiFlashEngine>) {
-        let mut lock = self.kv_engine.write().unwrap();
-        *lock = kv_engine;
-    }
-
-    fn kv_engine(&self) -> &RwLock<Option<TiFlashEngine>> {
-        &self.kv_engine
     }
 
     fn set_status(&mut self, s: RaftProxyStatus) {
