@@ -62,6 +62,7 @@ log_wrappers = { workspace = true }
 online_config = { workspace = true }
 ordered-float = "2.6"
 parking_lot = "0.12"
+proxy_ffi = { workspace = true, default-features = false }
 pd_client = { workspace = true, default-features = false }
 portable-atomic = "0.3"
 prometheus = { version = "0.13", features = ["nightly"] }
