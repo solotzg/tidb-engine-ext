@@ -70,8 +70,8 @@ use txn_types::WriteBatchFlags;
 
 pub use crate::config::Config;
 use crate::{
-    gen_engine_store_server_helper, transport_simulate::Filter, EngineStoreServer,
-    EngineStoreServerWrap, MockConfig,
+    config::MockConfig, gen_engine_store_server_helper, transport_simulate::Filter,
+    EngineStoreServer, EngineStoreServerWrap,
 };
 
 pub struct FFIHelperSet {

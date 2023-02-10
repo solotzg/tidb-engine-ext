@@ -1,88 +1,18 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-pub use std::{
+use std::{
     cell::RefCell,
-    collections::BTreeMap,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex,
-    },
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
-use assert_type_eq;
-use collections::{HashMap, HashSet};
-pub use engine_store_ffi::ffi::{
-    interfaces_ffi,
-    interfaces_ffi::{EngineStoreServerHelper, RaftStoreProxyFFIHelper, RawCppPtr, RawVoidPtr},
-    UnwrapExternCFunc,
-};
-use engine_traits::RaftEngineReadOnly;
-pub use engine_traits::{
-    Engines, Iterable, KvEngine, Mutable, Peekable, RaftEngine, RaftLogBatch, SyncMutable,
-    WriteBatch, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
-};
 use int_enum::IntEnum;
-pub use kvproto::{
-    raft_cmdpb::AdminCmdType,
-    raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
+
+use crate::{
+    common::*, interfaces_ffi::PageAndCppStrWithView, mock_cluster, mock_cluster::TiFlashEngine,
+    mock_core::*, mock_page_storage::*, node::NodeCluster, server::ServerCluster,
 };
-pub use protobuf::Message;
-pub use tikv_util::{box_err, box_try, debug, error, info, warn};
-
-use crate::node::NodeCluster;
-pub use crate::{
-    config::MockConfig,
-    copy_data_from, copy_meta_from, general_get_apply_state, general_get_region_local_state,
-    get_apply_state, get_raft_local_state, get_region_local_state, mock_cluster,
-    mock_cluster::{
-        must_get_equal, must_get_none, Cluster, ProxyConfig, Simulator, TestPdClient, TiFlashEngine,
-    },
-    mock_page_storage::*,
-    server::ServerCluster,
-};
-
-type RegionId = u64;
-#[derive(Default, Clone)]
-pub struct Region {
-    pub region: kvproto::metapb::Region,
-    // Which peer is me?
-    pub peer: kvproto::metapb::Peer,
-    // in-memory data
-    pub data: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
-    // If we a key is deleted, it will immediately be removed from data,
-    // We will record the key in pending_delete, so we can delete it from disk when flushing.
-    pub pending_delete: [HashSet<Vec<u8>>; 3],
-    pub pending_write: [BTreeMap<Vec<u8>, Vec<u8>>; 3],
-    pub apply_state: kvproto::raft_serverpb::RaftApplyState,
-    pub applied_term: u64,
-}
-
-impl Region {
-    fn set_applied(&mut self, index: u64, term: u64) {
-        self.apply_state.set_applied_index(index);
-        self.applied_term = term;
-    }
-
-    fn new(meta: kvproto::metapb::Region) -> Self {
-        Region {
-            region: meta,
-            peer: Default::default(),
-            data: Default::default(),
-            pending_delete: Default::default(),
-            pending_write: Default::default(),
-            apply_state: Default::default(),
-            applied_term: 0,
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct RegionStats {
-    pub pre_handle_count: AtomicU64,
-    pub fast_add_peer_count: AtomicU64,
-}
 
 pub struct EngineStoreServer {
     pub id: u64,
@@ -266,7 +196,7 @@ unsafe fn load_data_from_db(store: &mut EngineStoreServer, region_id: u64) {
     }
 }
 
-unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
+pub(crate) unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
     let engine = &mut store.engines.as_mut().unwrap().kv;
     let apply_state: RaftApplyState = general_get_apply_state(engine, region_id).unwrap();
     let region_state: RegionLocalState = general_get_region_local_state(engine, region_id).unwrap();
@@ -279,7 +209,7 @@ unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64) {
     load_data_from_db(store, region_id);
 }
 
-unsafe fn write_to_db_data(
+pub(crate) unsafe fn write_to_db_data(
     store: &mut EngineStoreServer,
     region: &mut Box<Region>,
     reason: String,
@@ -288,7 +218,7 @@ unsafe fn write_to_db_data(
     write_to_db_data_by_engine(store.id, kv, region, reason)
 }
 
-unsafe fn write_to_db_data_by_engine(
+pub(crate) unsafe fn write_to_db_data_by_engine(
     store_id: u64,
     kv: &TiFlashEngine,
     region: &mut Box<Region>,
@@ -316,6 +246,81 @@ unsafe fn write_to_db_data_by_engine(
         for k in pending_remove.into_iter() {
             let tikv_key = keys::data_key(k.as_slice());
             kv.rocks.delete_cf(cf_name, &tikv_key).unwrap();
+        }
+    }
+}
+
+pub unsafe fn create_cpp_str_parts(
+    s: Option<Vec<u8>>,
+) -> (interfaces_ffi::RawCppPtr, interfaces_ffi::BaseBuffView) {
+    match s {
+        Some(s) => {
+            let len = s.len() as u64;
+            let ptr = Box::into_raw(Box::new(s)); // leak
+            (
+                interfaces_ffi::RawCppPtr {
+                    ptr: ptr as RawVoidPtr,
+                    type_: RawCppPtrTypeImpl::String.into(),
+                },
+                interfaces_ffi::BaseBuffView {
+                    data: (*ptr).as_ptr() as *const _,
+                    len,
+                },
+            )
+        }
+        None => (
+            interfaces_ffi::RawCppPtr {
+                ptr: std::ptr::null_mut(),
+                type_: RawCppPtrTypeImpl::None.into(),
+            },
+            interfaces_ffi::BaseBuffView {
+                data: std::ptr::null(),
+                len: 0,
+            },
+        ),
+    }
+}
+
+pub unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> interfaces_ffi::CppStrWithView {
+    let (p, v) = create_cpp_str_parts(s);
+    interfaces_ffi::CppStrWithView { inner: p, view: v }
+}
+
+#[allow(clippy::single_element_loop)]
+pub fn move_data_from(
+    engine_store_server: &mut EngineStoreServer,
+    old_region_id: u64,
+    new_region_ids: &[u64],
+) {
+    let kvs = {
+        let old_region = engine_store_server.kvstore.get_mut(&old_region_id).unwrap();
+        let res = old_region.data.clone();
+        old_region.data = Default::default();
+        res
+    };
+    for new_region_id in new_region_ids {
+        let new_region = engine_store_server.kvstore.get_mut(&new_region_id).unwrap();
+        let new_region_meta = new_region.region.clone();
+        let start_key = new_region_meta.get_start_key();
+        let end_key = new_region_meta.get_end_key();
+        for cf in &[interfaces_ffi::ColumnFamilyType::Default] {
+            let cf = (*cf) as usize;
+            for (k, v) in &kvs[cf] {
+                let k = k.as_slice();
+                let v = v.as_slice();
+                match k {
+                    keys::PREPARE_BOOTSTRAP_KEY | keys::STORE_IDENT_KEY => {}
+                    _ => {
+                        if k >= start_key && (end_key.is_empty() || k < end_key) {
+                            debug!(
+                                "move region data {:?} {:?} from {} to {}",
+                                k, v, old_region_id, new_region_id
+                            );
+                            write_kv_in_mem(new_region, cf, k, v);
+                        }
+                    }
+                };
+            }
         }
     }
 }
@@ -1194,17 +1199,6 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     }
 }
 
-// In case of newly added cfs.
-#[allow(unreachable_patterns)]
-pub fn cf_to_name(cf: interfaces_ffi::ColumnFamilyType) -> &'static str {
-    match cf {
-        interfaces_ffi::ColumnFamilyType::Lock => CF_LOCK,
-        interfaces_ffi::ColumnFamilyType::Write => CF_WRITE,
-        interfaces_ffi::ColumnFamilyType::Default => CF_DEFAULT,
-        _ => unreachable!(),
-    }
-}
-
 unsafe extern "C" fn ffi_handle_safe_ts_update(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     _region_id: u64,
@@ -1333,40 +1327,87 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
     }
 }
 
-pub unsafe fn create_cpp_str_parts(
-    s: Option<Vec<u8>>,
-) -> (interfaces_ffi::RawCppPtr, interfaces_ffi::BaseBuffView) {
-    match s {
-        Some(s) => {
-            let len = s.len() as u64;
-            let ptr = Box::into_raw(Box::new(s)); // leak
-            (
-                interfaces_ffi::RawCppPtr {
-                    ptr: ptr as RawVoidPtr,
-                    type_: RawCppPtrTypeImpl::String.into(),
-                },
-                interfaces_ffi::BaseBuffView {
-                    data: (*ptr).as_ptr() as *const _,
-                    len,
-                },
-            )
-        }
-        None => (
-            interfaces_ffi::RawCppPtr {
-                ptr: std::ptr::null_mut(),
-                type_: RawCppPtrTypeImpl::None.into(),
-            },
-            interfaces_ffi::BaseBuffView {
-                data: std::ptr::null(),
-                len: 0,
-            },
-        ),
+pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_traits::Peekable>(
+    source_engines: &Engines<EK, ER>,
+    target_engines: &Engines<EK, ER>,
+    source: &Region,
+    target: &mut Region,
+    new_region_meta: kvproto::metapb::Region,
+    copy_region_state: bool,
+    copy_apply_state: bool,
+    copy_raft_state: bool,
+) -> raftstore::Result<()> {
+    let region_id = source.region.get_id();
+
+    let mut wb = target_engines.kv.write_batch();
+
+    // Can't copy this key, otherwise will cause a bootstrap.
+    // box_try!(wb.put_msg(keys::PREPARE_BOOTSTRAP_KEY, &source.region));
+
+    // region local state
+    if copy_region_state {
+        let mut state = RegionLocalState::default();
+        state.set_region(new_region_meta);
+        box_try!(wb.put_msg_cf(CF_RAFT, &keys::region_state_key(region_id), &state));
     }
+
+    // apply state
+    if copy_apply_state {
+        let apply_state: RaftApplyState =
+            match general_get_apply_state(&source_engines.kv, region_id) {
+                Some(x) => x,
+                None => return Err(box_err!("bad RaftApplyState")),
+            };
+        wb.put_msg_cf(CF_RAFT, &keys::apply_state_key(region_id), &apply_state)?;
+        target.apply_state = apply_state.clone();
+        target.applied_term = source.applied_term;
+    }
+
+    wb.write()?;
+    target_engines.sync_kv()?;
+
+    let mut raft_wb = target_engines.raft.log_batch(1024);
+    // raft state
+    if copy_raft_state {
+        let raft_state = match get_raft_local_state(&source_engines.raft, region_id) {
+            Some(x) => x,
+            None => return Err(box_err!("bad RaftLocalState")),
+        };
+        raft_wb.put_raft_state(region_id, &raft_state)?;
+    };
+
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
+    Ok(())
 }
 
-pub unsafe fn create_cpp_str(s: Option<Vec<u8>>) -> interfaces_ffi::CppStrWithView {
-    let (p, v) = create_cpp_str_parts(s);
-    interfaces_ffi::CppStrWithView { inner: p, view: v }
+pub fn copy_data_from(
+    source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable>,
+    target_engines: &Engines<impl KvEngine, impl RaftEngine>,
+    source: &Region,
+    target: &mut Region,
+) -> raftstore::Result<()> {
+    let region_id = source.region.get_id();
+
+    // kv data in memory
+    for cf in 0..3 {
+        for (k, v) in &source.data[cf] {
+            // debug!("copy_data_from region {} {:?} {:?}", region_id, k, v);
+            write_kv_in_mem(target, cf, k.as_slice(), v.as_slice());
+        }
+    }
+
+    // raft log
+    let mut raft_wb = target_engines.raft.log_batch(1024);
+    let mut entries: Vec<raft::eraftpb::Entry> = Default::default();
+    source_engines
+        .raft
+        .get_all_entries_to(region_id, &mut entries)
+        .unwrap();
+    debug!("copy raft log {:?}", entries);
+
+    raft_wb.append(region_id, None, entries)?;
+    box_try!(target_engines.raft.consume(&mut raft_wb, true));
+    Ok(())
 }
 
 #[allow(clippy::redundant_closure_call)]
@@ -1577,43 +1618,4 @@ unsafe extern "C" fn ffi_fast_add_peer(
     }
     error!("recover from remote peer: failed after retry"; "region_id" => region_id);
     failed_add_peer_res(interfaces_ffi::FastAddPeerStatus::BadData)
-}
-
-#[allow(clippy::single_element_loop)]
-pub fn move_data_from(
-    engine_store_server: &mut EngineStoreServer,
-    old_region_id: u64,
-    new_region_ids: &[u64],
-) {
-    let kvs = {
-        let old_region = engine_store_server.kvstore.get_mut(&old_region_id).unwrap();
-        let res = old_region.data.clone();
-        old_region.data = Default::default();
-        res
-    };
-    for new_region_id in new_region_ids {
-        let new_region = engine_store_server.kvstore.get_mut(&new_region_id).unwrap();
-        let new_region_meta = new_region.region.clone();
-        let start_key = new_region_meta.get_start_key();
-        let end_key = new_region_meta.get_end_key();
-        for cf in &[interfaces_ffi::ColumnFamilyType::Default] {
-            let cf = (*cf) as usize;
-            for (k, v) in &kvs[cf] {
-                let k = k.as_slice();
-                let v = v.as_slice();
-                match k {
-                    keys::PREPARE_BOOTSTRAP_KEY | keys::STORE_IDENT_KEY => {}
-                    _ => {
-                        if k >= start_key && (end_key.is_empty() || k < end_key) {
-                            debug!(
-                                "move region data {:?} {:?} from {} to {}",
-                                k, v, old_region_id, new_region_id
-                            );
-                            write_kv_in_mem(new_region, cf, k, v);
-                        }
-                    }
-                };
-            }
-        }
-    }
 }
