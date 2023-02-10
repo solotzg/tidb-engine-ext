@@ -5,7 +5,7 @@ use crate::common::*;
 
 pub type RegionId = u64;
 #[derive(Default, Clone)]
-pub struct Region {
+pub struct MockRegion {
     pub region: kvproto::metapb::Region,
     // Which peer is me?
     pub peer: kvproto::metapb::Peer,
@@ -19,14 +19,14 @@ pub struct Region {
     pub applied_term: u64,
 }
 
-impl Region {
+impl MockRegion {
     pub fn set_applied(&mut self, index: u64, term: u64) {
         self.apply_state.set_applied_index(index);
         self.applied_term = term;
     }
 
     pub fn new(meta: kvproto::metapb::Region) -> Self {
-        Region {
+        MockRegion {
             region: meta,
             peer: Default::default(),
             data: Default::default(),

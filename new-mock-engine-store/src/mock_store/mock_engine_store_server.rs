@@ -17,7 +17,7 @@ use crate::{
 pub struct EngineStoreServer {
     pub id: u64,
     pub engines: Option<Engines<TiFlashEngine, engine_rocks::RocksEngine>>,
-    pub kvstore: HashMap<RegionId, Box<Region>>,
+    pub kvstore: HashMap<RegionId, Box<MockRegion>>,
     pub proxy_compat: bool,
     pub mock_cfg: MockConfig,
     pub region_states: RefCell<HashMap<RegionId, RegionStats>>,
@@ -109,7 +109,7 @@ pub struct EngineStoreServerWrap {
     pub cluster_ptr: isize,
 }
 
-fn set_new_region_peer(new_region: &mut Region, store_id: u64) {
+fn set_new_region_peer(new_region: &mut MockRegion, store_id: u64) {
     if let Some(peer) = new_region
         .region
         .get_peers()
@@ -125,8 +125,8 @@ fn set_new_region_peer(new_region: &mut Region, store_id: u64) {
 pub fn make_new_region(
     maybe_from_region: Option<kvproto::metapb::Region>,
     maybe_store_id: Option<u64>,
-) -> Region {
-    let mut region = Region {
+) -> MockRegion {
+    let mut region = MockRegion {
         region: maybe_from_region.unwrap_or_default(),
         ..Default::default()
     };
@@ -148,7 +148,7 @@ pub fn make_new_region(
     region
 }
 
-pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8]) {
+pub fn write_kv_in_mem(region: &mut MockRegion, cf_index: usize, k: &[u8], v: &[u8]) {
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     let pending_write = &mut region.pending_write[cf_index];
@@ -157,7 +157,7 @@ pub fn write_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8], v: &[u8])
     pending_write.insert(k.to_vec(), v.to_vec());
 }
 
-fn delete_kv_in_mem(region: &mut Region, cf_index: usize, k: &[u8]) {
+fn delete_kv_in_mem(region: &mut MockRegion, cf_index: usize, k: &[u8]) {
     let data = &mut region.data[cf_index];
     let pending_delete = &mut region.pending_delete[cf_index];
     pending_delete.insert(k.to_vec());
@@ -211,7 +211,7 @@ pub(crate) unsafe fn load_from_db(store: &mut EngineStoreServer, region_id: u64)
 
 pub(crate) unsafe fn write_to_db_data(
     store: &mut EngineStoreServer,
-    region: &mut Box<Region>,
+    region: &mut Box<MockRegion>,
     reason: String,
 ) {
     let kv = &mut store.engines.as_mut().unwrap().kv;
@@ -221,7 +221,7 @@ pub(crate) unsafe fn write_to_db_data(
 pub(crate) unsafe fn write_to_db_data_by_engine(
     store_id: u64,
     kv: &TiFlashEngine,
-    region: &mut Box<Region>,
+    region: &mut Box<MockRegion>,
     reason: String,
 ) {
     info!("mock flush to engine";
@@ -354,7 +354,7 @@ impl EngineStoreServerWrap {
             "region_id"=>header.region_id,
         );
         let do_handle_admin_raft_cmd =
-            move |region: &mut Box<Region>, engine_store_server: &mut EngineStoreServer| {
+            move |region: &mut Box<MockRegion>, engine_store_server: &mut EngineStoreServer| {
                 if region.apply_state.get_applied_index() >= header.index {
                     // If it is a old entry.
                     error!("obsolete admin index";
@@ -629,7 +629,7 @@ impl EngineStoreServerWrap {
         let node_id = (*self.engine_store_server).id;
         let _kv = &mut (*self.engine_store_server).engines.as_mut().unwrap().kv;
         let proxy_compat = server.proxy_compat;
-        let mut do_handle_write_raft_cmd = move |region: &mut Box<Region>| {
+        let mut do_handle_write_raft_cmd = move |region: &mut Box<MockRegion>| {
             if region.apply_state.get_applied_index() >= header.index {
                 debug!("obsolete write index";
                 "apply_state"=>?region.apply_state,
@@ -1125,7 +1125,7 @@ impl<'a> SSTReader<'a> {
 }
 
 struct PrehandledSnapshot {
-    pub region: std::option::Option<Region>,
+    pub region: std::option::Option<MockRegion>,
 }
 
 unsafe extern "C" fn ffi_pre_handle_snapshot(
@@ -1148,7 +1148,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
         .merge_from_bytes(region_buff.to_slice())
         .unwrap();
 
-    let mut region = Box::new(Region::new(region_meta));
+    let mut region = Box::new(MockRegion::new(region_meta));
     debug!(
         "pre handle snaps";
         "peer_id" => peer_id,
@@ -1194,7 +1194,7 @@ unsafe extern "C" fn ffi_pre_handle_snapshot(
     interfaces_ffi::RawCppPtr {
         ptr: Box::into_raw(Box::new(PrehandledSnapshot {
             region: Some(*region),
-        })) as *const Region as interfaces_ffi::RawVoidPtr,
+        })) as *const MockRegion as interfaces_ffi::RawVoidPtr,
         type_: RawCppPtrTypeImpl::PreHandledSnapshotWithBlock.into(),
     }
 }
@@ -1330,8 +1330,8 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
 pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_traits::Peekable>(
     source_engines: &Engines<EK, ER>,
     target_engines: &Engines<EK, ER>,
-    source: &Region,
-    target: &mut Region,
+    source: &MockRegion,
+    target: &mut MockRegion,
     new_region_meta: kvproto::metapb::Region,
     copy_region_state: bool,
     copy_apply_state: bool,
@@ -1383,8 +1383,8 @@ pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_trait
 pub fn copy_data_from(
     source_engines: &Engines<impl KvEngine, impl RaftEngine + engine_traits::Peekable>,
     target_engines: &Engines<impl KvEngine, impl RaftEngine>,
-    source: &Region,
-    target: &mut Region,
+    source: &MockRegion,
+    target: &mut MockRegion,
 ) -> raftstore::Result<()> {
     let region_id = source.region.get_id();
 

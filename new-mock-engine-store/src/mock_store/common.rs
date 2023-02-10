@@ -13,6 +13,7 @@ pub use engine_traits::{
     SyncMutable, WriteBatch, CF_DEFAULT, CF_LOCK, CF_RAFT, CF_WRITE,
 };
 pub use kvproto::{
+    metapb,
     raft_cmdpb::AdminCmdType,
     raft_serverpb::{PeerState, RaftApplyState, RaftLocalState, RegionLocalState},
 };
