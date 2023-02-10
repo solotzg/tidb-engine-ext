@@ -301,8 +301,8 @@ members = [
   "fuzz/fuzzer-honggfuzz",
   "fuzz/fuzzer-libfuzzer",
   "gen-proxy-ffi",
-  "proxy_tests",
   "proxy_ffi",
+  "proxy_tests",
   "raftstore-proxy",
   "tests",
 ]

@@ -1682,6 +1682,7 @@ dependencies = [
  "prometheus",
  "prometheus-static-metric",
  "protobuf",
+ "proxy_ffi",
  "raft",
  "rand 0.8.5",
  "regex",
