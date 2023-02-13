@@ -4,7 +4,7 @@ mod hub_impls;
 pub use hub_impls::*;
 mod config;
 pub use config::*;
-mod engine_ext;
+pub(crate) mod engine_ext;
 pub use engine_ext::*;
 
 use crate::util::get_cf_handle;

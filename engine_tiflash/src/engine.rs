@@ -21,7 +21,11 @@ use engine_traits::{
 };
 use rocksdb::{Writable, DB};
 
-use crate::{proxy_utils::FFIHubInner, r2e, util::get_cf_handle};
+use crate::{
+    proxy_utils::{engine_ext::*, FFIHubInner},
+    r2e,
+    util::get_cf_handle,
+};
 
 #[derive(Clone)]
 pub struct RocksEngine {
@@ -32,6 +36,7 @@ pub struct RocksEngine {
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicIsize>,
     pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+    pub ps_ext: Option<PageStorageExt>,
     pub config_set: Option<Arc<crate::ProxyConfigSet>>,
     pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
 }
@@ -69,6 +74,10 @@ impl RocksEngine {
         self.pending_applies_count.store(0, Ordering::SeqCst);
         self.ffi_hub = ffi_hub;
         self.config_set = config_set;
+        self.ps_ext = Some(PageStorageExt {
+            engine_store_server_helper,
+        });
+
         self.cached_region_info_manager = Some(Arc::new(crate::CachedRegionInfoManager::new()))
     }
 
@@ -80,6 +89,7 @@ impl RocksEngine {
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
+            ps_ext: None,
             cached_region_info_manager: None,
         }
     }
@@ -92,6 +102,7 @@ impl RocksEngine {
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
             ffi_hub: None,
             config_set: None,
+            ps_ext: None,
             cached_region_info_manager: None,
         }
     }
@@ -208,7 +219,7 @@ impl Iterable for RocksEngine {
         F: FnMut(&[u8], &[u8]) -> Result<bool>,
     {
         let mut f = f;
-        self.ffi_hub
+        self.ps_ext
             .as_ref()
             .unwrap()
             .scan_page(start_key.into(), end_key.into(), &mut f);
@@ -274,7 +285,7 @@ impl Peekable for RocksEngine {
 
     #[cfg(feature = "enable-pagestorage")]
     fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<PsDbVector>> {
-        let result = self.ffi_hub.as_ref().unwrap().read_page(key);
+        let result = self.ps_ext.as_ref().unwrap().read_page(key);
         return match result {
             None => Ok(None),
             Some(v) => Ok(Some(PsDbVector::from_raw(v))),
@@ -342,15 +353,12 @@ impl SyncMutable for RocksEngine {
     #[cfg(feature = "enable-pagestorage")]
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
-            let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub
+            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
+            self.ps_ext
                 .as_ref()
                 .unwrap()
                 .write_batch_put_page(ps_wb.ptr, key, value);
-            self.ffi_hub
-                .as_ref()
-                .unwrap()
-                .consume_write_batch(ps_wb.ptr);
+            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -358,15 +366,12 @@ impl SyncMutable for RocksEngine {
     #[cfg(feature = "enable-pagestorage")]
     fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
-            let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub
+            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
+            self.ps_ext
                 .as_ref()
                 .unwrap()
                 .write_batch_put_page(ps_wb.ptr, key, value);
-            self.ffi_hub
-                .as_ref()
-                .unwrap()
-                .consume_write_batch(ps_wb.ptr);
+            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -374,15 +379,12 @@ impl SyncMutable for RocksEngine {
     #[cfg(feature = "enable-pagestorage")]
     fn delete(&self, key: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
-            let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub
+            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
+            self.ps_ext
                 .as_ref()
                 .unwrap()
                 .write_batch_del_page(ps_wb.ptr, key);
-            self.ffi_hub
-                .as_ref()
-                .unwrap()
-                .consume_write_batch(ps_wb.ptr);
+            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
@@ -390,15 +392,12 @@ impl SyncMutable for RocksEngine {
     #[cfg(feature = "enable-pagestorage")]
     fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
-            let ps_wb = self.ffi_hub.as_ref().unwrap().create_write_batch();
-            self.ffi_hub
+            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
+            self.ps_ext
                 .as_ref()
                 .unwrap()
                 .write_batch_del_page(ps_wb.ptr, key);
-            self.ffi_hub
-                .as_ref()
-                .unwrap()
-                .consume_write_batch(ps_wb.ptr);
+            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
     }
