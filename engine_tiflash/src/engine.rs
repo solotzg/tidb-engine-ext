@@ -167,7 +167,7 @@ impl KvEngine for RocksEngine {
 
     // The whole point is:
     // 1. When `handle_pending_applies` is called by `on_timeout`, we can handle at
-    // least one. 
+    // least one.
     // 2. When `handle_pending_applies` is called when we receive a
     // new task, or when `handle_pending_applies` need to handle multiple snapshots.
     // We need to compare to what's in queue.
