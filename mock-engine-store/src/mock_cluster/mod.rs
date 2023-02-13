@@ -51,7 +51,7 @@ use raftstore::{
 };
 use resource_control::ResourceGroupManager;
 use tempfile::TempDir;
-pub use test_pd_client::TestPdClient;
+use test_pd_client::TestPdClient;
 use test_raftstore::FilterFactory;
 pub use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,

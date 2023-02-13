@@ -33,11 +33,12 @@ pub use mock_engine_store::{
     transport_simulate::{
         CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
     },
-    write_kv_in_mem, Cluster, ProxyConfig, RegionStats, Simulator, TestPdClient,
+    write_kv_in_mem, Cluster, ProxyConfig, RegionStats, Simulator,
 };
 pub use pd_client::PdClient;
 pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
+pub use test_pd_client::TestPdClient;
 pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
     box_err, box_try,

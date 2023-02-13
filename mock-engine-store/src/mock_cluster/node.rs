@@ -44,10 +44,9 @@ use tikv_util::{
     worker::{Builder as WorkerBuilder, LazyWorker},
 };
 
-pub use crate::mock_cluster::TiFlashEngine;
 use crate::{
     config::Config,
-    mock_cluster::{Simulator, TestPdClient},
+    mock_cluster::{Simulator, TestPdClient, TiFlashEngine},
     transport_simulate::{Filter, SimulateTransport},
 };
 
