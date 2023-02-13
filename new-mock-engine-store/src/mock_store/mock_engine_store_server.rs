@@ -2,11 +2,16 @@
 
 use std::{cell::RefCell, pin::Pin, sync::atomic::Ordering};
 
-use crate::{
-    common::*, interfaces_ffi::PageAndCppStrWithView, mock_cluster, mock_cluster::TiFlashEngine,
-    mock_core::*, mock_fast_add_peer_impls::*, mock_ffi::*, mock_page_storage::*,
-    mock_snapshot_impls::*, mock_write_impls::*, server::ServerCluster,
+use super::{
+    common::{interfaces_ffi::PageAndCppStrWithView, *},
+    mock_core::*,
+    mock_fast_add_peer_impls::*,
+    mock_ffi::*,
+    mock_page_storage::*,
+    mock_snapshot_impls::*,
+    mock_write_impls::*,
 };
+use crate::{mock_cluster, mock_cluster::TiFlashEngine, server::ServerCluster};
 
 pub struct EngineStoreServer {
     pub id: u64,

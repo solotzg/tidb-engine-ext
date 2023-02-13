@@ -2,10 +2,10 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::{
-    common::*, mock_cluster, mock_core::*, mock_engine_store_server::into_engine_store_server_wrap,
-    mock_ffi::*, node::NodeCluster,
+use super::{
+    common::*, mock_core::*, mock_engine_store_server::into_engine_store_server_wrap, mock_ffi::*,
 };
+use crate::{mock_cluster, node::NodeCluster};
 
 #[allow(clippy::redundant_closure_call)]
 pub(crate) unsafe extern "C" fn ffi_fast_add_peer(

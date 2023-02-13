@@ -1,5 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-pub(crate) mod common;
+mod common;
 pub mod mock_core;
 pub use mock_core::*;
 pub mod mock_engine_store_server;

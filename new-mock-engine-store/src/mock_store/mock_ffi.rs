@@ -4,7 +4,7 @@ use std::{sync::Mutex, time::Duration};
 
 use int_enum::IntEnum;
 
-use crate::common::*;
+use super::common::*;
 
 pub unsafe fn create_cpp_str_parts(
     s: Option<Vec<u8>>,

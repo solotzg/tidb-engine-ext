@@ -1,7 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use std::{collections::BTreeMap, sync::atomic::AtomicU64};
 
-use crate::common::*;
+use super::common::*;
 
 pub type RegionId = u64;
 #[derive(Default, Clone)]
