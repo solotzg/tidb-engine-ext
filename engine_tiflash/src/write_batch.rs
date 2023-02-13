@@ -7,7 +7,7 @@ use proxy_ffi::interfaces_ffi::RawCppPtr;
 use rocksdb::{Writable, WriteBatch as RawWriteBatch, DB};
 
 use crate::{
-    engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle, FFIHubInner,
+    engine::RocksEngine, options::RocksWriteOptions, r2e, util::get_cf_handle, EngineStoreHub,
 };
 
 const WRITE_BATCH_MAX_BATCH: usize = 16;

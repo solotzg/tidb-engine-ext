@@ -22,7 +22,7 @@ use engine_traits::{
 use rocksdb::{Writable, DB};
 
 use crate::{
-    proxy_utils::{engine_ext::*, FFIHubInner},
+    proxy_utils::{engine_ext::*, EngineStoreHub},
     r2e,
     util::get_cf_handle,
 };
@@ -35,7 +35,7 @@ pub struct RocksEngine {
     pub engine_store_server_helper: isize,
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicIsize>,
-    pub ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+    pub ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
     pub ps_ext: Option<PageStorageExt>,
     pub config_set: Option<Arc<crate::ProxyConfigSet>>,
     pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
@@ -62,7 +62,7 @@ impl RocksEngine {
         &mut self,
         engine_store_server_helper: isize,
         snap_handle_pool_size: usize,
-        ffi_hub: Option<Arc<dyn FFIHubInner + Send + Sync>>,
+        ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
         config_set: Option<Arc<crate::ProxyConfigSet>>,
     ) {
         #[cfg(feature = "enable-pagestorage")]
