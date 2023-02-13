@@ -1,4 +1,5 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
+
 // Disable warnings for unused engine_rocks's feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -20,59 +21,7 @@ use engine_traits::{
 };
 use rocksdb::{Writable, DB};
 
-use crate::{r2e, util::get_cf_handle};
-
-pub struct FsStatsExt {
-    pub used: u64,
-    pub capacity: u64,
-    pub available: u64,
-}
-
-pub type RawPSWriteBatchPtr = *mut ::std::os::raw::c_void;
-pub type RawPSWriteBatchWrapperTag = u32;
-
-// This is just a copy from engine_store_ffi::RawCppPtr
-#[repr(C)]
-#[derive(Debug)]
-pub struct RawPSWriteBatchWrapper {
-    pub ptr: RawPSWriteBatchPtr,
-    pub type_: RawPSWriteBatchWrapperTag,
-}
-
-unsafe impl Send for RawPSWriteBatchWrapper {}
-
-pub trait FFIHubInner {
-    fn get_store_stats(&self) -> FsStatsExt;
-
-    fn create_write_batch(&self) -> RawPSWriteBatchWrapper;
-
-    fn destroy_write_batch(&self, wb_wrapper: &RawPSWriteBatchWrapper);
-
-    fn consume_write_batch(&self, wb: RawPSWriteBatchPtr);
-
-    fn write_batch_size(&self, wb: RawPSWriteBatchPtr) -> usize;
-
-    fn write_batch_is_empty(&self, wb: RawPSWriteBatchPtr) -> bool;
-
-    fn write_batch_merge(&self, lwb: RawPSWriteBatchPtr, rwb: RawPSWriteBatchPtr);
-
-    fn write_batch_clear(&self, wb: RawPSWriteBatchPtr);
-
-    fn write_batch_put_page(&self, wb: RawPSWriteBatchPtr, page_id: &[u8], page: &[u8]);
-
-    fn write_batch_del_page(&self, wb: RawPSWriteBatchPtr, page_id: &[u8]);
-
-    fn read_page(&self, page_id: &[u8]) -> Option<Vec<u8>>;
-
-    fn scan_page(
-        &self,
-        start_page_id: &[u8],
-        end_page_id: &[u8],
-        f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>,
-    );
-}
-
-pub trait FFIHub: FFIHubInner + Send + Sync {}
+use crate::{proxy_utils::FFIHubInner, r2e, util::get_cf_handle};
 
 #[derive(Clone)]
 pub struct RocksEngine {

@@ -9,12 +9,6 @@ pub struct TiFlashFFIHub {
 unsafe impl Send for TiFlashFFIHub {}
 unsafe impl Sync for TiFlashFFIHub {}
 impl engine_tiflash::FFIHubInner for TiFlashFFIHub {
-    fn get_store_stats(&self) -> engine_tiflash::FsStatsExt {
-        self.engine_store_server_helper
-            .handle_compute_store_stats()
-            .into()
-    }
-
     fn create_write_batch(&self) -> RawPSWriteBatchWrapper {
         // TODO There are too many dummy write batch created in non-uni-ps impl.
         // Need to work out a solution for this.
