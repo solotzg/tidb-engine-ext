@@ -27,18 +27,37 @@ use crate::{
     util::get_cf_handle,
 };
 
+// This struct should be safe to copy.
+#[derive(Clone)]
+pub struct ProxyEngineExt {
+    pub engine_store_server_helper: isize,
+    pub pool_capacity: usize,
+    pub pending_applies_count: Arc<AtomicIsize>,
+    pub ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
+    pub config_set: Option<Arc<crate::ProxyConfigSet>>,
+    pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
+}
+
+impl Default for ProxyEngineExt {
+    fn default() -> Self {
+        ProxyEngineExt {
+            engine_store_server_helper: 0,
+            pool_capacity: 0,
+            pending_applies_count: Arc::new(AtomicIsize::new(0)),
+            ffi_hub: None,
+            config_set: None,
+            cached_region_info_manager: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct RocksEngine {
     // Must ensure rocks is the first field, for RocksEngine::from_ref.
     // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks yet.
     pub rocks: engine_rocks::RocksEngine,
-    pub engine_store_server_helper: isize,
-    pub pool_capacity: usize,
-    pub pending_applies_count: Arc<AtomicIsize>,
-    pub ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
+    pub proxy_ext: ProxyEngineExt,
     pub ps_ext: Option<PageStorageExt>,
-    pub config_set: Option<Arc<crate::ProxyConfigSet>>,
-    pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
 }
 
 impl std::fmt::Debug for RocksEngine {
@@ -47,7 +66,7 @@ impl std::fmt::Debug for RocksEngine {
             .field("rocks", &self.rocks)
             .field(
                 "engine_store_server_helper",
-                &self.engine_store_server_helper,
+                &self.proxy_ext.engine_store_server_helper,
             )
             .finish()
     }
@@ -69,41 +88,32 @@ impl RocksEngine {
         tikv_util::info!("enabled pagestorage");
         #[cfg(not(feature = "enable-pagestorage"))]
         tikv_util::info!("disabled pagestorage");
-        self.engine_store_server_helper = engine_store_server_helper;
-        self.pool_capacity = snap_handle_pool_size;
-        self.pending_applies_count.store(0, Ordering::SeqCst);
-        self.ffi_hub = ffi_hub;
-        self.config_set = config_set;
+        self.proxy_ext = ProxyEngineExt {
+            engine_store_server_helper,
+            pool_capacity: snap_handle_pool_size,
+            pending_applies_count: Arc::new(AtomicIsize::new(0)),
+            ffi_hub,
+            config_set,
+            cached_region_info_manager: Some(Arc::new(crate::CachedRegionInfoManager::new())),
+        };
         self.ps_ext = Some(PageStorageExt {
             engine_store_server_helper,
         });
-
-        self.cached_region_info_manager = Some(Arc::new(crate::CachedRegionInfoManager::new()))
     }
 
     pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
         RocksEngine {
             rocks,
-            engine_store_server_helper: 0,
-            pool_capacity: 0,
-            pending_applies_count: Arc::new(AtomicIsize::new(0)),
-            ffi_hub: None,
-            config_set: None,
+            proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
-            cached_region_info_manager: None,
         }
     }
 
     pub fn from_db(db: Arc<DB>) -> Self {
         RocksEngine {
             rocks: engine_rocks::RocksEngine::from_db(db),
-            engine_store_server_helper: 0,
-            pool_capacity: 0,
-            pending_applies_count: Arc::new(AtomicIsize::new(0)),
-            ffi_hub: None,
-            config_set: None,
+            proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
-            cached_region_info_manager: None,
         }
     }
 
@@ -166,11 +176,12 @@ impl KvEngine for RocksEngine {
             .unwrap()
             .parse::<bool>()
             .unwrap());
-        if let Some(s) = self.config_set.as_ref() {
+        if let Some(s) = self.proxy_ext.config_set.as_ref() {
             if s.engine_store.enable_fast_add_peer {
                 // TODO Return true if this is an empty snapshot.
                 // We need to test if the region is still in fast add peer mode.
                 let result = self
+                    .proxy_ext
                     .cached_region_info_manager
                     .as_ref()
                     .expect("expect cached_region_info_manager")
@@ -190,16 +201,15 @@ impl KvEngine for RocksEngine {
             }
         }
         // is called after calling observer's pre_handle_snapshot
-        let in_queue = self.pending_applies_count.load(Ordering::SeqCst);
-        let can = if is_timeout && new_batch {
+        let in_queue = self.proxy_ext.pending_applies_count.load(Ordering::SeqCst);
+        if is_timeout && new_batch {
             // If queue is full, we should begin to handle
             true
         } else {
             // Otherwise, we wait until the queue is full.
             // In order to batch more tasks.
-            in_queue > (self.pool_capacity as isize)
-        };
-        can
+            in_queue > (self.proxy_ext.pool_capacity as isize)
+        }
     }
 }
 

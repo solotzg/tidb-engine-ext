@@ -9,7 +9,7 @@ use crate::RocksEngine;
 
 impl RocksEngine {
     pub fn helper(&self) -> &'static EngineStoreServerHelper {
-        gen_engine_store_server_helper(self.engine_store_server_helper)
+        gen_engine_store_server_helper(self.proxy_ext.engine_store_server_helper)
     }
     pub fn get_store_stats(&self) -> interfaces_ffi::StoreStats {
         let helper = self.helper();
