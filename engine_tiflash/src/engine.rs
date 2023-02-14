@@ -160,16 +160,14 @@ impl Iterable for RocksEngine {
     }
 }
 
+#[cfg(not(feature = "enable-pagestorage"))]
 impl Peekable for RocksEngine {
-    #[cfg(not(feature = "enable-pagestorage"))]
     type DbVector = RocksDbVector;
 
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<RocksDbVector>> {
         self.rocks.get_value_opt(opts, key)
     }
 
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn get_value_cf_opt(
         &self,
         opts: &ReadOptions,
@@ -178,12 +176,17 @@ impl Peekable for RocksEngine {
     ) -> Result<Option<RocksDbVector>> {
         self.rocks.get_value_cf_opt(opts, cf, key)
     }
+}
 
-    #[cfg(feature = "enable-pagestorage")]
+#[cfg(feature = "enable-pagestorage")]
+impl Peekable for RocksEngine {
     type DbVector = crate::ps_engine::PsDbVector;
 
-    #[cfg(feature = "enable-pagestorage")]
-    fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<crate::ps_engine::PsDbVector>> {
+    fn get_value_opt(
+        &self,
+        opts: &ReadOptions,
+        key: &[u8],
+    ) -> Result<Option<crate::ps_engine::PsDbVector>> {
         let result = self.ps_ext.as_ref().unwrap().read_page(key);
         return match result {
             None => Ok(None),
@@ -191,7 +194,6 @@ impl Peekable for RocksEngine {
         };
     }
 
-    #[cfg(feature = "enable-pagestorage")]
     fn get_value_cf_opt(
         &self,
         opts: &ReadOptions,
@@ -208,8 +210,8 @@ impl RocksEngine {
     }
 }
 
+#[cfg(not(feature = "enable-pagestorage"))]
 impl SyncMutable for RocksEngine {
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             return self.rocks.get_sync_db().put(key, value).map_err(r2e);
@@ -217,7 +219,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let db = self.rocks.get_sync_db();
@@ -231,7 +232,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn delete(&self, key: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             return self.rocks.get_sync_db().delete(key).map_err(r2e);
@@ -239,7 +239,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(not(feature = "enable-pagestorage"))]
     fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let db = self.rocks.get_sync_db();
@@ -249,7 +248,19 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(feature = "enable-pagestorage")]
+    fn delete_range(&self, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
+        // do nothing
+        Ok(())
+    }
+
+    fn delete_range_cf(&self, cf: &str, begin_key: &[u8], end_key: &[u8]) -> Result<()> {
+        // do nothing
+        Ok(())
+    }
+}
+
+#[cfg(feature = "enable-pagestorage")]
+impl SyncMutable for RocksEngine {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
@@ -262,7 +273,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(feature = "enable-pagestorage")]
     fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
@@ -275,7 +285,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(feature = "enable-pagestorage")]
     fn delete(&self, key: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
@@ -288,7 +297,6 @@ impl SyncMutable for RocksEngine {
         Ok(())
     }
 
-    #[cfg(feature = "enable-pagestorage")]
     fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
         if self.do_write(cf, key) {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();

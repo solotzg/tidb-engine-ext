@@ -1,9 +1,11 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::ops::Deref;
 use std::{
-    fmt::{self, Debug, Formatter}};
-    use engine_traits::{DbVector};
+    fmt::{self, Debug, Formatter},
+    ops::Deref,
+};
+
+use engine_traits::DbVector;
 
 pub struct PsDbVector(Vec<u8>);
 
