@@ -61,8 +61,7 @@ use tokio::sync::oneshot;
 use txn_types::WriteBatchFlags;
 
 pub use super::cluster_ext::{init_global_ffi_helper_set, FFIHelperSet};
-use super::{cluster_ext::*, common::*, transport_simulate::Filter, util::*};
-pub use crate::config::Config;
+use super::{cluster_ext::*, common::*, config::Config, transport_simulate::Filter, util::*};
 
 // We simulate 3 or 5 nodes, each has a store.
 // Sometimes, we use fixed id to test, which means the id
@@ -221,7 +220,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 tikv: new_tikv_config(id),
                 prefer_mem: true,
                 proxy_cfg,
-                proxy_compat: false,
                 mock_cfg: Default::default(),
             },
             leaders: HashMap::default(),

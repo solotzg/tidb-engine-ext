@@ -55,7 +55,6 @@ impl ClusterExt {
         router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
         node_cfg: TikvConfig,
         cluster_id: isize,
-        proxy_compat: bool,
         mock_cfg: MockConfig,
     ) -> (FFIHelperSet, TikvConfig) {
         // We must allocate on heap to avoid move.
@@ -77,7 +76,6 @@ impl ClusterExt {
         let proxy_ref = proxy.as_ref();
         let mut proxy_helper = Box::new(RaftStoreProxyFFIHelper::new(proxy_ref.into()));
         let mut engine_store_server = Box::new(EngineStoreServer::new(id, Some(engines)));
-        engine_store_server.proxy_compat = proxy_compat;
         engine_store_server.mock_cfg = mock_cfg;
         let engine_store_server_wrap = Box::new(EngineStoreServerWrap::new(
             &mut *engine_store_server,
@@ -181,7 +179,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             router,
             self.cfg.tikv.clone(),
             self as *const Cluster<T> as isize,
-            self.cfg.proxy_compat,
             self.cfg.mock_cfg.clone(),
         )
     }
@@ -215,9 +212,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     // If index is None, use the last in ffi_helper_lst, which is added by
     // create_ffi_helper_set.
     // Used in two places:
-    // 1. bootstrap_ffi_helper_set where all nodes are inited before start. In this case index is `Some(0)`.
-    // 2. cluster.start where new nodes are added to the cluster after stared. In this case index is None.
-    // This method is weird since we don't know node_id when creating engine.
+    // 1. bootstrap_ffi_helper_set where all nodes are inited before start. In this
+    // case index is `Some(0)`. 2. cluster.start where new nodes are added to
+    // the cluster after stared. In this case index is None. This method is
+    // weird since we don't know node_id when creating engine.
     pub fn register_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
             self.cluster_ext.ffi_helper_lst.remove(i)
