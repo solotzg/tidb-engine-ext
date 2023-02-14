@@ -4,7 +4,7 @@ use proxy_ffi::{
     gen_engine_store_server_helper, interfaces_ffi, interfaces_ffi::EngineStoreServerHelper,
 };
 #[cfg(feature = "enable-pagestorage")]
-use proxy_ffi::{PageAndCppStrWithView, RawCppPtr, RawVoidPtr};
+use proxy_ffi::interfaces_ffi::{PageAndCppStrWithView, RawCppPtr, RawVoidPtr};
 
 use crate::RocksEngine;
 

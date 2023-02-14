@@ -147,7 +147,7 @@ impl ClusterExt {
             (helper_ptr, engine_store_hub)
         };
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
-        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
+        let proxy_config_set = Arc::new(engine_tiflash::ProxyEngineConfigSet {
             engine_store: cluster.cfg.proxy_cfg.engine_store.clone(),
         });
         engines.kv.init(

@@ -408,6 +408,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             let applied_term =
                 self.check_entry_at_index(region_id, applied_index, new_peer_id, "applied_index")?;
             // Will otherwise cause "got message with lower index than committed" loop.
+            // Maybe this can be removed, since fb0917bfa44ec1fc55967 can pass if we remove
+            // this constraint.
             self.check_entry_at_index(
                 region_id,
                 apply_state.get_commit_index(),

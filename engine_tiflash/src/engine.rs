@@ -4,17 +4,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 use std::{
-    fmt::{self, Debug, Formatter},
+    fmt::Debug,
     fs,
-    ops::Deref,
     path::Path,
     sync::{atomic::AtomicIsize, Arc},
 };
 
 use engine_rocks::{RocksDbVector, RocksEngineIterator, RocksSnapshot};
 use engine_traits::{
-    Checkpointable, Checkpointer, DbVector, Error, IterOptions, Iterable, KvEngine, Peekable,
-    ReadOptions, Result, SyncMutable,
+    Checkpointable, Checkpointer, Error, IterOptions, Iterable, KvEngine, Peekable, ReadOptions,
+    Result, SyncMutable,
 };
 use rocksdb::{Writable, DB};
 
@@ -25,25 +24,13 @@ use crate::{
     ProxyEngineExt,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RocksEngine {
     // Must ensure rocks is the first field, for RocksEngine::from_ref.
     // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks yet.
     pub rocks: engine_rocks::RocksEngine,
     pub proxy_ext: ProxyEngineExt,
     pub ps_ext: Option<PageStorageExt>,
-}
-
-impl std::fmt::Debug for RocksEngine {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TiFlashEngine")
-            .field("rocks", &self.rocks)
-            .field(
-                "engine_store_server_helper",
-                &self.proxy_ext.engine_store_server_helper,
-            )
-            .finish()
-    }
 }
 
 impl RocksEngine {
@@ -56,7 +43,7 @@ impl RocksEngine {
         engine_store_server_helper: isize,
         snap_handle_pool_size: usize,
         engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
-        config_set: Option<Arc<crate::ProxyConfigSet>>,
+        config_set: Option<Arc<crate::ProxyEngineConfigSet>>,
     ) {
         #[cfg(feature = "enable-pagestorage")]
         tikv_util::info!("enabled pagestorage");
@@ -173,36 +160,6 @@ impl Iterable for RocksEngine {
     }
 }
 
-pub struct PsDbVector(Vec<u8>);
-
-impl PsDbVector {
-    pub fn from_raw(raw: Vec<u8>) -> PsDbVector {
-        PsDbVector(raw)
-    }
-}
-
-impl DbVector for PsDbVector {}
-
-impl Deref for PsDbVector {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl Debug for PsDbVector {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{:?}", &**self)
-    }
-}
-
-impl<'a> PartialEq<&'a [u8]> for PsDbVector {
-    fn eq(&self, rhs: &&[u8]) -> bool {
-        **rhs == **self
-    }
-}
-
 impl Peekable for RocksEngine {
     #[cfg(not(feature = "enable-pagestorage"))]
     type DbVector = RocksDbVector;
@@ -223,14 +180,14 @@ impl Peekable for RocksEngine {
     }
 
     #[cfg(feature = "enable-pagestorage")]
-    type DbVector = PsDbVector;
+    type DbVector = crate::ps_engine::PsDbVector;
 
     #[cfg(feature = "enable-pagestorage")]
-    fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<PsDbVector>> {
+    fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<crate::ps_engine::PsDbVector>> {
         let result = self.ps_ext.as_ref().unwrap().read_page(key);
         return match result {
             None => Ok(None),
-            Some(v) => Ok(Some(PsDbVector::from_raw(v))),
+            Some(v) => Ok(Some(crate::ps_engine::PsDbVector::from_raw(v))),
         };
     }
 
@@ -240,7 +197,7 @@ impl Peekable for RocksEngine {
         opts: &ReadOptions,
         cf: &str,
         key: &[u8],
-    ) -> Result<Option<PsDbVector>> {
+    ) -> Result<Option<crate::ps_engine::PsDbVector>> {
         self.get_value_opt(opts, key)
     }
 }

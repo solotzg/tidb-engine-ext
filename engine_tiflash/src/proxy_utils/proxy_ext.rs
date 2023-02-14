@@ -1,7 +1,10 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use std::sync::{
-    atomic::{AtomicIsize, Ordering},
-    Arc,
+use std::{
+    fmt::Formatter,
+    sync::{
+        atomic::{AtomicIsize, Ordering},
+        Arc,
+    },
 };
 
 use crate::proxy_utils::EngineStoreHub;
@@ -13,8 +16,24 @@ pub struct ProxyEngineExt {
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicIsize>,
     pub engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
-    pub config_set: Option<Arc<crate::ProxyConfigSet>>,
+    pub config_set: Option<Arc<crate::ProxyEngineConfigSet>>,
     pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
+}
+
+impl std::fmt::Debug for ProxyEngineExt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TiFlashEngine")
+            .field(
+                "engine_store_server_helper",
+                &self.engine_store_server_helper,
+            )
+            .field("pool_capacity", &self.pool_capacity)
+            .field(
+                "pending_applies_count",
+                &self.pending_applies_count.load(Ordering::SeqCst),
+            )
+            .finish()
+    }
 }
 
 impl Default for ProxyEngineExt {
