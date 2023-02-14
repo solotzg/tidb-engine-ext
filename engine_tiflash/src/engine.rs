@@ -17,10 +17,9 @@ use engine_traits::{
 };
 use rocksdb::{Writable, DB};
 
-#[cfg(feature = "enable-pagestorage")]
-use crate::ps_engine::*;
 use crate::{
     proxy_utils::{engine_ext::*, EngineStoreHub},
+    ps_engine::*,
     r2e,
     util::get_cf_handle,
     ProxyEngineExt,
@@ -136,6 +135,26 @@ impl KvEngine for RocksEngine {
 
 impl Iterable for RocksEngine {
     type Iterator = RocksEngineIterator;
+
+    #[cfg(feature = "enable-pagestorage")]
+    fn scan<F>(
+        &self,
+        cf: &str,
+        start_key: &[u8],
+        end_key: &[u8],
+        fill_cache: bool,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&[u8], &[u8]) -> Result<bool>,
+    {
+        let mut f = f;
+        self.ps_ext
+            .as_ref()
+            .unwrap()
+            .scan_page(start_key.into(), end_key.into(), &mut f);
+        Ok(())
+    }
 
     fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<Self::Iterator> {
         self.rocks.iterator_opt(cf, opts)

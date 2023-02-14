@@ -5,7 +5,6 @@ use engine_traits::{Iterable, Peekable, ReadOptions, Result, SyncMutable};
 
 use crate::RocksEngine;
 
-#[cfg(feature = "enable-pagestorage")]
 impl Peekable for RocksEngine {
     type DbVector = crate::ps_engine::PsDbVector;
 
@@ -31,7 +30,6 @@ impl Peekable for RocksEngine {
     }
 }
 
-#[cfg(feature = "enable-pagestorage")]
 impl SyncMutable for RocksEngine {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         if self.do_write(engine_traits::CF_DEFAULT, key) {
