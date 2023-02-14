@@ -33,7 +33,7 @@ pub struct ProxyEngineExt {
     pub engine_store_server_helper: isize,
     pub pool_capacity: usize,
     pub pending_applies_count: Arc<AtomicIsize>,
-    pub ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
+    pub engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
     pub config_set: Option<Arc<crate::ProxyConfigSet>>,
     pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
 }
@@ -44,7 +44,7 @@ impl Default for ProxyEngineExt {
             engine_store_server_helper: 0,
             pool_capacity: 0,
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
-            ffi_hub: None,
+            engine_store_hub: None,
             config_set: None,
             cached_region_info_manager: None,
         }
@@ -81,7 +81,7 @@ impl RocksEngine {
         &mut self,
         engine_store_server_helper: isize,
         snap_handle_pool_size: usize,
-        ffi_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
+        engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
         config_set: Option<Arc<crate::ProxyConfigSet>>,
     ) {
         #[cfg(feature = "enable-pagestorage")]
@@ -92,7 +92,7 @@ impl RocksEngine {
             engine_store_server_helper,
             pool_capacity: snap_handle_pool_size,
             pending_applies_count: Arc::new(AtomicIsize::new(0)),
-            ffi_hub,
+            engine_store_hub,
             config_set,
             cached_region_info_manager: Some(Arc::new(crate::CachedRegionInfoManager::new())),
         };

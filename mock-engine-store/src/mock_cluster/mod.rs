@@ -319,7 +319,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.make_ffi_helper_set(0, engines, key_manager, router);
 
         // We can not use moved or cloned engines any more.
-        let (helper_ptr, ffi_hub) = {
+        let (helper_ptr, engine_store_hub) = {
             let helper_ptr = ffi_helper_set
                 .proxy
                 .kv_engine()
@@ -330,10 +330,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                 .engine_store_server_helper();
 
             let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
-            let ffi_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
+            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
                 engine_store_server_helper: helper,
             });
-            (helper_ptr, ffi_hub)
+            (helper_ptr, engine_store_hub)
         };
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
         let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
@@ -342,7 +342,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         engines.kv.init(
             helper_ptr,
             self.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
-            Some(ffi_hub),
+            Some(engine_store_hub),
             Some(proxy_config_set),
         );
 
