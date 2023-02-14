@@ -252,7 +252,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         let (engines, key_manager, dir) =
             create_tiflash_test_engine(router.clone(), self.io_rate_limiter.clone(), &self.cfg);
 
-        self.create_ffi_helper_set(engines, &key_manager, &router);
+        // Set up FFI.
+        {
+            ClusterExt::create_ffi_helper_set(self, engines, &key_manager, &router);
+        }
         let ffi_helper_set = self.cluster_ext.ffi_helper_lst.last_mut().unwrap();
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
 
@@ -340,7 +343,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.engines.insert(node_id, engines.clone());
             self.store_metas.insert(node_id, store_meta);
             self.key_managers_map.insert(node_id, key_manager.clone());
-            self.associate_ffi_helper_set(None, node_id);
+            self.register_ffi_helper_set(None, node_id);
         }
         assert_eq!(self.count, self.engines.len());
         assert_eq!(self.count, self.dbs.len());

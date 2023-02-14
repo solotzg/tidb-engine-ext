@@ -116,6 +116,52 @@ impl ClusterExt {
             Err(_) => std::process::exit(1),
         }
     }
+
+    /// We need to create FFIHelperSet while creating engine.
+    /// The FFIHelperSet wil also be stored in ffi_helper_lst.
+    pub fn create_ffi_helper_set<T: Simulator<TiFlashEngine>>(
+        cluster: &mut Cluster<T>,
+        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
+        key_manager: &Option<Arc<DataKeyManager>>,
+        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
+    ) {
+        init_global_ffi_helper_set();
+        // We don't know `node_id` now.
+        // It will be allocated when start by register_ffi_helper_set.
+        let (mut ffi_helper_set, _node_cfg) =
+            cluster.make_ffi_helper_set(0, engines, key_manager, router);
+
+        // We can not use moved or cloned engines any more.
+        let (helper_ptr, engine_store_hub) = {
+            let helper_ptr = ffi_helper_set
+                .proxy
+                .kv_engine()
+                .write()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .engine_store_server_helper();
+
+            let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
+            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
+                engine_store_server_helper: helper,
+            });
+            (helper_ptr, engine_store_hub)
+        };
+        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
+        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
+            engine_store: cluster.cfg.proxy_cfg.engine_store.clone(),
+        });
+        engines.kv.init(
+            helper_ptr,
+            cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            Some(engine_store_hub),
+            Some(proxy_config_set),
+        );
+
+        assert_ne!(engines.kv.proxy_ext.engine_store_server_helper, 0);
+        cluster.cluster_ext.ffi_helper_lst.push(ffi_helper_set);
+    }
 }
 
 use super::{Cluster, Simulator};
@@ -166,60 +212,20 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.cluster_ext.access_ffi_helpers(f)
     }
 
-    /// We need to create FFIHelperSet while we create engine.
-    /// And later set its `node_id` when we are allocated one when start.
-    pub fn create_ffi_helper_set(
-        &mut self,
-        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
-        key_manager: &Option<Arc<DataKeyManager>>,
-        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
-    ) {
-        init_global_ffi_helper_set();
-        let (mut ffi_helper_set, _node_cfg) =
-            self.make_ffi_helper_set(0, engines, key_manager, router);
-
-        // We can not use moved or cloned engines any more.
-        let (helper_ptr, engine_store_hub) = {
-            let helper_ptr = ffi_helper_set
-                .proxy
-                .kv_engine()
-                .write()
-                .unwrap()
-                .as_mut()
-                .unwrap()
-                .engine_store_server_helper();
-
-            let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
-            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
-                engine_store_server_helper: helper,
-            });
-            (helper_ptr, engine_store_hub)
-        };
-        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
-        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
-            engine_store: self.cfg.proxy_cfg.engine_store.clone(),
-        });
-        engines.kv.init(
-            helper_ptr,
-            self.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
-            Some(engine_store_hub),
-            Some(proxy_config_set),
-        );
-
-        assert_ne!(engines.kv.proxy_ext.engine_store_server_helper, 0);
-        self.cluster_ext.ffi_helper_lst.push(ffi_helper_set);
-    }
-
-    // If index is None, use the last in the list, which is added by
+    // If index is None, use the last in ffi_helper_lst, which is added by
     // create_ffi_helper_set. In most cases, index is `Some(0)`, which means we
     // will use the first.
-    pub fn associate_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
+    // Used in two places:
+    // 1. bootstrap_ffi_helper_set where all nodes are inited before start.
+    // 2. cluster.start where new nodes are added to the cluster after stared.
+    // This method is weird since we don't know node_id when creating engine.
+    pub fn register_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
             self.cluster_ext.ffi_helper_lst.remove(i)
         } else {
             self.cluster_ext.ffi_helper_lst.pop().unwrap()
         };
-        debug!("set up ffi helper set for {}", node_id);
+        debug!("register ffi_helper_set for {}", node_id);
         ffi_helper_set.engine_store_server.id = node_id;
         self.cluster_ext
             .ffi_helper_set
@@ -234,9 +240,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         // We force iterate engines in sorted order.
         node_ids.sort();
         for (_, node_id) in node_ids.iter().enumerate() {
-            let node_id = *node_id;
-            // Always at the front of the vector.
-            self.associate_ffi_helper_set(Some(0), node_id);
+            // Always at the front of the vector since iterate from 0.
+            self.register_ffi_helper_set(Some(0), *node_id);
         }
     }
 }

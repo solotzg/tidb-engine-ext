@@ -60,8 +60,9 @@ pub fn create_tiflash_test_engine(
     let raft_engine =
         engine_rocks::util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap();
 
-    // FFI is not usable, until create_engine.
+    // FFI is not usable for now.
     let engines = Engines::new(engine, raft_engine);
+
     (engines, key_manager, dir)
 }
 
