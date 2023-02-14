@@ -9,11 +9,12 @@ use engine_store_ffi::ffi::interfaces_ffi::{
 };
 use engine_traits::Engines;
 use raftstore::store::RaftRouter;
+use tikv::config::TikvConfig;
 use tikv_util::{debug, sys::SysQuota};
 
 use crate::{
-    config::MockConfig, mock_cluster::TikvConfig, mock_store::gen_engine_store_server_helper,
-    EngineStoreServer, EngineStoreServerWrap, TiFlashEngine,
+    config::MockConfig, mock_store::gen_engine_store_server_helper, EngineStoreServer,
+    EngineStoreServerWrap, TiFlashEngine,
 };
 
 pub struct EngineHelperSet {
@@ -225,6 +226,18 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             .lock()
             .unwrap()
             .insert(node_id, ffi_helper_set);
+    }
+
+    // Need self.engines be filled.
+    pub fn bootstrap_ffi_helper_set(&mut self) {
+        let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
+        // We force iterate engines in sorted order.
+        node_ids.sort();
+        for (_, node_id) in node_ids.iter().enumerate() {
+            let node_id = *node_id;
+            // Always at the front of the vector.
+            self.associate_ffi_helper_set(Some(0), node_id);
+        }
     }
 }
 
