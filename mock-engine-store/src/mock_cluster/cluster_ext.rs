@@ -213,11 +213,10 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 
     // If index is None, use the last in ffi_helper_lst, which is added by
-    // create_ffi_helper_set. In most cases, index is `Some(0)`, which means we
-    // will use the first.
+    // create_ffi_helper_set.
     // Used in two places:
-    // 1. bootstrap_ffi_helper_set where all nodes are inited before start.
-    // 2. cluster.start where new nodes are added to the cluster after stared.
+    // 1. bootstrap_ffi_helper_set where all nodes are inited before start. In this case index is `Some(0)`.
+    // 2. cluster.start where new nodes are added to the cluster after stared. In this case index is None.
     // This method is weird since we don't know node_id when creating engine.
     pub fn register_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
