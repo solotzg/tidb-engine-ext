@@ -17,8 +17,8 @@ use std::{
 use collections::{HashMap, HashSet};
 pub use common::*;
 use encryption::DataKeyManager;
+use engine_store_ffi::ffi::RaftStoreProxyFFI;
 // mock cluster
-use engine_store_ffi::ffi::{interfaces_ffi::EngineStoreServerHelper, RaftStoreProxyFFI};
 use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine, Peekable, CF_DEFAULT};
 use file_system::IoRateLimiter;
@@ -67,19 +67,13 @@ use tikv_util::{
 use tokio::sync::oneshot;
 use txn_types::WriteBatchFlags;
 
-pub use super::cluster_ext::FFIHelperSet;
 use super::cluster_ext::*;
+pub use super::cluster_ext::{init_global_ffi_helper_set, FFIHelperSet};
 pub use crate::config::Config;
-use crate::{
-    mock_store::{gen_engine_store_server_helper, EngineStoreServer, EngineStoreServerWrap},
-    transport_simulate::Filter,
-};
+use crate::transport_simulate::Filter;
 
 pub struct Cluster<T: Simulator<TiFlashEngine>> {
-    // Helper to set ffi_helper_set.
-    pub ffi_helper_lst: Vec<FFIHelperSet>,
-    ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
-
+    pub cluster_ext: ClusterExt,
     pub cfg: Config,
     leaders: HashMap<u64, metapb::Peer>,
     pub count: usize,
@@ -94,7 +88,6 @@ pub struct Cluster<T: Simulator<TiFlashEngine>> {
     pub group_props: HashMap<u64, GroupProperties>,
     pub sim: Arc<RwLock<T>>,
     pub pd_client: Arc<TestPdClient>,
-    pub test_data: TestData,
     resource_manager: Option<Arc<ResourceGroupManager>>,
 }
 
@@ -113,9 +106,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         fail::cfg("apply_on_handle_snapshot_sync", "return").unwrap();
 
         Cluster {
-            ffi_helper_lst: Vec::default(),
-            ffi_helper_set: Arc::new(Mutex::new(HashMap::default())),
-
+            cluster_ext: ClusterExt::default(),
             cfg: Config {
                 tikv: new_tikv_config(id),
                 prefer_mem: true,
@@ -136,62 +127,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             group_props: HashMap::default(),
             sim,
             pd_client,
-            test_data: TestData {
-                expected_leader_safe_ts: 0,
-                expected_self_safe_ts: 0,
-            },
             resource_manager: Some(Arc::new(ResourceGroupManager::default())),
-        }
-    }
-
-    pub fn make_ffi_helper_set(
-        &mut self,
-        id: u64,
-        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
-        key_mgr: &Option<Arc<DataKeyManager>>,
-        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
-    ) -> (FFIHelperSet, TikvConfig) {
-        ClusterExt::make_ffi_helper_set_no_bind(
-            id,
-            engines,
-            key_mgr,
-            router,
-            self.cfg.tikv.clone(),
-            self as *const Cluster<T> as isize,
-            self.cfg.proxy_compat,
-            self.cfg.mock_cfg.clone(),
-        )
-    }
-
-    pub fn iter_ffi_helpers(
-        &self,
-        store_ids: Option<Vec<u64>>,
-        f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet),
-    ) {
-        let ids = match store_ids {
-            Some(ids) => ids,
-            None => self.engines.keys().copied().collect::<Vec<_>>(),
-        };
-        for id in ids {
-            let engine = self.get_tiflash_engine(id);
-            let lock = self.ffi_helper_set.lock();
-            match lock {
-                Ok(mut l) => {
-                    let ffiset = l.get_mut(&id).unwrap();
-                    f(id, &engine, ffiset);
-                }
-                Err(_) => std::process::exit(1),
-            }
-        }
-    }
-
-    pub fn access_ffi_helpers(&self, f: &mut dyn FnMut(&mut HashMap<u64, FFIHelperSet>)) {
-        let lock = self.ffi_helper_set.lock();
-        match lock {
-            Ok(mut l) => {
-                f(&mut l);
-            }
-            Err(_) => std::process::exit(1),
         }
     }
 
@@ -226,67 +162,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.bootstrap_conf_change()
     }
 
-    /// We need to create FFIHelperSet while we create engine.
-    /// And later set its `node_id` when we are allocated one when start.
-    pub fn create_ffi_helper_set(
-        &mut self,
-        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
-        key_manager: &Option<Arc<DataKeyManager>>,
-        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
-    ) {
-        init_global_ffi_helper_set();
-        let (mut ffi_helper_set, _node_cfg) =
-            self.make_ffi_helper_set(0, engines, key_manager, router);
-
-        // We can not use moved or cloned engines any more.
-        let (helper_ptr, engine_store_hub) = {
-            let helper_ptr = ffi_helper_set
-                .proxy
-                .kv_engine()
-                .write()
-                .unwrap()
-                .as_mut()
-                .unwrap()
-                .engine_store_server_helper();
-
-            let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
-            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
-                engine_store_server_helper: helper,
-            });
-            (helper_ptr, engine_store_hub)
-        };
-        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
-        let proxy_config_set = Arc::new(engine_tiflash::ProxyConfigSet {
-            engine_store: self.cfg.proxy_cfg.engine_store.clone(),
-        });
-        engines.kv.init(
-            helper_ptr,
-            self.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
-            Some(engine_store_hub),
-            Some(proxy_config_set),
-        );
-
-        assert_ne!(engines.kv.proxy_ext.engine_store_server_helper, 0);
-        self.ffi_helper_lst.push(ffi_helper_set);
-    }
-
-    // If index is None, use the last in the list, which is added by
-    // create_ffi_helper_set. In most cases, index is `Some(0)`, which means we
-    // will use the first.
-    pub fn associate_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
-        let mut ffi_helper_set = if let Some(i) = index {
-            self.ffi_helper_lst.remove(i)
-        } else {
-            self.ffi_helper_lst.pop().unwrap()
-        };
-        debug!("set up ffi helper set for {}", node_id);
-        ffi_helper_set.engine_store_server.id = node_id;
-        self.ffi_helper_set
-            .lock()
-            .unwrap()
-            .insert(node_id, ffi_helper_set);
-    }
-
     // Need self.engines be filled.
     pub fn bootstrap_ffi_helper_set(&mut self) {
         let mut node_ids: Vec<u64> = self.engines.iter().map(|(&id, _)| id).collect();
@@ -307,7 +182,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             create_tiflash_test_engine(router.clone(), self.io_rate_limiter.clone(), &self.cfg);
 
         self.create_ffi_helper_set(engines, &key_manager, &router);
-        let ffi_helper_set = self.ffi_helper_lst.last_mut().unwrap();
+        let ffi_helper_set = self.cluster_ext.ffi_helper_lst.last_mut().unwrap();
         let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
 
         // replace self.create_engine
@@ -337,14 +212,14 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.run_node(node_id)?;
             // Since we use None to create_ffi_helper_set, we must init again.
             let router = self.sim.rl().get_router(node_id).unwrap();
-            let mut lock = self.ffi_helper_set.lock().unwrap();
-            let ffi_helper_set = lock.get_mut(&node_id).unwrap();
-            ffi_helper_set.proxy.set_read_index_client(Some(Box::new(
-                engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
-                    router.clone(),
-                    SysQuota::cpu_cores_quota() as usize * 2,
-                ),
-            )));
+            self.iter_ffi_helpers(Some(vec![node_id]), &mut |_, _, ffi: &mut FFIHelperSet| {
+                ffi.proxy.set_read_index_client(Some(Box::new(
+                    engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
+                        router.clone(),
+                        SysQuota::cpu_cores_quota() as usize * 2,
+                    ),
+                )));
+            });
         }
 
         // Try start new nodes.
@@ -391,52 +266,8 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 
     pub fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
-        self.test_data.expected_leader_safe_ts = leader_safe_ts;
-        self.test_data.expected_self_safe_ts = self_safe_ts;
-    }
-}
-
-static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
-static START: std::sync::Once = std::sync::Once::new();
-
-pub unsafe fn get_global_engine_helper_set() -> &'static Option<EngineHelperSet> {
-    &GLOBAL_ENGINE_HELPER_SET
-}
-
-pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
-    let mut engine_store_server = Box::new(EngineStoreServer::new(99999, None));
-    let engine_store_server_wrap = Box::new(EngineStoreServerWrap::new(
-        &mut *engine_store_server,
-        None,
-        0,
-    ));
-    let engine_store_server_helper = Box::new(gen_engine_store_server_helper(std::pin::Pin::new(
-        &*engine_store_server_wrap,
-    )));
-    let ptr = &*engine_store_server_helper as *const EngineStoreServerHelper as *mut u8;
-    // Will mutate ENGINE_STORE_SERVER_HELPER_PTR
-    (
-        EngineHelperSet {
-            engine_store_server,
-            engine_store_server_wrap,
-            engine_store_server_helper,
-        },
-        ptr,
-    )
-}
-
-pub fn init_global_ffi_helper_set() {
-    unsafe {
-        START.call_once(|| {
-            debug!("init_global_ffi_helper_set");
-            assert_eq!(
-                engine_store_ffi::ffi::get_engine_store_server_helper_ptr(),
-                0
-            );
-            let (set, ptr) = make_global_ffi_helper_set_no_bind();
-            engine_store_ffi::ffi::init_engine_store_server_helper(ptr);
-            GLOBAL_ENGINE_HELPER_SET = Some(set);
-        });
+        self.cluster_ext.test_data.expected_leader_safe_ts = leader_safe_ts;
+        self.cluster_ext.test_data.expected_self_safe_ts = self_safe_ts;
     }
 }
 

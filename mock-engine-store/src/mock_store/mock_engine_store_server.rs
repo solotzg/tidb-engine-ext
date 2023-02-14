@@ -485,8 +485,14 @@ unsafe extern "C" fn ffi_handle_safe_ts_update(
 ) {
     let store = into_engine_store_server_wrap(arg1);
     let cluster = store.cluster_ptr as *const mock_cluster::Cluster<ServerCluster>;
-    assert_eq!(self_safe_ts, (*cluster).test_data.expected_self_safe_ts);
-    assert_eq!(leader_safe_ts, (*cluster).test_data.expected_leader_safe_ts);
+    assert_eq!(
+        self_safe_ts,
+        (*cluster).cluster_ext.test_data.expected_self_safe_ts
+    );
+    assert_eq!(
+        leader_safe_ts,
+        (*cluster).cluster_ext.test_data.expected_leader_safe_ts
+    );
 }
 
 unsafe extern "C" fn ffi_handle_compute_store_stats(
