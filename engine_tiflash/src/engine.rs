@@ -17,9 +17,10 @@ use engine_traits::{
 };
 use rocksdb::{Writable, DB};
 
+#[cfg(feature = "enable-pagestorage")]
+use crate::ps_engine::*;
 use crate::{
     proxy_utils::{engine_ext::*, EngineStoreHub},
-    ps_engine::*,
     r2e,
     util::get_cf_handle,
     ProxyEngineExt,
