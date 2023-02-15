@@ -9,7 +9,8 @@ elif [[ $M == "testold" ]]; then
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
     echo "Start clippy"
-    sh ./proxy_scripts/clippy.sh
+    chmod +x ./proxy_scripts/clippy.sh
+    ./proxy_scripts/clippy.sh
     echo "Finish clippy"
     # exit # If we depend TiKV as a Cargo component, the following is not necessary, and can fail.
     cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_normal
