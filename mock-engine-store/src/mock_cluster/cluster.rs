@@ -10,7 +10,6 @@ use std::{
 
 use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
-use engine_store_ffi::ffi::RaftStoreProxyFFI;
 // mock cluster
 use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine, CF_DEFAULT};
@@ -52,7 +51,6 @@ use test_raftstore::{
 use tikv::server::Result as ServerResult;
 use tikv_util::{
     debug, error, safe_panic,
-    sys::SysQuota,
     thread_group::GroupProperties,
     time::{Instant, ThreadReadId},
     warn, HandyRwLock,
@@ -178,6 +176,7 @@ pub struct Cluster<T: Simulator<TiFlashEngine>> {
 
 impl<T: Simulator<TiFlashEngine>> std::panic::UnwindSafe for Cluster<T> {}
 
+// TiFlash specific
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn run_conf_change_no_start(&mut self) -> u64 {
         self.create_engines();
@@ -202,6 +201,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     }
 }
 
+// Copied or modified from test_raftstore
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn new(
         id: u64,
@@ -248,14 +248,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         router: Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
     ) {
         let (engines, key_manager, dir) =
-            create_tiflash_test_engine(router.clone(), self.io_rate_limiter.clone(), &self.cfg);
-
-        // Set up FFI.
-        {
-            ClusterExt::create_ffi_helper_set(self, engines, &key_manager, &router);
-        }
-        let ffi_helper_set = self.cluster_ext.ffi_helper_lst.last_mut().unwrap();
-        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
+            create_tiflash_test_engine_with_cluster_ctx(self, router.clone());
 
         // replace self.create_engine
         self.dbs.push(engines.clone());
@@ -293,16 +286,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             debug!("recover node"; "node_id" => node_id);
             // Like TiKVServer::init
             self.run_node(node_id)?;
-            // Since we use None to create_ffi_helper_set, we must init again.
-            let router = self.sim.rl().get_router(node_id).unwrap();
-            self.iter_ffi_helpers(Some(vec![node_id]), &mut |_, _, ffi: &mut FFIHelperSet| {
-                ffi.proxy.set_read_index_client(Some(Box::new(
-                    engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
-                        router.clone(),
-                        SysQuota::cpu_cores_quota() as usize * 2,
-                    ),
-                )));
-            });
+            self.post_node_start(node_id);
         }
 
         // Try start new nodes.

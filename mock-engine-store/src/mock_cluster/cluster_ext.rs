@@ -4,13 +4,14 @@ use std::sync::{atomic::AtomicU8, Arc, Mutex};
 
 use collections::HashMap;
 use encryption::DataKeyManager;
-use engine_store_ffi::ffi::interfaces_ffi::{
-    EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper,
+use engine_store_ffi::ffi::{
+    interfaces_ffi::{EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper},
+    RaftStoreProxyFFI,
 };
 use engine_traits::Engines;
 use raftstore::store::RaftRouter;
 use tikv::config::TikvConfig;
-use tikv_util::{debug, sys::SysQuota};
+use tikv_util::{debug, sys::SysQuota, HandyRwLock};
 
 use crate::{
     config::MockConfig, mock_store::gen_engine_store_server_helper, EngineStoreServer,
@@ -207,6 +208,19 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
 
     pub fn access_ffi_helpers(&self, f: &mut dyn FnMut(&mut HashMap<u64, FFIHelperSet>)) {
         self.cluster_ext.access_ffi_helpers(f)
+    }
+
+    pub fn post_node_start(&mut self, node_id: u64) {
+        // Since we use None to create_ffi_helper_set, we must init again.
+        let router = self.sim.rl().get_router(node_id).unwrap();
+        self.iter_ffi_helpers(Some(vec![node_id]), &mut |_, _, ffi: &mut FFIHelperSet| {
+            ffi.proxy.set_read_index_client(Some(Box::new(
+                engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
+                    router.clone(),
+                    SysQuota::cpu_cores_quota() as usize * 2,
+                ),
+            )));
+        });
     }
 
     // If index is None, use the last in ffi_helper_lst, which is added by
