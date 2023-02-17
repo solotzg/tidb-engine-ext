@@ -11,7 +11,6 @@ use std::{
 use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
 // mock cluster
-use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine, CF_DEFAULT};
 use file_system::IoRateLimiter;
 use futures::executor::block_on;
@@ -58,7 +57,6 @@ use tikv_util::{
 use tokio::sync::oneshot;
 use txn_types::WriteBatchFlags;
 
-pub use super::cluster_ext::{init_global_ffi_helper_set, FFIHelperSet};
 use super::{cluster_ext::*, common::*, config::Config, transport_simulate::Filter, util::*};
 
 // We simulate 3 or 5 nodes, each has a store.
@@ -175,31 +173,6 @@ pub struct Cluster<T: Simulator<TiFlashEngine>> {
 }
 
 impl<T: Simulator<TiFlashEngine>> std::panic::UnwindSafe for Cluster<T> {}
-
-// TiFlash specific
-impl<T: Simulator<TiFlashEngine>> Cluster<T> {
-    pub fn run_conf_change_no_start(&mut self) -> u64 {
-        self.create_engines();
-        self.bootstrap_conf_change()
-    }
-
-    pub fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
-        self.cluster_ext.test_data.expected_leader_safe_ts = leader_safe_ts;
-        self.cluster_ext.test_data.expected_self_safe_ts = self_safe_ts;
-    }
-
-    pub fn get_tiflash_engine(&self, node_id: u64) -> &TiFlashEngine {
-        &self.engines[&node_id].kv
-    }
-
-    pub fn get_engines(&self, node_id: u64) -> &Engines<TiFlashEngine, engine_rocks::RocksEngine> {
-        &self.engines[&node_id]
-    }
-
-    pub fn get_raw_engine(&self, node_id: u64) -> Arc<DB> {
-        Arc::clone(self.engines[&node_id].kv.bad_downcast())
-    }
-}
 
 // Copied or modified from test_raftstore
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
@@ -326,6 +299,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.store_metas.insert(node_id, store_meta);
             self.key_managers_map.insert(node_id, key_manager.clone());
             self.register_ffi_helper_set(None, node_id);
+            self.post_node_start(node_id);
         }
         assert_eq!(self.count, self.engines.len());
         assert_eq!(self.count, self.dbs.len());
