@@ -425,26 +425,26 @@ pub mod root {
                     arg1: *const root::DB::EngineStoreServerWrap,
                 ) -> root::DB::RawCppPtr,
             >,
-            pub fn_write_batch_put_page: ::std::option::Option<
+            pub fn_wb_put_page: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RawVoidPtr,
                     arg2: root::DB::BaseBuffView,
                     arg3: root::DB::BaseBuffView,
                 ),
             >,
-            pub fn_write_batch_del_page: ::std::option::Option<
+            pub fn_wb_del_page: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::BaseBuffView),
             >,
-            pub fn_write_batch_size:
+            pub fn_get_wb_size:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr) -> u64>,
-            pub fn_write_batch_is_empty:
+            pub fn_is_wb_empty:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr) -> u8>,
-            pub fn_write_batch_merge: ::std::option::Option<
+            pub fn_handle_merge_wb: ::std::option::Option<
                 unsafe extern "C" fn(arg1: root::DB::RawVoidPtr, arg2: root::DB::RawVoidPtr),
             >,
-            pub fn_write_batch_clear:
+            pub fn_handle_clear_wb:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr)>,
-            pub fn_consume_write_batch: ::std::option::Option<
+            pub fn_handle_consume_wb: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::RawVoidPtr,
@@ -463,17 +463,17 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::RawCppPtrCarr,
             >,
-            pub fn_handle_purge_pagestorage: ::std::option::Option<
-                unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
-            >,
-            pub fn_handle_seek_ps_key: ::std::option::Option<
+            pub fn_handle_get_lower_bound: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
                     arg2: root::DB::BaseBuffView,
                 ) -> root::DB::CppStrWithView,
             >,
-            pub fn_ps_is_empty: ::std::option::Option<
+            pub fn_is_ps_empty: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap) -> u8,
+            >,
+            pub fn_handle_purge_ps: ::std::option::Option<
+                unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
             >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(
@@ -580,7 +580,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 17394545035928865111;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 16083567146900229320;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

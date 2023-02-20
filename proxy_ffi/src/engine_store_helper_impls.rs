@@ -179,39 +179,39 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_create_write_batch.into_inner())(self.inner) }
     }
 
-    pub fn write_batch_put_page(&self, wb: RawVoidPtr, page_id: BaseBuffView, page: BaseBuffView) {
-        debug_assert!(self.fn_write_batch_put_page.is_some());
-        unsafe { (self.fn_write_batch_put_page.into_inner())(wb, page_id, page) }
+    pub fn wb_put_page(&self, wb: RawVoidPtr, page_id: BaseBuffView, page: BaseBuffView) {
+        debug_assert!(self.fn_wb_put_page.is_some());
+        unsafe { (self.fn_wb_put_page.into_inner())(wb, page_id, page) }
     }
 
-    pub fn write_batch_del_page(&self, wb: RawVoidPtr, page_id: BaseBuffView) {
-        debug_assert!(self.fn_write_batch_del_page.is_some());
-        unsafe { (self.fn_write_batch_del_page.into_inner())(wb, page_id) }
+    pub fn wb_del_page(&self, wb: RawVoidPtr, page_id: BaseBuffView) {
+        debug_assert!(self.fn_wb_del_page.is_some());
+        unsafe { (self.fn_wb_del_page.into_inner())(wb, page_id) }
     }
 
-    pub fn write_batch_size(&self, wb: RawVoidPtr) -> u64 {
-        debug_assert!(self.fn_write_batch_size.is_some());
-        unsafe { (self.fn_write_batch_size.into_inner())(wb) }
+    pub fn get_wb_size(&self, wb: RawVoidPtr) -> u64 {
+        debug_assert!(self.fn_get_wb_size.is_some());
+        unsafe { (self.fn_get_wb_size.into_inner())(wb) }
     }
 
-    pub fn write_batch_is_empty(&self, wb: RawVoidPtr) -> u8 {
-        debug_assert!(self.fn_write_batch_is_empty.is_some());
-        unsafe { (self.fn_write_batch_is_empty.into_inner())(wb) }
+    pub fn is_wb_empty(&self, wb: RawVoidPtr) -> u8 {
+        debug_assert!(self.fn_is_wb_empty.is_some());
+        unsafe { (self.fn_is_wb_empty.into_inner())(wb) }
     }
 
-    pub fn write_batch_merge(&self, lwb: RawVoidPtr, rwb: RawVoidPtr) {
-        debug_assert!(self.fn_write_batch_merge.is_some());
-        unsafe { (self.fn_write_batch_merge.into_inner())(lwb, rwb) }
+    pub fn merge_wb(&self, lwb: RawVoidPtr, rwb: RawVoidPtr) {
+        debug_assert!(self.fn_handle_merge_wb.is_some());
+        unsafe { (self.fn_handle_merge_wb.into_inner())(lwb, rwb) }
     }
 
-    pub fn write_batch_clear(&self, wb: RawVoidPtr) {
-        debug_assert!(self.fn_write_batch_clear.is_some());
-        unsafe { (self.fn_write_batch_clear.into_inner())(wb) }
+    pub fn clear_wb(&self, wb: RawVoidPtr) {
+        debug_assert!(self.fn_handle_clear_wb.is_some());
+        unsafe { (self.fn_handle_clear_wb.into_inner())(wb) }
     }
 
-    pub fn consume_write_batch(&self, wb: RawVoidPtr) {
-        debug_assert!(self.fn_consume_write_batch.is_some());
-        unsafe { (self.fn_consume_write_batch.into_inner())(self.inner, wb) }
+    pub fn consume_wb(&self, wb: RawVoidPtr) {
+        debug_assert!(self.fn_handle_consume_wb.is_some());
+        unsafe { (self.fn_handle_consume_wb.into_inner())(self.inner, wb) }
     }
 
     pub fn read_page(&self, page_id: BaseBuffView) -> CppStrWithView {
@@ -228,19 +228,19 @@ impl EngineStoreServerHelper {
         unsafe { (self.fn_handle_scan_page.into_inner())(self.inner, start_page_id, end_page_id) }
     }
 
-    pub fn purge_pagestorage(&self) {
-        debug_assert!(self.fn_handle_purge_pagestorage.is_some());
-        unsafe { (self.fn_handle_purge_pagestorage.into_inner())(self.inner) }
-    }
-
-    pub fn seek_ps_key(&self, page_id: BaseBuffView) -> CppStrWithView {
-        debug_assert!(self.fn_handle_seek_ps_key.is_some());
-        unsafe { (self.fn_handle_seek_ps_key.into_inner())(self.inner, page_id) }
+    pub fn get_lower_bound(&self, page_id: BaseBuffView) -> CppStrWithView {
+        debug_assert!(self.fn_handle_get_lower_bound.is_some());
+        unsafe { (self.fn_handle_get_lower_bound.into_inner())(self.inner, page_id) }
     }
 
     pub fn is_ps_empty(&self) -> u8 {
-        debug_assert!(self.fn_ps_is_empty.is_some());
-        unsafe { (self.fn_ps_is_empty.into_inner())(self.inner) }
+        debug_assert!(self.fn_is_ps_empty.is_some());
+        unsafe { (self.fn_is_ps_empty.into_inner())(self.inner) }
+    }
+
+    pub fn purge_ps(&self) {
+        debug_assert!(self.fn_handle_purge_ps.is_some());
+        unsafe { (self.fn_handle_purge_ps.into_inner())(self.inner) }
     }
 
     pub fn pre_handle_snapshot(
