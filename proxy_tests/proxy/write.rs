@@ -68,6 +68,7 @@ fn test_ps_write() {
     let (mut cluster, _pd_client) = new_mock_cluster(0, 1);
 
     let _ = cluster.run();
+    // initialize ffi struct
     cluster.must_put(b"k1", b"v1");
 
     let engine = cluster.get_engine(1);
