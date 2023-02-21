@@ -65,9 +65,11 @@ fn test_interaction() {
 #[cfg(feature = "enable-pagestorage")]
 #[test]
 fn test_ps_write() {
-    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
+    let (mut cluster, _pd_client) = new_mock_cluster(0, 1);
 
     let _ = cluster.run();
+    cluster.must_put(b"k1", b"v1");
+
     let engine = cluster.get_engine(1);
     let mut wb = engine.write_batch();
     wb.put(&[0x02], &[0x03, 0x04, 0x05]).unwrap();
