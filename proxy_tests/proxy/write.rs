@@ -80,6 +80,7 @@ fn test_ps_write() {
     assert!(v == &[0x03, 0x04, 0x05]);
     let v = engine.get_value(&[0x03]).unwrap().unwrap();
     assert!(v == &[0x03, 0x04, 0x05, 0x06]);
+    cluster.shutdown();
 }
 
 enum TransferLeaderRunMode {
