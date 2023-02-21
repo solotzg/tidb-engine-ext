@@ -68,12 +68,6 @@ fn test_ps_write() {
     let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
 
     let _ = cluster.run();
-    let eng_ids = cluster
-        .engines
-        .iter()
-        .map(|e| e.0.to_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(eng_ids.len(), 3);
     let engine = cluster.get_engine(eng_ids[0]);
     let mut wb = engine.write_batch();
     wb.put(&[0x02], &[0x03, 0x04, 0x05]).unwrap();
