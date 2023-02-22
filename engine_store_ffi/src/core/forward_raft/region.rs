@@ -86,7 +86,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             MapEntry::Occupied(mut o) => {
                 // Note the region info may be registered by maybe_fast_path_tick
                 info!("{} {}:{} {}, peer created",
-                    if is_fap_enabled {"fast path: ongoing"} else {""}
+                    if is_fap_enabled {"fast path: ongoing"} else {""},
                     self.store_id, region_id, 0;
                     "region_id" => region_id,
                     "is_replicated" => is_replicated,
@@ -99,7 +99,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             }
             MapEntry::Vacant(v) => {
                 info!("{} {}:{} {}, peer created",
-                    if is_fap_enabled {"fast path: ongoing"} else {""}
+                    if is_fap_enabled {"fast path: ongoing"} else {""},
                     self.store_id, region_id, r.peer_id;
                     "region_id" => region_id,
                     "is_replicated" => is_replicated,
