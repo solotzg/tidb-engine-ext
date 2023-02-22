@@ -224,22 +224,22 @@ struct RaftStoreProxyFFIHelper {
 };
 
 struct PageStorageInterfaces {
-  RawCppPtr (*fn_ps_create_write_batch)(const EngineStoreServerWrap *);
-  void (*fn_ps_wb_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
-  void (*fn_ps_wb_del_page)(RawVoidPtr, BaseBuffView);
-  uint64_t (*fn_ps_get_wb_size)(RawVoidPtr);
-  uint8_t (*fn_ps_is_wb_empty)(RawVoidPtr);
-  void (*fn_ps_handle_merge_wb)(RawVoidPtr, RawVoidPtr);
-  void (*fn_ps_handle_clear_wb)(RawVoidPtr);
-  void (*fn_ps_handle_consume_wb)(const EngineStoreServerWrap *, RawVoidPtr);
-  CppStrWithView (*fn_ps_handle_read_page)(const EngineStoreServerWrap *,
-                                           BaseBuffView);
-  RawCppPtrCarr (*fn_ps_handle_scan_page)(const EngineStoreServerWrap *,
-                                          BaseBuffView, BaseBuffView);
-  CppStrWithView (*fn_ps_handle_get_lower_bound)(const EngineStoreServerWrap *,
-                                                 BaseBuffView);
-  uint8_t (*fn_ps_is_ps_empty)(const EngineStoreServerWrap *);
-  void (*fn_ps_handle_purge_ps)(const EngineStoreServerWrap *);
+  RawCppPtr (*fn_create_write_batch)(const EngineStoreServerWrap *);
+  void (*fn_wb_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
+  void (*fn_wb_del_page)(RawVoidPtr, BaseBuffView);
+  uint64_t (*fn_get_wb_size)(RawVoidPtr);
+  uint8_t (*fn_is_wb_empty)(RawVoidPtr);
+  void (*fn_handle_merge_wb)(RawVoidPtr, RawVoidPtr);
+  void (*fn_handle_clear_wb)(RawVoidPtr);
+  void (*fn_handle_consume_wb)(const EngineStoreServerWrap *, RawVoidPtr);
+  CppStrWithView (*fn_handle_read_page)(const EngineStoreServerWrap *,
+                                        BaseBuffView);
+  RawCppPtrCarr (*fn_handle_scan_page)(const EngineStoreServerWrap *,
+                                       BaseBuffView, BaseBuffView);
+  CppStrWithView (*fn_handle_get_lower_bound)(const EngineStoreServerWrap *,
+                                              BaseBuffView);
+  uint8_t (*fn_is_ps_empty)(const EngineStoreServerWrap *);
+  void (*fn_handle_purge_ps)(const EngineStoreServerWrap *);
 };
 
 struct EngineStoreServerHelper {
