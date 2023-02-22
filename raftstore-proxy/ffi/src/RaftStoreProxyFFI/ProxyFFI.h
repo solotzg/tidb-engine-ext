@@ -223,22 +223,7 @@ struct RaftStoreProxyFFIHelper {
                                            RawCppStringPtr *error_msg);
 };
 
-struct EngineStoreServerHelper {
-  uint32_t magic_number;  // use a very special number to check whether this
-                          // struct is legal
-  uint64_t version;       // version of function interface
-  //
-
-  EngineStoreServerWrap *inner;
-  RawCppPtr (*fn_gen_cpp_string)(BaseBuffView);
-  EngineStoreApplyRes (*fn_handle_write_raft_cmd)(const EngineStoreServerWrap *,
-                                                  WriteCmdsView, RaftCmdHeader);
-  EngineStoreApplyRes (*fn_handle_admin_raft_cmd)(const EngineStoreServerWrap *,
-                                                  BaseBuffView, BaseBuffView,
-                                                  RaftCmdHeader);
-  uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
-  uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
-                               uint64_t, uint64_t);
+struct PageStorageInterfaces {
   RawCppPtr (*fn_ps_create_write_batch)(const EngineStoreServerWrap *);
   void (*fn_ps_wb_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
   void (*fn_ps_wb_del_page)(RawVoidPtr, BaseBuffView);
@@ -255,6 +240,25 @@ struct EngineStoreServerHelper {
                                                  BaseBuffView);
   uint8_t (*fn_ps_is_ps_empty)(const EngineStoreServerWrap *);
   void (*fn_ps_handle_purge_ps)(const EngineStoreServerWrap *);
+};
+
+struct EngineStoreServerHelper {
+  uint32_t magic_number;  // use a very special number to check whether this
+                          // struct is legal
+  uint64_t version;       // version of function interface
+  //
+
+  EngineStoreServerWrap *inner;
+  PageStorageInterfaces ps;
+  RawCppPtr (*fn_gen_cpp_string)(BaseBuffView);
+  EngineStoreApplyRes (*fn_handle_write_raft_cmd)(const EngineStoreServerWrap *,
+                                                  WriteCmdsView, RaftCmdHeader);
+  EngineStoreApplyRes (*fn_handle_admin_raft_cmd)(const EngineStoreServerWrap *,
+                                                  BaseBuffView, BaseBuffView,
+                                                  RaftCmdHeader);
+  uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
+  uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
+                               uint64_t, uint64_t);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);

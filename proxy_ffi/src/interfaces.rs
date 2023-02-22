@@ -386,40 +386,7 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
-        pub struct EngineStoreServerHelper {
-            pub magic_number: u32,
-            pub version: u64,
-            pub inner: *mut root::DB::EngineStoreServerWrap,
-            pub fn_gen_cpp_string: ::std::option::Option<
-                unsafe extern "C" fn(arg1: root::DB::BaseBuffView) -> root::DB::RawCppPtr,
-            >,
-            pub fn_handle_write_raft_cmd: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *const root::DB::EngineStoreServerWrap,
-                    arg2: root::DB::WriteCmdsView,
-                    arg3: root::DB::RaftCmdHeader,
-                ) -> root::DB::EngineStoreApplyRes,
-            >,
-            pub fn_handle_admin_raft_cmd: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *const root::DB::EngineStoreServerWrap,
-                    arg2: root::DB::BaseBuffView,
-                    arg3: root::DB::BaseBuffView,
-                    arg4: root::DB::RaftCmdHeader,
-                ) -> root::DB::EngineStoreApplyRes,
-            >,
-            pub fn_need_flush_data: ::std::option::Option<
-                unsafe extern "C" fn(arg1: *mut root::DB::EngineStoreServerWrap, arg2: u64) -> u8,
-            >,
-            pub fn_try_flush_data: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *mut root::DB::EngineStoreServerWrap,
-                    arg2: u64,
-                    arg3: u8,
-                    arg4: u64,
-                    arg5: u64,
-                ) -> u8,
-            >,
+        pub struct PageStorageInterfaces {
             pub fn_ps_create_write_batch: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *const root::DB::EngineStoreServerWrap,
@@ -474,6 +441,44 @@ pub mod root {
             >,
             pub fn_ps_handle_purge_ps: ::std::option::Option<
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
+            >,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct EngineStoreServerHelper {
+            pub magic_number: u32,
+            pub version: u64,
+            pub inner: *mut root::DB::EngineStoreServerWrap,
+            pub ps: root::DB::PageStorageInterfaces,
+            pub fn_gen_cpp_string: ::std::option::Option<
+                unsafe extern "C" fn(arg1: root::DB::BaseBuffView) -> root::DB::RawCppPtr,
+            >,
+            pub fn_handle_write_raft_cmd: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::WriteCmdsView,
+                    arg3: root::DB::RaftCmdHeader,
+                ) -> root::DB::EngineStoreApplyRes,
+            >,
+            pub fn_handle_admin_raft_cmd: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: root::DB::BaseBuffView,
+                    arg3: root::DB::BaseBuffView,
+                    arg4: root::DB::RaftCmdHeader,
+                ) -> root::DB::EngineStoreApplyRes,
+            >,
+            pub fn_need_flush_data: ::std::option::Option<
+                unsafe extern "C" fn(arg1: *mut root::DB::EngineStoreServerWrap, arg2: u64) -> u8,
+            >,
+            pub fn_try_flush_data: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    arg2: u64,
+                    arg3: u8,
+                    arg4: u64,
+                    arg5: u64,
+                ) -> u8,
             >,
             pub fn_atomic_update_proxy: ::std::option::Option<
                 unsafe extern "C" fn(
@@ -580,7 +585,7 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 409362199862712752;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 10762416891718115474;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
