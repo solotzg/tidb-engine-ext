@@ -3,7 +3,10 @@
 use std::{cell::RefCell, pin::Pin, sync::atomic::Ordering};
 
 use super::{
-    common::{interfaces_ffi::PageAndCppStrWithView, *},
+    common::{
+        interfaces_ffi::{PageAndCppStrWithView, PageStorageInterfaces},
+        *,
+    },
     mock_core::*,
     mock_fast_add_peer_impls::*,
     mock_ffi::*,
