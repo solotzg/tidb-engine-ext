@@ -55,11 +55,6 @@ pub use crate::status::*;
 mod table_properties;
 pub use crate::table_properties::*;
 
-#[cfg(not(feature = "enable-pagestorage"))]
-mod write_batch;
-#[cfg(not(feature = "enable-pagestorage"))]
-pub use crate::write_batch::*;
-
 mod ps_engine;
 mod rocks_engine;
 #[cfg(feature = "enable-pagestorage")]
