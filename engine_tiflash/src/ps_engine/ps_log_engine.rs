@@ -23,6 +23,7 @@ use proxy_ffi::{
     gen_engine_store_server_helper,
     interfaces_ffi::{PageAndCppStrWithView, RawCppPtr},
 };
+use crate::proxy_utils::key_format;
 use raft::eraftpb::Entry;
 use tikv_util::{box_try, info};
 use tracker::TrackerToken;
@@ -44,13 +45,13 @@ impl PSEngineWriteBatch {
 
     fn put_page(&mut self, page_id: &[u8], value: &[u8]) -> Result<()> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        helper.wb_put_page(self.raw_write_batch.ptr, page_id.into(), value.into());
+        helper.wb_put_page(self.raw_write_batch.ptr, key_format::add_raft_engine_prefix(page_id).as_slice().into(), value.into());
         Ok(())
     }
 
     fn del_page(&mut self, page_id: &[u8]) -> Result<()> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        helper.wb_del_page(self.raw_write_batch.ptr, page_id.into());
+        helper.wb_del_page(self.raw_write_batch.ptr, key_format::add_raft_engine_prefix(page_id).as_slice().into());
         Ok(())
     }
 
@@ -127,7 +128,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
         _apply_index: u64,
         state: &RegionLocalState,
     ) -> Result<()> {
-        self.put_msg(&keys::region_state_key(raft_group_id), state)
+        self.put_msg(&keys::region_state_key(raft_group_id).as_slice(), state)
     }
 
     fn put_apply_state(
@@ -136,7 +137,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
         _apply_index: u64,
         state: &RaftApplyState,
     ) -> Result<()> {
-        self.put_msg(&keys::apply_state_key(raft_group_id), state)
+        self.put_msg(&keys::apply_state_key(raft_group_id).as_slice(), state)
     }
 
     fn put_flushed_index(
@@ -207,7 +208,7 @@ impl PSLogEngine {
 
     fn get_msg_cf<M: protobuf::Message + Default>(&self, page_id: &[u8]) -> Result<Option<M>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let value = helper.read_page(page_id.into());
+        let value = helper.read_page(key_format::add_raft_engine_prefix(page_id).as_slice().into());
         if value.view.len == 0 {
             return Ok(None);
         }
@@ -221,7 +222,7 @@ impl PSLogEngine {
 
     fn get_value(&self, page_id: &[u8]) -> Option<Vec<u8>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let value = helper.read_page(page_id.into());
+        let value = helper.read_page(key_format::add_raft_engine_prefix(page_id).as_slice().into());
         return if value.view.len == 0 {
             None
         } else {
@@ -232,11 +233,11 @@ impl PSLogEngine {
     // Seek the first key >= given key, if not found, return None.
     fn seek(&self, key: &[u8]) -> Option<Vec<u8>> {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let target_key = helper.get_lower_bound(key.into());
+        let target_key = helper.get_lower_bound(key_format::add_raft_engine_prefix(key).as_slice().into());
         if target_key.view.len == 0 {
             None
         } else {
-            Some(target_key.view.to_slice().to_vec())
+            Some(key_format::remove_prefix(target_key.view.to_slice()).into())
         }
     }
 
@@ -247,11 +248,11 @@ impl PSLogEngine {
         F: FnMut(&[u8], &[u8]) -> Result<bool>,
     {
         let helper = gen_engine_store_server_helper(self.engine_store_server_helper);
-        let values = helper.scan_page(start_key.into(), end_key.into());
+        let values = helper.scan_page(key_format::add_raft_engine_prefix(start_key).as_slice().into(), key_format::add_raft_engine_prefix(end_key).as_slice().into());
         let arr = values.inner as *mut PageAndCppStrWithView;
         for i in 0..values.len {
             let value = unsafe { &*arr.offset(i as isize) };
-            if !f(value.key_view.to_slice(), value.page_view.to_slice())? {
+            if !f(key_format::remove_prefix(value.key_view.to_slice()), value.page_view.to_slice())? {
                 break;
             }
         }

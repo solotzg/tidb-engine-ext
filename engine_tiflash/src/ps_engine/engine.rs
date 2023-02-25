@@ -5,18 +5,6 @@ use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result, SyncMu
 
 use crate::RocksEngine;
 
-// Some data may be migrated from kv engine to raft engine in the future,
-// so kv engine and raft engine may write and delete the same key in the code
-// base. To distinguish data managed by kv engine and raft engine, we prepend an
-// `0x02` to the key written by kv engine.
-// So kv engine won't scan any key from raft engine, and vice versa.
-pub fn add_prefix(key: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(key.len() + 1);
-    v.push(0x02);
-    v.extend_from_slice(key);
-    v
-}
-
 impl Iterable for RocksEngine {
     type Iterator = RocksEngineIterator;
 
@@ -34,8 +22,8 @@ impl Iterable for RocksEngine {
     {
         let mut f = f;
         self.ps_ext.as_ref().unwrap().scan_page(
-            add_prefix(start_key).as_slice(),
-            add_prefix(end_key).as_slice(),
+            start_key,
+            end_key,
             &mut f,
         );
         Ok(())
@@ -58,7 +46,7 @@ impl Peekable for RocksEngine {
             .ps_ext
             .as_ref()
             .unwrap()
-            .read_page(add_prefix(key).as_slice());
+            .read_page(key);
         return match result {
             None => Ok(None),
             Some(v) => Ok(Some(crate::ps_engine::PsDbVector::from_raw(v))),
@@ -81,7 +69,7 @@ impl SyncMutable for RocksEngine {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
             self.ps_ext.as_ref().unwrap().write_batch_put_page(
                 ps_wb.ptr,
-                add_prefix(key).as_slice(),
+                key,
                 value,
             );
             self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
@@ -94,7 +82,7 @@ impl SyncMutable for RocksEngine {
             let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
             self.ps_ext.as_ref().unwrap().write_batch_put_page(
                 ps_wb.ptr,
-                add_prefix(key).as_slice(),
+                key,
                 value,
             );
             self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
@@ -108,7 +96,7 @@ impl SyncMutable for RocksEngine {
             self.ps_ext
                 .as_ref()
                 .unwrap()
-                .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
+                .write_batch_del_page(ps_wb.ptr, key);
             self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
@@ -120,7 +108,7 @@ impl SyncMutable for RocksEngine {
             self.ps_ext
                 .as_ref()
                 .unwrap()
-                .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
+                .write_batch_del_page(ps_wb.ptr, key);
             self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
         }
         Ok(())
