@@ -221,7 +221,7 @@ impl Mutable for RocksWriteBatchVec {
         }
         self.ps_ext.as_ref().unwrap().write_batch_put_page(
             self.ps_wb.ptr,
-            add_prefix(key).as_slice(),
+            key,
             value,
         );
         Ok(())
@@ -233,7 +233,7 @@ impl Mutable for RocksWriteBatchVec {
         }
         self.ps_ext.as_ref().unwrap().write_batch_put_page(
             self.ps_wb.ptr,
-            add_prefix(key).as_slice(),
+            key,
             value,
         );
         Ok(())
@@ -246,7 +246,7 @@ impl Mutable for RocksWriteBatchVec {
         self.ps_ext
             .as_ref()
             .unwrap()
-            .write_batch_del_page(self.ps_wb.ptr, add_prefix(key).as_slice());
+            .write_batch_del_page(self.ps_wb.ptr, key);
         Ok(())
     }
 
@@ -257,7 +257,7 @@ impl Mutable for RocksWriteBatchVec {
         self.ps_ext
             .as_ref()
             .unwrap()
-            .write_batch_del_page(self.ps_wb.ptr, add_prefix(key).as_slice());
+            .write_batch_del_page(self.ps_wb.ptr, key);
         Ok(())
     }
 
