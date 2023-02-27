@@ -1249,7 +1249,7 @@ impl RaftBatchSystem {
 
         let region_runner = RegionRunner::new(
             engines.kv.c().clone(),
-            snap_mgr,
+            snap_mgr.clone(),
             cfg.snap_handle_pool_size,
             cfg.use_delete_range,
             workers.coprocessor_host.clone(),
@@ -1278,6 +1278,7 @@ impl RaftBatchSystem {
             workers.pd_worker.scheduler(),
             cfg.pd_store_heartbeat_tick_interval.as_secs(),
             auto_split_controller,
+            snap_mgr,
         );
         box_try!(workers.pd_worker.start(pd_runner));
 
@@ -1799,8 +1800,6 @@ impl<'a, T: Transport, C: PdClient> StoreFsmDelegate<'a, T, C> {
     fn store_heartbeat_pd(&mut self) {
         let mut stats = StoreStats::default();
 
-        let used_size = self.ctx.snap_mgr.get_total_snap_size();
-        stats.set_used_size(used_size);
         stats.set_store_id(self.ctx.store_id());
         {
             let meta = self.ctx.store_meta.lock().unwrap();
