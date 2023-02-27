@@ -459,7 +459,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
             engine_store_server_helper: helper,
         });
-        // engine_tiflash::RocksEngine has engine_rocks::RocksEngine inside
+        // engine_tiflash::MixedModeEngine has engine_rocks::RocksEngine inside
         let mut kv_engine = TiFlashEngine::from_rocks(kv_engine);
         let proxy_config_set = Arc::new(engine_tiflash::ProxyEngineConfigSet {
             engine_store: self.proxy_config.engine_store.clone(),

@@ -4,12 +4,13 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 use std::{
-    fmt::Debug,
     fs,
     path::Path,
     sync::{atomic::AtomicIsize, Arc},
 };
 
+pub(crate) use details::RocksEngine;
+pub use details::RocksEngine as MixedModeEngine;
 use engine_rocks::RocksSnapshot;
 use engine_traits::{Checkpointable, Checkpointer, Error, KvEngine, Result};
 use rocksdb::DB;
@@ -18,14 +19,17 @@ use crate::{
     proxy_utils::{engine_ext::*, EngineStoreHub},
     ProxyEngineExt,
 };
-
-#[derive(Clone, Debug)]
-pub struct RocksEngine {
-    // Must ensure rocks is the first field, for RocksEngine::from_ref.
-    // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks yet.
-    pub rocks: engine_rocks::RocksEngine,
-    pub proxy_ext: ProxyEngineExt,
-    pub ps_ext: Option<PageStorageExt>,
+mod details {
+    use crate::{PageStorageExt, ProxyEngineExt};
+    #[derive(Clone, Debug)]
+    pub struct RocksEngine {
+        // Must ensure rocks is the first field, for RocksEngine::from_ref.
+        // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks
+        // yet.
+        pub rocks: engine_rocks::RocksEngine,
+        pub proxy_ext: ProxyEngineExt,
+        pub ps_ext: Option<PageStorageExt>,
+    }
 }
 
 impl RocksEngine {

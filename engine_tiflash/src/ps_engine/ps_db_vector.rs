@@ -7,6 +7,8 @@ use std::{
 
 use engine_traits::DbVector;
 
+/// Used when impl Peekable.
+/// Since we can't hold a rocksdb::DBVector.
 pub struct PsDbVector(Vec<u8>);
 
 impl PsDbVector {
