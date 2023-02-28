@@ -3,7 +3,69 @@
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result, SyncMutable};
 
-use crate::RocksEngine;
+use crate::{
+    mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
+    PageStorageExt, RocksEngine,
+};
+
+#[derive(Clone, Debug)]
+pub struct PSElementEngine {
+    pub ps_ext: PageStorageExt,
+}
+
+unsafe impl Send for PSElementEngine {}
+unsafe impl Sync for PSElementEngine {}
+
+impl ElementaryEngine for PSElementEngine {
+    fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let ps_wb = self.ps_ext.create_write_batch();
+        self.ps_ext
+            .write_batch_put_page(ps_wb.ptr, add_prefix(key).as_slice(), value);
+        self.ps_ext.consume_write_batch(ps_wb.ptr);
+        Ok(())
+    }
+
+    fn put_cf(&self, _cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
+        let ps_wb = self.ps_ext.create_write_batch();
+        self.ps_ext
+            .write_batch_put_page(ps_wb.ptr, add_prefix(key).as_slice(), value);
+        self.ps_ext.consume_write_batch(ps_wb.ptr);
+        Ok(())
+    }
+
+    fn delete(&self, key: &[u8]) -> Result<()> {
+        let ps_wb = self.ps_ext.create_write_batch();
+        self.ps_ext
+            .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
+        self.ps_ext.consume_write_batch(ps_wb.ptr);
+        Ok(())
+    }
+
+    fn delete_cf(&self, _cf: &str, key: &[u8]) -> Result<()> {
+        let ps_wb = self.ps_ext.create_write_batch();
+        self.ps_ext
+            .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
+        self.ps_ext.consume_write_batch(ps_wb.ptr);
+        Ok(())
+    }
+
+    fn get_value_opt(&self, _opts: &ReadOptions, key: &[u8]) -> Result<Option<MixedDbVector>> {
+        let result = self.ps_ext.read_page(add_prefix(key).as_slice());
+        match result {
+            None => Ok(None),
+            Some(v) => Ok(Some(MixedDbVector::from_raw_ps(v))),
+        }
+    }
+
+    fn get_value_cf_opt(
+        &self,
+        opts: &ReadOptions,
+        _cf: &str,
+        key: &[u8],
+    ) -> Result<Option<MixedDbVector>> {
+        self.get_value_opt(opts, key)
+    }
+}
 
 // Some data may be migrated from kv engine to raft engine in the future,
 // so kv engine and raft engine may write and delete the same key in the code
@@ -42,96 +104,5 @@ impl Iterable for RocksEngine {
 
     fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<Self::Iterator> {
         self.rocks.iterator_opt(cf, opts)
-    }
-}
-
-impl Peekable for RocksEngine {
-    type DbVector = crate::ps_engine::PsDbVector;
-
-    fn get_value_opt(
-        &self,
-        _opts: &ReadOptions,
-        key: &[u8],
-    ) -> Result<Option<crate::ps_engine::PsDbVector>> {
-        let result = self
-            .ps_ext
-            .as_ref()
-            .unwrap()
-            .read_page(add_prefix(key).as_slice());
-        return match result {
-            None => Ok(None),
-            Some(v) => Ok(Some(crate::ps_engine::PsDbVector::from_raw(v))),
-        };
-    }
-
-    fn get_value_cf_opt(
-        &self,
-        opts: &ReadOptions,
-        _cf: &str,
-        key: &[u8],
-    ) -> Result<Option<crate::ps_engine::PsDbVector>> {
-        self.get_value_opt(opts, key)
-    }
-}
-
-impl SyncMutable for RocksEngine {
-    fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        if self.do_write(engine_traits::CF_DEFAULT, key) {
-            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
-            self.ps_ext.as_ref().unwrap().write_batch_put_page(
-                ps_wb.ptr,
-                add_prefix(key).as_slice(),
-                value,
-            );
-            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
-        }
-        Ok(())
-    }
-
-    fn put_cf(&self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
-        if self.do_write(cf, key) {
-            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
-            self.ps_ext.as_ref().unwrap().write_batch_put_page(
-                ps_wb.ptr,
-                add_prefix(key).as_slice(),
-                value,
-            );
-            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
-        }
-        Ok(())
-    }
-
-    fn delete(&self, key: &[u8]) -> Result<()> {
-        if self.do_write(engine_traits::CF_DEFAULT, key) {
-            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
-            self.ps_ext
-                .as_ref()
-                .unwrap()
-                .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
-            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
-        }
-        Ok(())
-    }
-
-    fn delete_cf(&self, cf: &str, key: &[u8]) -> Result<()> {
-        if self.do_write(cf, key) {
-            let ps_wb = self.ps_ext.as_ref().unwrap().create_write_batch();
-            self.ps_ext
-                .as_ref()
-                .unwrap()
-                .write_batch_del_page(ps_wb.ptr, add_prefix(key).as_slice());
-            self.ps_ext.as_ref().unwrap().consume_write_batch(ps_wb.ptr);
-        }
-        Ok(())
-    }
-
-    fn delete_range(&self, _begin_key: &[u8], _end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-
-    fn delete_range_cf(&self, _cf: &str, _begin_key: &[u8], _end_key: &[u8]) -> Result<()> {
-        // do nothing
-        Ok(())
     }
 }

@@ -9,3 +9,6 @@ pub use engine::*;
 pub mod write_batch;
 #[cfg(not(feature = "enable-pagestorage"))]
 pub use write_batch::*;
+
+pub mod db_vector;
+pub use db_vector::*;

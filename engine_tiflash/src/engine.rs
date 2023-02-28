@@ -19,8 +19,11 @@ use crate::{
     proxy_utils::{engine_ext::*, EngineStoreHub},
     ProxyEngineExt,
 };
+
 mod details {
-    use crate::{PageStorageExt, ProxyEngineExt};
+    use std::sync::Arc;
+
+    use crate::{mixed_engine::elementary::ElementaryEngine, PageStorageExt, ProxyEngineExt};
     #[derive(Clone, Debug)]
     pub struct RocksEngine {
         // Must ensure rocks is the first field, for RocksEngine::from_ref.
@@ -29,6 +32,7 @@ mod details {
         pub rocks: engine_rocks::RocksEngine,
         pub proxy_ext: ProxyEngineExt,
         pub ps_ext: Option<PageStorageExt>,
+        pub element_engine: Option<Arc<dyn ElementaryEngine + Sync + Send>>,
     }
 }
 
@@ -39,6 +43,7 @@ impl RocksEngine {
             rocks: engine_rocks::RocksEngine::new(db),
             proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
+            element_engine: None::<_>,
         }
     }
 
@@ -61,9 +66,22 @@ impl RocksEngine {
             config_set,
             cached_region_info_manager: Some(Arc::new(crate::CachedRegionInfoManager::new())),
         };
-        self.ps_ext = Some(PageStorageExt {
+        let ps_ext = PageStorageExt {
             engine_store_server_helper,
-        });
+        };
+        #[cfg(feature = "enable-pagestorage")]
+        {
+            self.element_engine = Some(Arc::new(crate::ps_engine::PSElementEngine {
+                ps_ext: ps_ext.clone(),
+            }))
+        }
+        #[cfg(not(feature = "enable-pagestorage"))]
+        {
+            self.element_engine = Some(Arc::new(crate::rocks_engine::RocksElementEngine {
+                rocks: self.rocks.clone(),
+            }))
+        }
+        self.ps_ext = Some(ps_ext);
     }
 
     pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
@@ -71,6 +89,7 @@ impl RocksEngine {
             rocks,
             proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
+            element_engine: None::<_>,
         }
     }
 
