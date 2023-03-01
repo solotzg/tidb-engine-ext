@@ -10,7 +10,6 @@ use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
     r2e,
     util::get_cf_handle,
-    RocksEngine,
 };
 
 #[derive(Clone, Debug)]
@@ -65,12 +64,20 @@ impl ElementaryEngine for RocksElementEngine {
         }
         Ok(None)
     }
-}
 
-impl Iterable for RocksEngine {
-    type Iterator = RocksEngineIterator;
+    fn scan(
+        &self,
+        cf: &str,
+        start_key: &[u8],
+        end_key: &[u8],
+        fill_cache: bool,
+        f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>,
+    ) -> Result<()> {
+        // THe original version leaves the default impl in engine_triats.
+        self.rocks.scan(cf, start_key, end_key, fill_cache, f)
+    }
 
-    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<Self::Iterator> {
+    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<RocksEngineIterator> {
         self.rocks.iterator_opt(cf, opts)
     }
 }

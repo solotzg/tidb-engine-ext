@@ -7,8 +7,8 @@ use std::{
     ops::Deref,
 };
 
-use engine_rocks::RocksDbVector;
-use engine_traits::{DbVector, Peekable, ReadOptions, Result, SyncMutable};
+use engine_rocks::{RocksDbVector, RocksEngineIterator};
+use engine_traits::{DbVector, IterOptions, Iterable, Peekable, ReadOptions, Result, SyncMutable};
 use tikv_util::Either;
 
 use crate::RocksEngine;
@@ -116,5 +116,30 @@ impl SyncMutable for RocksEngine {
     fn delete_range_cf(&self, _cf: &str, _begin_key: &[u8], _end_key: &[u8]) -> Result<()> {
         // do nothing
         Ok(())
+    }
+}
+
+impl Iterable for RocksEngine {
+    type Iterator = RocksEngineIterator;
+    fn scan<F>(
+        &self,
+        cf: &str,
+        start_key: &[u8],
+        end_key: &[u8],
+        fill_cache: bool,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&[u8], &[u8]) -> Result<bool>,
+    {
+        let mut f = f;
+        self.element_engine
+            .as_ref()
+            .unwrap()
+            .scan(cf, start_key, end_key, fill_cache, &mut f)
+    }
+
+    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<Self::Iterator> {
+        self.element_engine.as_ref().unwrap().iterator_opt(cf, opts)
     }
 }

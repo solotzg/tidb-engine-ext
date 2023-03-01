@@ -1,6 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_traits::{ReadOptions, Result};
+use engine_rocks::RocksEngineIterator;
+use engine_traits::{IterOptions, ReadOptions, Result};
 
 use super::MixedDbVector;
 pub trait ElementaryEngine: std::fmt::Debug {
@@ -20,4 +21,15 @@ pub trait ElementaryEngine: std::fmt::Debug {
         cf: &str,
         key: &[u8],
     ) -> Result<Option<MixedDbVector>>;
+
+    fn scan(
+        &self,
+        cf: &str,
+        start_key: &[u8],
+        end_key: &[u8],
+        fill_cache: bool,
+        f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>,
+    ) -> Result<()>;
+
+    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<RocksEngineIterator>;
 }

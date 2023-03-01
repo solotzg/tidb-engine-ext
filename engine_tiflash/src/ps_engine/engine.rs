@@ -1,16 +1,17 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
 use engine_rocks::RocksEngineIterator;
-use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result, SyncMutable};
+use engine_traits::{IterOptions, Iterable, ReadOptions, Result};
 
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
-    PageStorageExt, RocksEngine,
+    PageStorageExt,
 };
 
 #[derive(Clone, Debug)]
 pub struct PSElementEngine {
     pub ps_ext: PageStorageExt,
+    pub rocks: engine_rocks::RocksEngine,
 }
 
 unsafe impl Send for PSElementEngine {}
@@ -65,6 +66,30 @@ impl ElementaryEngine for PSElementEngine {
     ) -> Result<Option<MixedDbVector>> {
         self.get_value_opt(opts, key)
     }
+
+    fn scan(
+        &self,
+        _cf: &str,
+        start_key: &[u8],
+        end_key: &[u8],
+        _fill_cache: bool,
+        f: &mut dyn FnMut(&[u8], &[u8]) -> Result<bool>,
+    ) -> Result<()> {
+        self.ps_ext.scan_page(
+            add_prefix(start_key).as_slice(),
+            add_prefix(end_key).as_slice(),
+            f,
+        );
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[allow(unreachable_code)]
+    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<RocksEngineIterator> {
+        let r = self.rocks.iterator_opt(cf, opts);
+        panic!("iterator_opt should not be called in PS engine");
+        r
+    }
 }
 
 // Some data may be migrated from kv engine to raft engine in the future,
@@ -77,32 +102,4 @@ pub fn add_prefix(key: &[u8]) -> Vec<u8> {
     v.push(0x02);
     v.extend_from_slice(key);
     v
-}
-
-impl Iterable for RocksEngine {
-    type Iterator = RocksEngineIterator;
-
-    fn scan<F>(
-        &self,
-        _cf: &str,
-        start_key: &[u8],
-        end_key: &[u8],
-        _fill_cache: bool,
-        f: F,
-    ) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<bool>,
-    {
-        let mut f = f;
-        self.ps_ext.as_ref().unwrap().scan_page(
-            add_prefix(start_key).as_slice(),
-            add_prefix(end_key).as_slice(),
-            &mut f,
-        );
-        Ok(())
-    }
-
-    fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<Self::Iterator> {
-        self.rocks.iterator_opt(cf, opts)
-    }
 }

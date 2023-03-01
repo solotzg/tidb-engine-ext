@@ -1,9 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-
-#[cfg(feature = "enable-pagestorage")]
-use proxy_ffi::interfaces_ffi::{PageAndCppStrWithView, RawCppPtr, RawVoidPtr};
 use proxy_ffi::{
-    gen_engine_store_server_helper, interfaces_ffi, interfaces_ffi::EngineStoreServerHelper,
+    gen_engine_store_server_helper, interfaces_ffi,
+    interfaces_ffi::{EngineStoreServerHelper, PageAndCppStrWithView, RawCppPtr, RawVoidPtr},
 };
 
 use crate::RocksEngine;
@@ -22,7 +20,6 @@ pub struct PageStorageExt {
     pub engine_store_server_helper: isize,
 }
 
-#[cfg(feature = "enable-pagestorage")]
 impl PageStorageExt {
     fn helper(&self) -> &'static EngineStoreServerHelper {
         gen_engine_store_server_helper(self.engine_store_server_helper)

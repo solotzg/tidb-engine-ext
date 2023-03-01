@@ -73,6 +73,7 @@ impl RocksEngine {
         {
             self.element_engine = Some(Arc::new(crate::ps_engine::PSElementEngine {
                 ps_ext: ps_ext.clone(),
+                rocks: self.rocks.clone(),
             }))
         }
         #[cfg(not(feature = "enable-pagestorage"))]
