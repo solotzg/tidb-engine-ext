@@ -2,11 +2,14 @@
 
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, ReadOptions, Result};
-
+use std::sync::Arc;
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
     PageStorageExt,
 };
+use crate::MixedWriteBatch;
+use super::{PSEngineWriteBatch, PSRocksWriteBatchVec};
+use super::ps_engine::WRITE_BATCH_LIMIT;
 
 #[derive(Clone, Debug)]
 pub struct PSElementEngine {
@@ -89,6 +92,29 @@ impl ElementaryEngine for PSElementEngine {
         let r = self.rocks.iterator_opt(cf, opts);
         panic!("iterator_opt should not be called in PS engine");
         r
+    }
+    
+    fn write_batch(&self) -> MixedWriteBatch {
+        MixedWriteBatch {
+            inner: PSRocksWriteBatchVec::new(
+                Arc::clone(self.as_inner()),
+                self.ps_ext.clone(),
+                self.ps_ext.as_ref().unwrap().create_write_batch(),
+                WRITE_BATCH_LIMIT,
+                1,
+                self.support_multi_batch_write(),
+            ),
+        }
+    }
+
+    fn write_batch_with_cap(&self, cap: usize) -> MixedWriteBatch {
+        MixedWriteBatch {
+            inner: PSRocksWriteBatchVec::with_unit_capacity(
+                self,
+                self.ps_ext.as_ref().unwrap().create_write_batch(),
+                cap,
+            ),
+        }
     }
 }
 

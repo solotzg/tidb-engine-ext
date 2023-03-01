@@ -12,22 +12,22 @@ use crate::{options::RocksWriteOptions, r2e, util::get_cf_handle, RocksEngine};
 const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
 
-impl WriteBatchExt for RocksEngine {
-    type WriteBatch = RocksWriteBatchVec;
-
-    const WRITE_BATCH_MAX_KEYS: usize = 256;
-
+impl ElementaryEngine for PSElementEngine {
     fn write_batch(&self) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::new(
-            Arc::clone(self.as_inner()),
-            WRITE_BATCH_LIMIT,
-            1,
-            self.support_multi_batch_write(),
-        )
+        MixedWriteBatch {
+            inner: RocksWriteBatchVec::new(
+                Arc::clone(self.as_inner()),
+                WRITE_BATCH_LIMIT,
+                1,
+                self.support_multi_batch_write(),
+            ),
+        }
     }
 
     fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::with_unit_capacity(self, cap)
+        MixedWriteBatch {
+            inner: RocksWriteBatchVec::with_unit_capacity(self, cap),
+        }
     }
 }
 

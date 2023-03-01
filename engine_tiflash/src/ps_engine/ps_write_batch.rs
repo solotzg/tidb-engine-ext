@@ -6,39 +6,15 @@ use std::sync::Arc;
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use proxy_ffi::interfaces_ffi::RawCppPtr;
 use rocksdb::{WriteBatch as RawWriteBatch, DB};
+use crate::mixed_engine::elementary::ElementaryEngine;
 
 use crate::{engine::RocksEngine, ps_engine::add_prefix, r2e, PageStorageExt};
 
-const WRITE_BATCH_MAX_BATCH: usize = 16;
-const WRITE_BATCH_LIMIT: usize = 16;
 
-impl WriteBatchExt for RocksEngine {
-    type WriteBatch = RocksWriteBatchVec;
-
-    const WRITE_BATCH_MAX_KEYS: usize = 256;
-
-    fn write_batch(&self) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::new(
-            Arc::clone(self.as_inner()),
-            self.ps_ext.clone(),
-            self.ps_ext.as_ref().unwrap().create_write_batch(),
-            WRITE_BATCH_LIMIT,
-            1,
-            self.support_multi_batch_write(),
-        )
-    }
-
-    fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
-        RocksWriteBatchVec::with_unit_capacity(
-            self,
-            self.ps_ext.as_ref().unwrap().create_write_batch(),
-            cap,
-        )
-    }
-}
-
+pub const WRITE_BATCH_MAX_BATCH: usize = 16;
+pub const WRITE_BATCH_LIMIT: usize = 16;
 /// Used when impl WriteBatchExt.
-/// `RocksWriteBatchVec` is for method `MultiBatchWrite` of RocksDB, which
+/// `PSRocksWriteBatchVec` is for method `MultiBatchWrite` of RocksDB, which
 /// splits a large WriteBatch into many smaller ones and then any thread could
 /// help to deal with these small WriteBatch when it is calling
 /// `MultiBatchCommit` and wait the front writer to finish writing.
@@ -46,7 +22,7 @@ impl WriteBatchExt for RocksEngine {
 /// `pipelined_write` when TiKV writes very large data into RocksDB.
 /// We will remove this feature when `unordered_write` of RocksDB becomes more
 /// stable and becomes compatible with Titan.
-pub struct RocksWriteBatchVec {
+pub struct PSRocksWriteBatchVec {
     pub db: Arc<DB>,
     pub wbs: Vec<RawWriteBatch>,
     pub ps_ext: Option<PageStorageExt>,
@@ -57,7 +33,7 @@ pub struct RocksWriteBatchVec {
     support_write_batch_vec: bool,
 }
 
-impl Drop for RocksWriteBatchVec {
+impl Drop for PSRocksWriteBatchVec {
     fn drop(&mut self) {
         if !self.ps_wb.ptr.is_null() {
             self.ps_ext
@@ -69,7 +45,7 @@ impl Drop for RocksWriteBatchVec {
     }
 }
 
-impl RocksWriteBatchVec {
+impl PSRocksWriteBatchVec {
     pub fn new(
         db: Arc<DB>,
         ps_ext: Option<PageStorageExt>,
@@ -77,9 +53,9 @@ impl RocksWriteBatchVec {
         batch_size_limit: usize,
         cap: usize,
         support_write_batch_vec: bool,
-    ) -> RocksWriteBatchVec {
+    ) -> PSRocksWriteBatchVec {
         let wb = RawWriteBatch::with_capacity(cap);
-        RocksWriteBatchVec {
+        PSRocksWriteBatchVec {
             db,
             wbs: vec![wb],
             ps_ext,
@@ -95,7 +71,7 @@ impl RocksWriteBatchVec {
         engine: &RocksEngine,
         ps_wb: RawCppPtr,
         cap: usize,
-    ) -> RocksWriteBatchVec {
+    ) -> PSRocksWriteBatchVec {
         Self::new(
             engine.as_inner().clone(),
             engine.ps_ext.clone(),
@@ -131,7 +107,7 @@ impl RocksWriteBatchVec {
     }
 }
 
-impl engine_traits::WriteBatch for RocksWriteBatchVec {
+impl engine_traits::WriteBatch for PSRocksWriteBatchVec {
     fn write_opt(&mut self, opts: &WriteOptions) -> Result<u64> {
         // write into ps
         self.ps_ext
@@ -209,13 +185,13 @@ impl engine_traits::WriteBatch for RocksWriteBatchVec {
     }
 }
 
-impl RocksWriteBatchVec {
+impl PSRocksWriteBatchVec {
     fn do_write(&self, cf: &str, key: &[u8]) -> bool {
         crate::do_write(cf, key)
     }
 }
 
-impl Mutable for RocksWriteBatchVec {
+impl Mutable for PSRocksWriteBatchVec {
     fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
@@ -318,7 +294,7 @@ mod tests {
 
         assert!(v.is_some());
         assert_eq!(v.unwrap(), b"bbb");
-        let mut wb = RocksWriteBatchVec::with_unit_capacity(&engine, 1024);
+        let mut wb = PSRocksWriteBatchVec::with_unit_capacity(&engine, 1024);
         for _i in 0..RocksEngine::WRITE_BATCH_MAX_KEYS {
             wb.put(b"aaa", b"bbb").unwrap();
         }
@@ -358,7 +334,7 @@ mod tests {
         assert!(!wb.should_write_to_engine());
         wb.put(b"aaa", b"bbb").unwrap();
         assert!(wb.should_write_to_engine());
-        let mut wb = RocksWriteBatchVec::with_unit_capacity(&engine, 1024);
+        let mut wb = PSRocksWriteBatchVec::with_unit_capacity(&engine, 1024);
         for _i in 0..WRITE_BATCH_MAX_BATCH * WRITE_BATCH_LIMIT {
             wb.put(b"aaa", b"bbb").unwrap();
         }

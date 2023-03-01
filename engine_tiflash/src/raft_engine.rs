@@ -16,7 +16,8 @@ use protobuf::Message;
 use raft::eraftpb::Entry;
 use tikv_util::{box_err, box_try};
 
-use crate::{util, RocksEngine, RocksWriteBatchVec};
+use crate::{util, RocksEngine};
+use crate::mixed_engine::write_batch::MixedWriteBatch as RocksWriteBatchVec;
 
 impl RaftEngineReadOnly for RocksEngine {
     fn get_raft_state(&self, raft_group_id: u64) -> Result<Option<RaftLocalState>> {

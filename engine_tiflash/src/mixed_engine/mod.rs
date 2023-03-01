@@ -1,6 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
 pub mod elementary;
+pub mod write_batch;
 
 use std::{
     fmt::{self, Debug, Formatter},
@@ -60,10 +61,11 @@ impl Peekable for RocksEngine {
     type DbVector = MixedDbVector;
 
     fn get_value_opt(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<MixedDbVector>> {
-        self.element_engine
-            .as_ref()
-            .unwrap()
-            .get_value_opt(opts, key)
+        if let Some(e) = self.element_engine.as_ref() {
+            e.get_value_opt(opts, key)
+        } else {
+            Err(tikv_util::box_err!("mixed engine not inited"))
+        }
     }
 
     fn get_value_cf_opt(
@@ -72,10 +74,11 @@ impl Peekable for RocksEngine {
         cf: &str,
         key: &[u8],
     ) -> Result<Option<MixedDbVector>> {
-        self.element_engine
-            .as_ref()
-            .unwrap()
-            .get_value_cf_opt(opts, cf, key)
+        if let Some(e) = self.element_engine.as_ref() {
+            e.get_value_cf_opt(opts, cf, key)
+        } else {
+            Err(tikv_util::box_err!("mixed engine not inited"))
+        }
     }
 }
 

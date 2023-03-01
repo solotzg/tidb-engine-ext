@@ -4,6 +4,7 @@ use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, ReadOptions, Result};
 
 use super::MixedDbVector;
+use super::write_batch::MixedWriteBatch;
 pub trait ElementaryEngine: std::fmt::Debug {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()>;
 
@@ -32,4 +33,8 @@ pub trait ElementaryEngine: std::fmt::Debug {
     ) -> Result<()>;
 
     fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<RocksEngineIterator>;
+
+    fn write_batch(&self) -> MixedWriteBatch;
+
+    fn write_batch_with_cap(&self, cap: usize) -> MixedWriteBatch;
 }
