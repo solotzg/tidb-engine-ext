@@ -180,10 +180,14 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     let fetcher = tikv.init_io_utility();
     let listener = tikv.init_flow_receiver();
     let engine_store_server_helper_ptr = engine_store_server_helper as *const _ as isize;
+    // Will call TiFlashEngine::init
     let (engines, engines_info) =
         tikv.init_tiflash_engines(listener, engine_store_server_helper_ptr);
     tikv.init_engines(engines.clone());
     {
+        if engines.kv.element_engine.is_none() {
+            error!("TiFlashEngine has empty ElementaryEngine");
+        }
         proxy.set_kv_engine(
             engine_store_ffi::ffi::RaftStoreProxyEngine::from_tiflash_engine(engines.kv.clone()),
         );

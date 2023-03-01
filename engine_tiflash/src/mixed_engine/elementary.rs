@@ -23,6 +23,7 @@ pub trait ElementaryEngine: std::fmt::Debug {
         key: &[u8],
     ) -> Result<Option<MixedDbVector>>;
 
+    #[allow(clippy::type_complexity)]
     fn scan(
         &self,
         cf: &str,

@@ -29,7 +29,7 @@ impl PageStorageExt {
         // TODO There are too many dummy write batch created in non-uni-ps impl.
         // Need to work out a solution for this.
         // See engine_tiflash/src/write_batch.rs.
-        self.helper().create_write_batch().into()
+        self.helper().create_write_batch()
     }
 
     pub fn destroy_write_batch(&self, wb_wrapper: &RawCppPtr) {
@@ -75,6 +75,7 @@ impl PageStorageExt {
         };
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn scan_page(
         &self,
         start_page_id: &[u8],
