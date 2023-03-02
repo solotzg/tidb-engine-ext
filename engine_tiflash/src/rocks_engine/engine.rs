@@ -1,12 +1,14 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
 #![allow(unused_variables)]
-
+use std::sync::Arc;
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result};
 use rocksdb::Writable;
-
-use super::WRITE_BATCH_LIMIT;
+use tikv_util::Either;
+use crate::MixedWriteBatch;
+use crate::mixed_engine::write_batch::WRITE_BATCH_LIMIT;
+use crate::mixed_engine::write_batch::WRITE_BATCH_MAX_BATCH;
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
     r2e,
@@ -82,20 +84,20 @@ impl ElementaryEngine for RocksElementEngine {
         self.rocks.iterator_opt(cf, opts)
     }
 
-    fn write_batch(&self) -> RocksWriteBatchVec {
+    fn write_batch(&self) -> MixedWriteBatch {
         MixedWriteBatch {
-            inner: RocksWriteBatchVec::new(
+            inner: Either::Left(super::RocksWriteBatchVec::new(
                 Arc::clone(self.as_inner()),
                 WRITE_BATCH_LIMIT,
                 1,
                 self.support_multi_batch_write(),
-            ),
+            )),
         }
     }
 
-    fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
+    fn write_batch_with_cap(&self, cap: usize) -> MixedWriteBatch {
         MixedWriteBatch {
-            inner: RocksWriteBatchVec::with_unit_capacity(self, cap),
+            inner: Either::Left(super::RocksWriteBatchVec::with_unit_capacity(self, cap)),
         }
     }
 }

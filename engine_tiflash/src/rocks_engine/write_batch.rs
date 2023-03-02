@@ -12,8 +12,8 @@ use crate::{
     ps_engine::PSElementEngine, r2e, util::get_cf_handle, RocksEngine,
 };
 
-const WRITE_BATCH_MAX_BATCH: usize = 16;
-const WRITE_BATCH_LIMIT: usize = 16;
+use crate::mixed_engine::write_batch::WRITE_BATCH_LIMIT;
+use crate::mixed_engine::write_batch::WRITE_BATCH_MAX_BATCH;
 
 /// `RocksWriteBatchVec` is for method `MultiBatchWrite` of RocksDB, which
 /// splits a large WriteBatch into many smaller ones and then any thread could
@@ -189,34 +189,22 @@ impl RocksWriteBatchVec {
 
 impl Mutable for RocksWriteBatchVec {
     fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
-        if !self.do_write(engine_traits::CF_DEFAULT, key) {
-            return Ok(());
-        }
         self.check_switch_batch();
         self.wbs[self.index].put(key, value).map_err(r2e)
     }
 
     fn put_cf(&mut self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
-        if !self.do_write(cf, key) {
-            return Ok(());
-        }
         self.check_switch_batch();
         let handle = get_cf_handle(self.db.as_ref(), cf)?;
         self.wbs[self.index].put_cf(handle, key, value).map_err(r2e)
     }
 
     fn delete(&mut self, key: &[u8]) -> Result<()> {
-        if !self.do_write(engine_traits::CF_DEFAULT, key) {
-            return Ok(());
-        }
         self.check_switch_batch();
         self.wbs[self.index].delete(key).map_err(r2e)
     }
 
     fn delete_cf(&mut self, cf: &str, key: &[u8]) -> Result<()> {
-        if !self.do_write(cf, key) {
-            return Ok(());
-        }
         self.check_switch_batch();
         let handle = get_cf_handle(self.db.as_ref(), cf)?;
         self.wbs[self.index].delete_cf(handle, key).map_err(r2e)

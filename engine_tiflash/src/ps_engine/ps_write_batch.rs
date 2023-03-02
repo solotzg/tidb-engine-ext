@@ -12,8 +12,9 @@ use crate::{
     PageStorageExt,
 };
 
-pub const WRITE_BATCH_MAX_BATCH: usize = 16;
-pub const WRITE_BATCH_LIMIT: usize = 16;
+use crate::mixed_engine::write_batch::WRITE_BATCH_LIMIT;
+use crate::mixed_engine::write_batch::WRITE_BATCH_MAX_BATCH;
+
 /// Used when impl WriteBatchExt.
 /// `PSRocksWriteBatchVec` is for method `MultiBatchWrite` of RocksDB, which
 /// splits a large WriteBatch into many smaller ones and then any thread could
@@ -194,9 +195,6 @@ impl PSRocksWriteBatchVec {
 
 impl Mutable for PSRocksWriteBatchVec {
     fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
-        if !self.do_write(engine_traits::CF_DEFAULT, key) {
-            return Ok(());
-        }
         self.ps_ext.as_ref().unwrap().write_batch_put_page(
             self.ps_wb.ptr,
             add_prefix(key).as_slice(),
@@ -206,9 +204,6 @@ impl Mutable for PSRocksWriteBatchVec {
     }
 
     fn put_cf(&mut self, cf: &str, key: &[u8], value: &[u8]) -> Result<()> {
-        if !self.do_write(cf, key) {
-            return Ok(());
-        }
         self.ps_ext.as_ref().unwrap().write_batch_put_page(
             self.ps_wb.ptr,
             add_prefix(key).as_slice(),
@@ -218,9 +213,6 @@ impl Mutable for PSRocksWriteBatchVec {
     }
 
     fn delete(&mut self, key: &[u8]) -> Result<()> {
-        if !self.do_write(engine_traits::CF_DEFAULT, key) {
-            return Ok(());
-        }
         self.ps_ext
             .as_ref()
             .unwrap()
@@ -229,9 +221,6 @@ impl Mutable for PSRocksWriteBatchVec {
     }
 
     fn delete_cf(&mut self, cf: &str, key: &[u8]) -> Result<()> {
-        if !self.do_write(cf, key) {
-            return Ok(());
-        }
         self.ps_ext
             .as_ref()
             .unwrap()
