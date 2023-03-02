@@ -9,7 +9,7 @@ use crate::{
 };
 use crate::MixedWriteBatch;
 use super::{PSEngineWriteBatch, PSRocksWriteBatchVec};
-use super::ps_engine::WRITE_BATCH_LIMIT;
+use super::ps_write_batch::WRITE_BATCH_LIMIT;
 
 #[derive(Clone, Debug)]
 pub struct PSElementEngine {

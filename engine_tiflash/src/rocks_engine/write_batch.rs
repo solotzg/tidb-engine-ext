@@ -6,30 +6,12 @@ use std::sync::Arc;
 
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use rocksdb::{Writable, WriteBatch as RawWriteBatch, DB};
-
+use crate::mixed_engine::elementary::ElementaryEngine;
+use crate::ps_engine::PSElementEngine;
 use crate::{options::RocksWriteOptions, r2e, util::get_cf_handle, RocksEngine};
 
 const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
-
-impl ElementaryEngine for PSElementEngine {
-    fn write_batch(&self) -> RocksWriteBatchVec {
-        MixedWriteBatch {
-            inner: RocksWriteBatchVec::new(
-                Arc::clone(self.as_inner()),
-                WRITE_BATCH_LIMIT,
-                1,
-                self.support_multi_batch_write(),
-            ),
-        }
-    }
-
-    fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
-        MixedWriteBatch {
-            inner: RocksWriteBatchVec::with_unit_capacity(self, cap),
-        }
-    }
-}
 
 /// `RocksWriteBatchVec` is for method `MultiBatchWrite` of RocksDB, which
 /// splits a large WriteBatch into many smaller ones and then any thread could

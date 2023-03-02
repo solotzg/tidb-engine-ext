@@ -5,6 +5,7 @@
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result};
 use rocksdb::Writable;
+use super::WRITE_BATCH_LIMIT;
 
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
@@ -79,5 +80,22 @@ impl ElementaryEngine for RocksElementEngine {
 
     fn iterator_opt(&self, cf: &str, opts: IterOptions) -> Result<RocksEngineIterator> {
         self.rocks.iterator_opt(cf, opts)
+    }
+
+    fn write_batch(&self) -> RocksWriteBatchVec {
+        MixedWriteBatch {
+            inner: RocksWriteBatchVec::new(
+                Arc::clone(self.as_inner()),
+                WRITE_BATCH_LIMIT,
+                1,
+                self.support_multi_batch_write(),
+            ),
+        }
+    }
+
+    fn write_batch_with_cap(&self, cap: usize) -> RocksWriteBatchVec {
+        MixedWriteBatch {
+            inner: RocksWriteBatchVec::with_unit_capacity(self, cap),
+        }
     }
 }

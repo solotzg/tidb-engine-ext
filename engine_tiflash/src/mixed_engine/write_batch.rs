@@ -6,11 +6,12 @@ use std::sync::Arc;
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use proxy_ffi::interfaces_ffi::RawCppPtr;
 use rocksdb::{WriteBatch as RawWriteBatch, DB};
+use tikv_util::Either;
 
 use crate::{engine::RocksEngine, ps_engine::add_prefix, r2e, PageStorageExt};
 
 pub struct MixedWriteBatch {
-    pub inner: Box<dyn engine_traits::WriteBatch>,
+    pub inner: Either<crate::rocks_engine::RocksWriteBatchVec, crate::ps_engine::PSRocksWriteBatchVec>,
 }
 
 impl WriteBatchExt for RocksEngine {
