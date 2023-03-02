@@ -6,10 +6,11 @@ use std::sync::Arc;
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use proxy_ffi::interfaces_ffi::RawCppPtr;
 use rocksdb::{WriteBatch as RawWriteBatch, DB};
-use crate::mixed_engine::elementary::ElementaryEngine;
 
-use crate::{engine::RocksEngine, ps_engine::add_prefix, r2e, PageStorageExt};
-
+use crate::{
+    engine::RocksEngine, mixed_engine::elementary::ElementaryEngine, ps_engine::add_prefix, r2e,
+    PageStorageExt,
+};
 
 pub const WRITE_BATCH_MAX_BATCH: usize = 16;
 pub const WRITE_BATCH_LIMIT: usize = 16;

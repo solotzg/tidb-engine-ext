@@ -9,8 +9,9 @@ pub use engine_ext::*;
 mod proxy_ext;
 pub use proxy_ext::*;
 
-use crate::util::get_cf_handle;
-use crate::mixed_engine::write_batch::MixedWriteBatch as RocksWriteBatchVec;
+use crate::{
+    mixed_engine::write_batch::MixedWriteBatch as RocksWriteBatchVec, util::get_cf_handle,
+};
 
 pub fn do_write(cf: &str, key: &[u8]) -> bool {
     fail::fail_point!("before_tiflash_do_write", |_| true);

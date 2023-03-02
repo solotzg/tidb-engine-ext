@@ -5,8 +5,8 @@
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, Peekable, ReadOptions, Result};
 use rocksdb::Writable;
-use super::WRITE_BATCH_LIMIT;
 
+use super::WRITE_BATCH_LIMIT;
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
     r2e,

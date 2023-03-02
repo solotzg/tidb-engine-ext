@@ -1,15 +1,15 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use std::sync::Arc;
+
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, ReadOptions, Result};
-use std::sync::Arc;
+
+use super::{ps_write_batch::WRITE_BATCH_LIMIT, PSEngineWriteBatch, PSRocksWriteBatchVec};
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
-    PageStorageExt,
+    MixedWriteBatch, PageStorageExt,
 };
-use crate::MixedWriteBatch;
-use super::{PSEngineWriteBatch, PSRocksWriteBatchVec};
-use super::ps_write_batch::WRITE_BATCH_LIMIT;
 
 #[derive(Clone, Debug)]
 pub struct PSElementEngine {
@@ -93,7 +93,7 @@ impl ElementaryEngine for PSElementEngine {
         panic!("iterator_opt should not be called in PS engine");
         r
     }
-    
+
     fn write_batch(&self) -> MixedWriteBatch {
         MixedWriteBatch {
             inner: PSRocksWriteBatchVec::new(

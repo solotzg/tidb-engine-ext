@@ -3,8 +3,7 @@
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, ReadOptions, Result};
 
-use super::MixedDbVector;
-use super::write_batch::MixedWriteBatch;
+use super::{write_batch::MixedWriteBatch, MixedDbVector};
 pub trait ElementaryEngine: std::fmt::Debug {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<()>;
 

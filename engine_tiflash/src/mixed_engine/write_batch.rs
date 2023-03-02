@@ -11,7 +11,8 @@ use tikv_util::Either;
 use crate::{engine::RocksEngine, ps_engine::add_prefix, r2e, PageStorageExt};
 
 pub struct MixedWriteBatch {
-    pub inner: Either<crate::rocks_engine::RocksWriteBatchVec, crate::ps_engine::PSRocksWriteBatchVec>,
+    pub inner:
+        Either<crate::rocks_engine::RocksWriteBatchVec, crate::ps_engine::PSRocksWriteBatchVec>,
 }
 
 impl WriteBatchExt for RocksEngine {
@@ -22,7 +23,10 @@ impl WriteBatchExt for RocksEngine {
     }
 
     fn write_batch_with_cap(&self, cap: usize) -> MixedWriteBatch {
-        self.element_engine.as_ref().unwrap().write_batch_with_cap(cap)
+        self.element_engine
+            .as_ref()
+            .unwrap()
+            .write_batch_with_cap(cap)
     }
 }
 

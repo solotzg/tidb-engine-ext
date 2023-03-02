@@ -6,9 +6,11 @@ use std::sync::Arc;
 
 use engine_traits::{self, Mutable, Result, WriteBatchExt, WriteOptions};
 use rocksdb::{Writable, WriteBatch as RawWriteBatch, DB};
-use crate::mixed_engine::elementary::ElementaryEngine;
-use crate::ps_engine::PSElementEngine;
-use crate::{options::RocksWriteOptions, r2e, util::get_cf_handle, RocksEngine};
+
+use crate::{
+    mixed_engine::elementary::ElementaryEngine, options::RocksWriteOptions,
+    ps_engine::PSElementEngine, r2e, util::get_cf_handle, RocksEngine,
+};
 
 const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
