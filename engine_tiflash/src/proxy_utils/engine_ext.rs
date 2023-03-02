@@ -68,11 +68,11 @@ impl PageStorageExt {
     pub fn read_page(&self, page_id: &[u8]) -> Option<Vec<u8>> {
         // TODO maybe we can steal memory from C++ here to reduce redundant copy?
         let value = self.helper().read_page(page_id.into());
-        return if value.view.len == 0 {
+        if value.view.len == 0 {
             None
         } else {
             Some(value.view.to_slice().to_vec())
-        };
+        }
     }
 
     #[allow(clippy::type_complexity)]

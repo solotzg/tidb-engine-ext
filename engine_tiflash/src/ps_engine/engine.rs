@@ -1,13 +1,18 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use std::sync::Arc;
+
 use engine_rocks::RocksEngineIterator;
 use engine_traits::{IterOptions, Iterable, ReadOptions, Result};
 
+use super::{PSEngineWriteBatch, PSRocksWriteBatchVec};
 use crate::{
     mixed_engine::{elementary::ElementaryEngine, MixedDbVector},
-    PageStorageExt,
+    MixedWriteBatch, PageStorageExt,
 };
-
+use crate::mixed_engine::write_batch::WRITE_BATCH_LIMIT;
+use crate::mixed_engine::write_batch::WRITE_BATCH_MAX_BATCH;
+use tikv_util::Either;
 #[derive(Clone, Debug)]
 pub struct PSElementEngine {
     pub ps_ext: PageStorageExt,
@@ -89,6 +94,29 @@ impl ElementaryEngine for PSElementEngine {
         let r = self.rocks.iterator_opt(cf, opts);
         panic!("iterator_opt should not be called in PS engine");
         r
+    }
+
+    fn write_batch(&self) -> MixedWriteBatch {
+        MixedWriteBatch {
+            inner: Either::Right(PSRocksWriteBatchVec::new(
+                Arc::clone(self.as_inner()),
+                self.ps_ext.clone(),
+                self.ps_ext.as_ref().unwrap().create_write_batch(),
+                WRITE_BATCH_LIMIT,
+                1,
+                self.support_multi_batch_write(),
+            )),
+        }
+    }
+
+    fn write_batch_with_cap(&self, cap: usize) -> MixedWriteBatch {
+        MixedWriteBatch {
+            inner: Either::Right(PSRocksWriteBatchVec::with_unit_capacity(
+                self,
+                self.ps_ext.as_ref().unwrap().create_write_batch(),
+                cap,
+            )),
+        }
     }
 }
 
