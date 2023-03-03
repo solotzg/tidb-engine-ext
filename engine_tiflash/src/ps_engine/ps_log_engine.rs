@@ -140,7 +140,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
         _apply_index: u64,
         state: &RegionLocalState,
     ) -> Result<()> {
-        self.put_msg(&keys::region_state_key(raft_group_id).as_slice(), state)
+        self.put_msg(&keys::region_state_key(raft_group_id), state)
     }
 
     fn put_apply_state(
@@ -149,7 +149,7 @@ impl RaftLogBatch for PSEngineWriteBatch {
         _apply_index: u64,
         state: &RaftApplyState,
     ) -> Result<()> {
-        self.put_msg(&keys::apply_state_key(raft_group_id).as_slice(), state)
+        self.put_msg(&keys::apply_state_key(raft_group_id), state)
     }
 
     fn put_flushed_index(
