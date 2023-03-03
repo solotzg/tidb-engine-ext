@@ -142,4 +142,11 @@ pub fn overwrite_config_with_cmd_args(
                 .unwrap(),
         ),
     );
+    const DEFAULT_ENGINE_ROLE_LABEL_KEY: &str = "engine_role";
+    if let Some(engine_role_value) = matches.value_of("engine-role-label") {
+        config.server.labels.insert(
+            DEFAULT_ENGINE_ROLE_LABEL_KEY.to_owned(),
+            String::from(engine_role_value),
+        );
+    }
 }
