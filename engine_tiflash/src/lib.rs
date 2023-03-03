@@ -34,8 +34,6 @@ mod compact;
 pub use crate::compact::*;
 mod db_options;
 pub use crate::db_options::*;
-mod db_vector;
-pub use crate::db_vector::*;
 mod engine;
 pub use crate::engine::*;
 mod import;
@@ -56,16 +54,14 @@ pub use crate::status::*;
 mod table_properties;
 pub use crate::table_properties::*;
 
-#[cfg(not(feature = "enable-pagestorage"))]
-mod write_batch;
-#[cfg(not(feature = "enable-pagestorage"))]
-pub use crate::write_batch::*;
-
+mod mixed_engine;
 mod ps_engine;
 mod rocks_engine;
 #[cfg(feature = "enable-pagestorage")]
 pub use crate::ps_engine::ps_write_batch::*;
-pub use crate::ps_engine::PSLogEngine;
+#[cfg(not(feature = "enable-pagestorage"))]
+pub use crate::rocks_engine::write_batch::*;
+pub use crate::{ps_engine::PSLogEngine, rocks_engine::db_vector};
 
 pub mod mvcc_properties;
 pub use crate::mvcc_properties::*;
