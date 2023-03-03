@@ -6,7 +6,6 @@
 // `0x02` to the key written by kv engine.
 // So kv engine won't scan any key from raft engine, and vice versa.
 
-
 const RAFT_ENGINE_PREFIX: u8 = 0x01;
 const KV_ENGINE_PREFIX: u8 = 0x02;
 

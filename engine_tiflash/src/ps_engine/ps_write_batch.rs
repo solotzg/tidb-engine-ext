@@ -220,11 +220,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(engine_traits::CF_DEFAULT, key) {
             return Ok(());
         }
-        self.ps_ext.as_ref().unwrap().write_batch_put_page(
-            self.ps_wb.ptr,
-            key,
-            value,
-        );
+        self.ps_ext
+            .as_ref()
+            .unwrap()
+            .write_batch_put_page(self.ps_wb.ptr, key, value);
         Ok(())
     }
 
@@ -232,11 +231,10 @@ impl Mutable for RocksWriteBatchVec {
         if !self.do_write(cf, key) {
             return Ok(());
         }
-        self.ps_ext.as_ref().unwrap().write_batch_put_page(
-            self.ps_wb.ptr,
-            key,
-            value,
-        );
+        self.ps_ext
+            .as_ref()
+            .unwrap()
+            .write_batch_put_page(self.ps_wb.ptr, key, value);
         Ok(())
     }
 
