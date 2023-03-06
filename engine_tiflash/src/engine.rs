@@ -55,11 +55,7 @@ impl RocksEngine {
         config_set: Option<Arc<crate::ProxyEngineConfigSet>>,
     ) {
         let enable_unips = if let Some(s) = config_set.as_ref() {
-            if s.engine_store.enable_unips {
-                true
-            } else {
-                false
-            }
+            s.engine_store.enable_unips
         } else {
             false
         };
