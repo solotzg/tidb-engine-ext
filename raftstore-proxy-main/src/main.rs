@@ -1,8 +1,11 @@
-use std::os::raw::{c_char, c_int};
-use std::convert::TryInto;
-use std::ffi::CString;
-use mock_engine_store::make_global_ffi_helper_set_no_bind;
+use std::{
+    convert::TryInto,
+    ffi::CString,
+    os::raw::{c_char, c_int},
+};
+
 use engine_store_ffi::ffi::get_engine_store_server_helper;
+use mock_engine_store::make_global_ffi_helper_set_no_bind;
 
 /// # Safety
 /// Print version infomatin to std output.
@@ -26,17 +29,27 @@ pub unsafe extern "C" fn run_raftstore_proxy_ffi(
 fn main() {
     unsafe {
         let args: Vec<String> = std::env::args().collect();
-        let a: Vec<CString> = args.iter().map(|e| {
-            let c_str = CString::new(e.as_str()).unwrap();
-            c_str
-        }).collect();
-        let b: Vec<*const c_char> = a.iter().map(|c_str| {
-            let c_world: *const c_char = c_str.as_ptr() as *const c_char;
-            c_world
-        }).collect();
+        let a: Vec<CString> = args
+            .iter()
+            .map(|e| {
+                let c_str = CString::new(e.as_str()).unwrap();
+                c_str
+            })
+            .collect();
+        let b: Vec<*const c_char> = a
+            .iter()
+            .map(|c_str| {
+                let c_world: *const c_char = c_str.as_ptr() as *const c_char;
+                c_world
+            })
+            .collect();
         let (_, ptr) = make_global_ffi_helper_set_no_bind();
         engine_store_ffi::ffi::init_engine_store_server_helper(ptr);
         let helper = get_engine_store_server_helper();
-        run_raftstore_proxy_ffi(args.len().try_into().unwrap(), b.as_ptr(), helper as *const _ as *const u8);
+        run_raftstore_proxy_ffi(
+            args.len().try_into().unwrap(),
+            b.as_ptr(),
+            helper as *const _ as *const u8,
+        );
     }
 }
