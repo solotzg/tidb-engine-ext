@@ -145,7 +145,7 @@ pub fn overwrite_config_with_cmd_args(
     );
 
     if let Some(unips_enabled_str) = matches.value_of("unips-enabled") {
-        let enabled = unips_enabled_str.parse().unwrap_or_else(|e| {
+        let enabled: u64 = unips_enabled_str.parse().unwrap_or_else(|e| {
             fatal!("invalid unips-enabled: {}", e);
         });
         proxy_config.engine_store.enable_unips = enabled == 1;
