@@ -148,6 +148,6 @@ pub fn overwrite_config_with_cmd_args(
         let enabled = unips_enabled_str.parse().unwrap_or_else(|e| {
             fatal!("invalid unips-enabled: {}", e);
         });
-        proxy_config.engine_store.enable_unips = enabled;
+        proxy_config.engine_store.enable_unips = enabled == 1;
     }
 }
