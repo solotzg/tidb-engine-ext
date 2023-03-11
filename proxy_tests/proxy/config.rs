@@ -198,11 +198,7 @@ fn test_config_proxy_engine_role_label() {
     let mut config = gen_tikv_config(&None, false, &mut v);
     let mut proxy_config = gen_proxy_config(&None, false, &mut v);
     // case-1: If engine-role label not specified in arguments, it's none.
-    let args = vec![
-        "test_config_proxy_default1",
-        "--engine-label",
-        "tiflash",
-    ];
+    let args = vec!["test_config_proxy_default1", "--engine-label", "tiflash"];
     let matches = App::new("RaftStore Proxy")
         .arg(
             Arg::with_name("engine-label")
@@ -221,11 +217,13 @@ fn test_config_proxy_engine_role_label() {
         config
             .server
             .labels
-            .get(DEFAULT_ENGINE_ROLE_LABEL_KEY).is_none(),
+            .get(DEFAULT_ENGINE_ROLE_LABEL_KEY)
+            .is_none(),
         true
     );
 
-    // case-2: If engine-role label specified in arguments, use it as engine-role label.
+    // case-2: If engine-role label specified in arguments, use it as engine-role
+    // label.
     const EXPECTED_ENGINE_ROLE_LABEL: &str = "write";
     let args = vec![
         "test_config_proxy_default1",
@@ -253,7 +251,11 @@ fn test_config_proxy_engine_role_label() {
     overwrite_config_with_cmd_args(&mut config, &mut proxy_config, &matches);
     address_proxy_config(&mut config, &proxy_config);
     assert_eq!(
-        config.server.labels.get(DEFAULT_ENGINE_ROLE_LABEL_KEY).unwrap(),
+        config
+            .server
+            .labels
+            .get(DEFAULT_ENGINE_ROLE_LABEL_KEY)
+            .unwrap(),
         EXPECTED_ENGINE_ROLE_LABEL
     );
 }
