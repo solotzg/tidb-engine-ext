@@ -1,5 +1,5 @@
 [package]
-name = "raftstore-proxy"
+name = "raftstore-proxy-main"
 version = "0.0.1"
 license = "Apache-2.0"
 edition = "2018"
@@ -35,9 +35,11 @@ backup-stream-debug = ["proxy_server/backup-stream-debug"]
 
 pprof-fp = ["proxy_server/pprof-fp"]
 
-[lib]
-name = "raftstore_proxy"
-crate-type = ["cdylib"]
+[[bin]]
+name = "raftstore_proxy_main"
+path = "src/main.rs"
 
 [dependencies]
+engine_store_ffi = { workspace = true }
+mock-engine-store = { workspace = true }
 proxy_server = { workspace = true }

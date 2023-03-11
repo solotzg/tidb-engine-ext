@@ -34,6 +34,7 @@ pub fn overwrite_config_with_cmd_args(
     matches: &ArgMatches<'_>,
 ) {
     info!("arg matches is {:?}", matches);
+    println!("arg matches is {:?}", matches);
     if let Some(level) = matches.value_of("log-level") {
         config.log.level = logger::get_level_by_string(level).unwrap().into();
         config.log_level = slog::Level::Info.into();
@@ -78,10 +79,11 @@ pub fn overwrite_config_with_cmd_args(
     // The special case is engine-addr:
     // 1. If we have set our own engine-addr, we just ignore what TiFlash gives us.
     // 2. However, if we have not set our own value, we use what TiFlash gives us.
-    // Which is:     a. If `flash.proxy.server.engine-addr` is not set by
-    // TiFlash,        it will use `flash.service_addr` as `engine-addr` here.
-    //     b. Otherwise, TiFlash will use `flash.proxy.server.engine-addr` as
-    // `advertise-engine-addr`.
+    //      Which is:
+    //      a. If `flash.proxy.server.engine-addr` is not set by
+    //      TiFlash, it will use `flash.service_addr` as `engine-addr` here.
+    //      b. Otherwise, TiFlash will use `flash.proxy.server.engine-addr` as
+    //      `advertise-engine-addr`.
     if proxy_config.server.engine_addr.is_empty() {
         if let Some(engine_addr) = matches.value_of("engine-addr") {
             proxy_config.server.engine_addr = engine_addr.to_owned();
@@ -148,5 +150,11 @@ pub fn overwrite_config_with_cmd_args(
             DEFAULT_ENGINE_ROLE_LABEL_KEY.to_owned(),
             String::from(engine_role_value),
         );
+    }
+    if let Some(unips_enabled_str) = matches.value_of("unips-enabled") {
+        let enabled: u64 = unips_enabled_str.parse().unwrap_or_else(|e| {
+            fatal!("invalid unips-enabled: {}", e);
+        });
+        proxy_config.engine_store.enable_unips = enabled == 1;
     }
 }

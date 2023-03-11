@@ -99,6 +99,14 @@ pub unsafe fn run_proxy(
         .version(crate::proxy_version_info().as_ref())
         .long_version(crate::proxy_version_info().as_ref())
         .arg(
+            Arg::with_name("unips-enabled")
+                .long("unips-enabled")
+                .value_name("ENABLED")
+                .help("Force enable unips")
+                .required(false)
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("config")
                 .short("C")
                 .long("config")

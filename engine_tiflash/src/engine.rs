@@ -4,12 +4,13 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 use std::{
-    fmt::Debug,
     fs,
     path::Path,
     sync::{atomic::AtomicIsize, Arc},
 };
 
+pub(crate) use details::RocksEngine;
+pub use details::RocksEngine as MixedModeEngine;
 use engine_rocks::RocksSnapshot;
 use engine_traits::{Checkpointable, Checkpointer, Error, KvEngine, Result};
 use rocksdb::DB;
@@ -19,13 +20,20 @@ use crate::{
     ProxyEngineExt,
 };
 
-#[derive(Clone, Debug)]
-pub struct RocksEngine {
-    // Must ensure rocks is the first field, for RocksEngine::from_ref.
-    // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks yet.
-    pub rocks: engine_rocks::RocksEngine,
-    pub proxy_ext: ProxyEngineExt,
-    pub ps_ext: Option<PageStorageExt>,
+mod details {
+    use std::sync::Arc;
+
+    use crate::{mixed_engine::elementary::ElementaryEngine, PageStorageExt, ProxyEngineExt};
+    #[derive(Clone, Debug)]
+    pub struct RocksEngine {
+        // Must ensure rocks is the first field, for RocksEngine::from_ref.
+        // We must own a engine_rocks::RocksEngine, since TiKV has not decouple from engine_rocks
+        // yet.
+        pub rocks: engine_rocks::RocksEngine,
+        pub proxy_ext: ProxyEngineExt,
+        pub ps_ext: Option<PageStorageExt>,
+        pub element_engine: Option<Arc<dyn ElementaryEngine + Sync + Send>>,
+    }
 }
 
 impl RocksEngine {
@@ -35,6 +43,7 @@ impl RocksEngine {
             rocks: engine_rocks::RocksEngine::new(db),
             proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
+            element_engine: None::<_>,
         }
     }
 
@@ -45,10 +54,11 @@ impl RocksEngine {
         engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
         config_set: Option<Arc<crate::ProxyEngineConfigSet>>,
     ) {
-        #[cfg(feature = "enable-pagestorage")]
-        tikv_util::info!("enabled pagestorage");
-        #[cfg(not(feature = "enable-pagestorage"))]
-        tikv_util::info!("disabled pagestorage");
+        let enable_unips = if let Some(s) = config_set.as_ref() {
+            s.engine_store.enable_unips
+        } else {
+            false
+        };
         self.proxy_ext = ProxyEngineExt {
             engine_store_server_helper,
             pool_capacity: snap_handle_pool_size,
@@ -57,9 +67,22 @@ impl RocksEngine {
             config_set,
             cached_region_info_manager: Some(Arc::new(crate::CachedRegionInfoManager::new())),
         };
-        self.ps_ext = Some(PageStorageExt {
+        let ps_ext = PageStorageExt {
             engine_store_server_helper,
-        });
+        };
+        if enable_unips {
+            tikv_util::info!("enabled pagestorage");
+            self.element_engine = Some(Arc::new(crate::ps_engine::PSElementEngine {
+                ps_ext: ps_ext.clone(),
+                rocks: self.rocks.clone(),
+            }))
+        } else {
+            tikv_util::info!("disabled pagestorage");
+            self.element_engine = Some(Arc::new(crate::rocks_engine::RocksElementEngine {
+                rocks: self.rocks.clone(),
+            }))
+        }
+        self.ps_ext = Some(ps_ext);
     }
 
     pub fn from_rocks(rocks: engine_rocks::RocksEngine) -> Self {
@@ -67,6 +90,7 @@ impl RocksEngine {
             rocks,
             proxy_ext: ProxyEngineExt::default(),
             ps_ext: None,
+            element_engine: None::<_>,
         }
     }
 
