@@ -26,14 +26,14 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             match lock {
                 Ok(mut l) => {
                     let ffiset = l.get_mut(&id).unwrap();
-                    let e = &ffiset
-                        .engine_store_server
-                        .engines
-                        .as_ref()
-                        .unwrap()
-                        .kv
-                        .clone();
-                    f(id, e, ffiset);
+                    // let e = &ffiset
+                    //     .engine_store_server
+                    //     .engines
+                    //     .as_ref()
+                    //     .unwrap()
+                    //     .kv
+                    //     .clone();
+                    f(id, engine, ffiset);
                 }
                 Err(_) => std::process::exit(1),
             }
