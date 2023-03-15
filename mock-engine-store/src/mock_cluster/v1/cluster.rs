@@ -240,7 +240,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.create_engine(None);
         }
     }
-    
+
     pub fn start(&mut self) -> ServerResult<()> {
         self.start_with(Default::default())
     }

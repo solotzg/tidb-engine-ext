@@ -63,6 +63,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             // Always at the front of the vector since iterate from 0.
             self.register_ffi_helper_set(Some(0), *node_id);
         }
+        assert_eq!(self.cluster_ext.ffi_helper_lst.len(), 0);
     }
 }
 

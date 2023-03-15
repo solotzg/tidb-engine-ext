@@ -179,7 +179,7 @@ impl ClusterExt {
         assert!(engines.kv.element_engine.is_some());
         cluster_ext.ffi_helper_lst.push(ffi_helper_set);
     }
-    
+
     // Set node_id to ffi helpers which is cached in ffi_helper_lst.
     pub fn register_ffi_helper_set(&mut self, index: Option<usize>, node_id: u64) {
         let mut ffi_helper_set = if let Some(i) = index {
@@ -189,9 +189,9 @@ impl ClusterExt {
             self.ffi_helper_lst.remove(i)
         } else {
             // The node is added to the cluster after stared.
-            // In this case index is None. 
+            // In this case index is None.
             // This method is weird since we don't know node_id when creating engine.
-            self.ffi_helper_lst.pop().unwrap()
+            self.ffi_helper_lst.remove(0).unwrap()
         };
         debug!("register ffi_helper_set for {}", node_id);
         ffi_helper_set.engine_store_server.id = node_id;
