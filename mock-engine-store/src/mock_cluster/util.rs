@@ -2,13 +2,14 @@
 use std::{sync::Arc, thread, time::Duration};
 
 use encryption::DataKeyManager;
+use engine_store_ffi::TiFlashEngine;
 use engine_traits::{Engines, Peekable};
 use file_system::IoRateLimiter;
 use raftstore::store::RaftRouter;
 use tempfile::TempDir;
 use tikv_util::{debug, escape};
 
-use crate::{cluster_ext::ClusterExt, Cluster, Config, Simulator, TiFlashEngine};
+use crate::mock_cluster::{cluster_ext::ClusterExt, Cluster, Config, Simulator};
 
 pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
     cluster: &mut Cluster<T>,

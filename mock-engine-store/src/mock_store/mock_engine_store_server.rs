@@ -2,6 +2,8 @@
 
 use std::{cell::RefCell, pin::Pin, sync::atomic::Ordering};
 
+use engine_store_ffi::TiFlashEngine;
+
 use super::{
     common::{
         interfaces_ffi::{PageAndCppStrWithView, PageStorageInterfaces},
@@ -14,7 +16,7 @@ use super::{
     mock_snapshot_impls::*,
     mock_write_impls::*,
 };
-use crate::{mock_cluster, mock_cluster::TiFlashEngine, server::ServerCluster};
+use crate::{mock_cluster, mock_cluster::server::ServerCluster};
 
 pub struct EngineStoreServer {
     pub id: u64,

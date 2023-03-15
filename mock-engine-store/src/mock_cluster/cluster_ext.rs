@@ -4,9 +4,12 @@ use std::sync::{atomic::AtomicU8, Arc, Mutex};
 
 use collections::HashMap;
 use encryption::DataKeyManager;
-use engine_store_ffi::ffi::{
-    interfaces_ffi::{EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper},
-    RaftStoreProxyFFI,
+use engine_store_ffi::{
+    ffi::{
+        interfaces_ffi::{EngineStoreServerHelper, RaftProxyStatus, RaftStoreProxyFFIHelper},
+        RaftStoreProxyFFI,
+    },
+    TiFlashEngine,
 };
 use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine};
@@ -15,8 +18,8 @@ use tikv::config::TikvConfig;
 use tikv_util::{debug, sys::SysQuota, HandyRwLock};
 
 use crate::{
-    config::MockConfig, mock_store::gen_engine_store_server_helper, EngineStoreServer,
-    EngineStoreServerWrap, TiFlashEngine,
+    mock_cluster::config::MockConfig, mock_store::gen_engine_store_server_helper,
+    EngineStoreServer, EngineStoreServerWrap,
 };
 
 pub struct EngineHelperSet {
