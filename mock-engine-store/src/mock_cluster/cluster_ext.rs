@@ -191,7 +191,7 @@ impl ClusterExt {
             // The node is added to the cluster after stared.
             // In this case index is None.
             // This method is weird since we don't know node_id when creating engine.
-            self.ffi_helper_lst.remove(0).unwrap()
+            self.ffi_helper_lst.remove(0)
         };
         debug!("register ffi_helper_set for {}", node_id);
         ffi_helper_set.engine_store_server.id = node_id;
