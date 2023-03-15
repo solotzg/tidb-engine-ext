@@ -9,7 +9,7 @@ use raftstore::store::RaftRouter;
 use tempfile::TempDir;
 use tikv_util::{debug, escape};
 
-use crate::mock_cluster::{cluster_ext::ClusterExt, Cluster, Config, Simulator};
+use super::{common::*, Cluster, Simulator};
 
 pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
     cluster: &mut Cluster<T>,
@@ -26,7 +26,7 @@ pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
     );
 
     // Set up FFI.
-    ClusterExt::create_ffi_helper_set(cluster, engines, &key_manager, &router);
+    Cluster::<T>::create_ffi_helper_set(cluster, engines, &key_manager, &router);
     let ffi_helper_set = cluster.cluster_ext.ffi_helper_lst.last_mut().unwrap();
     let engines = ffi_helper_set
         .engine_store_server
