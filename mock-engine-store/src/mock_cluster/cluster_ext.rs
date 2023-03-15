@@ -59,7 +59,8 @@ impl ClusterExt {
         key_mgr: &Option<Arc<DataKeyManager>>,
         router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
         node_cfg: TikvConfig,
-        cluster_id: isize,
+        cluster_ptr: isize,
+        cluster_ext_ptr: isize,
         mock_cfg: MockConfig,
     ) -> (FFIHelperSet, TikvConfig) {
         // We must allocate on heap to avoid move.
@@ -85,7 +86,8 @@ impl ClusterExt {
         let engine_store_server_wrap = Box::new(EngineStoreServerWrap::new(
             &mut *engine_store_server,
             Some(&mut *proxy_helper),
-            cluster_id,
+            cluster_ptr,
+            cluster_ext_ptr,
         ));
         let engine_store_server_helper = Box::new(gen_engine_store_server_helper(
             std::pin::Pin::new(&*engine_store_server_wrap),
@@ -188,6 +190,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             router,
             self.cfg.tikv.clone(),
             self as *const Cluster<T> as isize,
+            &self.cluster_ext as *const _ as isize,
             self.cfg.mock_cfg.clone(),
         )
     }
@@ -302,6 +305,7 @@ pub fn make_global_ffi_helper_set_no_bind() -> (EngineHelperSet, *const u8) {
     let engine_store_server_wrap = Box::new(EngineStoreServerWrap::new(
         &mut *engine_store_server,
         None,
+        0,
         0,
     ));
     let engine_store_server_helper = Box::new(gen_engine_store_server_helper(std::pin::Pin::new(
