@@ -14,7 +14,8 @@ use tikv::config::TikvConfig;
 use tikv_util::{debug, sys::SysQuota};
 
 use crate::{
-    mock_cluster::config::MockConfig, mock_store::gen_engine_store_server_helper,
+    mock_cluster::config::{Config, MockConfig},
+    mock_store::gen_engine_store_server_helper,
     EngineStoreServer, EngineStoreServerWrap,
 };
 
@@ -116,6 +117,67 @@ impl ClusterExt {
             }
             Err(_) => std::process::exit(1),
         }
+    }
+
+    /// We need to create FFIHelperSet while creating engine.
+    /// The FFIHelperSet wil also be stored in ffi_helper_lst.
+    pub fn create_ffi_helper_set(
+        cluster_ext: &mut ClusterExt,
+        cluster_ptr: isize,
+        cluster_ext_ptr: isize,
+        cfg: &Config,
+        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
+        key_manager: &Option<Arc<DataKeyManager>>,
+        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
+    ) {
+        init_global_ffi_helper_set();
+        // We don't know `node_id` now.
+        // It will be allocated when start by register_ffi_helper_set.
+        let (mut ffi_helper_set, _node_cfg) = ClusterExt::make_ffi_helper_set_no_bind(
+            0,
+            engines,
+            key_manager,
+            router,
+            cfg.tikv.clone(),
+            cluster_ptr,
+            cluster_ext_ptr,
+            cfg.mock_cfg.clone(),
+        );
+
+        // We can not use moved or cloned engines any more.
+        let (helper_ptr, engine_store_hub) = {
+            let helper_ptr = ffi_helper_set
+                .proxy
+                .kv_engine()
+                .write()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .engine_store_server_helper();
+
+            let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
+            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
+                engine_store_server_helper: helper,
+            });
+            (helper_ptr, engine_store_hub)
+        };
+        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
+        let proxy_config_set = Arc::new(engine_tiflash::ProxyEngineConfigSet {
+            engine_store: cfg.proxy_cfg.engine_store.clone(),
+        });
+        engines.kv.init(
+            helper_ptr,
+            cfg.proxy_cfg.raft_store.snap_handle_pool_size,
+            Some(engine_store_hub),
+            Some(proxy_config_set),
+        );
+
+        ffi_helper_set.proxy.set_kv_engine(
+            engine_store_ffi::ffi::RaftStoreProxyEngine::from_tiflash_engine(engines.kv.clone()),
+        );
+        assert_ne!(engines.kv.proxy_ext.engine_store_server_helper, 0);
+        assert!(engines.kv.element_engine.is_some());
+        cluster_ext.ffi_helper_lst.push(ffi_helper_set);
     }
 
     // If index is None, use the last in ffi_helper_lst, which is added by

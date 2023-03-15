@@ -3,86 +3,14 @@
 use std::sync::Arc;
 
 use collections::HashMap;
-use encryption::DataKeyManager;
 use engine_store_ffi::{ffi::RaftStoreProxyFFI, TiFlashEngine};
 use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine};
-use raftstore::store::RaftRouter;
-use tikv::config::TikvConfig;
 use tikv_util::{sys::SysQuota, HandyRwLock};
 
 use super::{common::*, Cluster, Simulator};
 
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
-    /// We need to create FFIHelperSet while creating engine.
-    /// The FFIHelperSet wil also be stored in ffi_helper_lst.
-    pub fn create_ffi_helper_set(
-        cluster: &mut Cluster<T>,
-        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
-        key_manager: &Option<Arc<DataKeyManager>>,
-        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
-    ) {
-        init_global_ffi_helper_set();
-        // We don't know `node_id` now.
-        // It will be allocated when start by register_ffi_helper_set.
-        let (mut ffi_helper_set, _node_cfg) =
-            cluster.make_ffi_helper_set(0, engines, key_manager, router);
-
-        // We can not use moved or cloned engines any more.
-        let (helper_ptr, engine_store_hub) = {
-            let helper_ptr = ffi_helper_set
-                .proxy
-                .kv_engine()
-                .write()
-                .unwrap()
-                .as_mut()
-                .unwrap()
-                .engine_store_server_helper();
-
-            let helper = engine_store_ffi::ffi::gen_engine_store_server_helper(helper_ptr);
-            let engine_store_hub = Arc::new(engine_store_ffi::engine::TiFlashEngineStoreHub {
-                engine_store_server_helper: helper,
-            });
-            (helper_ptr, engine_store_hub)
-        };
-        let engines = ffi_helper_set.engine_store_server.engines.as_mut().unwrap();
-        let proxy_config_set = Arc::new(engine_tiflash::ProxyEngineConfigSet {
-            engine_store: cluster.cfg.proxy_cfg.engine_store.clone(),
-        });
-        engines.kv.init(
-            helper_ptr,
-            cluster.cfg.proxy_cfg.raft_store.snap_handle_pool_size,
-            Some(engine_store_hub),
-            Some(proxy_config_set),
-        );
-
-        ffi_helper_set.proxy.set_kv_engine(
-            engine_store_ffi::ffi::RaftStoreProxyEngine::from_tiflash_engine(engines.kv.clone()),
-        );
-        assert_ne!(engines.kv.proxy_ext.engine_store_server_helper, 0);
-        assert!(engines.kv.element_engine.is_some());
-        cluster.cluster_ext.ffi_helper_lst.push(ffi_helper_set);
-    }
-
-    pub fn make_ffi_helper_set(
-        &mut self,
-        id: u64,
-        engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
-        key_mgr: &Option<Arc<DataKeyManager>>,
-        router: &Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
-    ) -> (FFIHelperSet, TikvConfig) {
-        ClusterExt::make_ffi_helper_set_no_bind(
-            id,
-            engines,
-            key_mgr,
-            router,
-            self.cfg.tikv.clone(),
-            self as *const Cluster<T> as isize,
-            &self.cluster_ext as *const _ as isize,
-            self.cfg.mock_cfg.clone(),
-        )
-    }
-
     pub fn iter_ffi_helpers(
         &self,
         store_ids: Option<Vec<u64>>,

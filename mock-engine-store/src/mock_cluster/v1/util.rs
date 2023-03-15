@@ -26,7 +26,17 @@ pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
     );
 
     // Set up FFI.
-    Cluster::<T>::create_ffi_helper_set(cluster, engines, &key_manager, &router);
+    let cluster_ptr = cluster as *const _ as isize;
+    let cluster_ext_ptr = &cluster.cluster_ext as *const _ as isize;
+    ClusterExt::create_ffi_helper_set(
+        &mut cluster.cluster_ext,
+        cluster_ptr,
+        cluster_ext_ptr,
+        &cluster.cfg,
+        engines,
+        &key_manager,
+        &router,
+    );
     let ffi_helper_set = cluster.cluster_ext.ffi_helper_lst.last_mut().unwrap();
     let engines = ffi_helper_set
         .engine_store_server
