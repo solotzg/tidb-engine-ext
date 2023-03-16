@@ -16,31 +16,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         store_ids: Option<Vec<u64>>,
         f: &mut dyn FnMut(u64, &mut FFIHelperSet),
     ) {
-        let ids = match store_ids {
-            Some(ids) => ids,
-            None => {
-                let cluster_side = self.engines.keys().copied().collect::<Vec<_>>();
-                let ffi_side = self
-                    .cluster_ext
-                    .ffi_helper_set
-                    .lock()
-                    .expect("lock error")
-                    .keys()
-                    .copied()
-                    .collect::<Vec<_>>();
-                assert_eq!(cluster_side.len(), ffi_side.len());
-                ffi_side
-            }
-        };
-        for id in ids {
-            let lock = self.cluster_ext.ffi_helper_set.lock();
-            match lock {
-                Ok(mut l) => {
-                    let ffiset = l.get_mut(&id).unwrap();
-                    f(id, ffiset);
-                }
-                Err(_) => std::process::exit(1),
-            }
+        let need_check = store_ids.is_none();
+        let ffi_side_ids = self.cluster_ext.iter_ffi_helpers(store_ids, f);
+        if need_check {
+            let cluster_side_ids = self.engines.keys().copied().collect::<Vec<_>>();
+            assert_eq!(cluster_side_ids.len(), ffi_side_ids.len());
         }
     }
 
@@ -49,21 +29,11 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         store_ids: Option<Vec<u64>>,
         f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet),
     ) {
-        let ids = match store_ids {
-            Some(ids) => ids,
-            None => self.engines.keys().copied().collect::<Vec<_>>(),
-        };
-        for id in ids {
-            let engine = self.get_tiflash_engine(id);
-            let lock = self.cluster_ext.ffi_helper_set.lock();
-            match lock {
-                Ok(mut l) => {
-                    let ffiset = l.get_mut(&id).unwrap();
-                    f(id, engine, ffiset);
-                }
-                Err(_) => std::process::exit(1),
-            }
-        }
+        self.cluster_ext
+            .iter_ffi_helpers(store_ids, &mut |id: u64, ffi: &mut FFIHelperSet| {
+                let engine = self.get_tiflash_engine(id);
+                f(id, engine, ffi);
+            });
     }
 
     pub fn access_ffi_helpers(&self, f: &mut dyn FnMut(&mut HashMap<u64, FFIHelperSet>)) {

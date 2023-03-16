@@ -36,7 +36,7 @@ pub use mock_engine_store::{
             },
             Cluster, Simulator,
         },
-        FFIHelperSet, ProxyConfig,
+        ClusterExt, FFIHelperSet, ProxyConfig,
     },
     write_kv_in_mem, RegionStats,
 };
@@ -187,7 +187,7 @@ pub fn new_mock_cluster_snap(id: u64, count: usize) -> (Cluster<NodeCluster>, Ar
 }
 
 pub fn must_get_mem(
-    cluster: &Cluster<NodeCluster>,
+    cluster_ext: &ClusterExt,
     node_id: u64,
     region_id: u64,
     key: &[u8],
@@ -198,24 +198,20 @@ pub fn must_get_mem(
     for _ in 1..300 {
         let mut ok = false;
         {
-            iter_ffi_helpers(
-                &cluster,
-                Some(vec![node_id]),
-                &mut |_, ffi: &mut FFIHelperSet| {
-                    let server = &ffi.engine_store_server;
-                    // If the region not exists in the node, will return None.
-                    let res = server.get_mem(region_id, cf, &key.to_vec());
-                    if let (Some(value), Some(last_res)) = (value, res) {
-                        assert_eq!(value, &last_res[..]);
-                        ok = true;
-                        return;
-                    }
-                    if value.is_none() && last_res.is_none() {
-                        ok = true;
-                        return;
-                    }
-                },
-            );
+            cluster_ext.iter_ffi_helpers(Some(vec![node_id]), &mut |_, ffi: &mut FFIHelperSet| {
+                let server = &ffi.engine_store_server;
+                // If the region not exists in the node, will return None.
+                let res = server.get_mem(region_id, cf, &key.to_vec());
+                if let (Some(value), Some(last_res)) = (value, res) {
+                    assert_eq!(value, &last_res[..]);
+                    ok = true;
+                    return;
+                }
+                if value.is_none() && last_res.is_none() {
+                    ok = true;
+                    return;
+                }
+            });
         }
         if ok {
             return;
@@ -317,9 +313,9 @@ pub fn check_key(
         match in_mem {
             Some(b) => {
                 if b {
-                    must_get_mem(cluster, id, region_id, k, Some(v));
+                    must_get_mem(&cluster.cluster_ext, id, region_id, k, Some(v));
                 } else {
-                    must_get_mem(cluster, id, region_id, k, None);
+                    must_get_mem(&cluster.cluster_ext, id, region_id, k, None);
                 }
             }
             None => (),
