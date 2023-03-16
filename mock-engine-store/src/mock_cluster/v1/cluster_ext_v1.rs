@@ -14,6 +14,39 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn iter_ffi_helpers(
         &self,
         store_ids: Option<Vec<u64>>,
+        f: &mut dyn FnMut(u64, &mut FFIHelperSet),
+    ) {
+        let ids = match store_ids {
+            Some(ids) => ids,
+            None => {
+                let cluster_side = self.engines.keys().copied().collect::<Vec<_>>();
+                let ffi_side = self
+                    .cluster_ext
+                    .ffi_helper_set
+                    .lock()
+                    .expect("lock error")
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>();
+                assert_eq!(cluster_side.len(), ffi_side.len());
+                ffi_side
+            }
+        };
+        for id in ids {
+            let lock = self.cluster_ext.ffi_helper_set.lock();
+            match lock {
+                Ok(mut l) => {
+                    let ffiset = l.get_mut(&id).unwrap();
+                    f(id, ffiset);
+                }
+                Err(_) => std::process::exit(1),
+            }
+        }
+    }
+
+    pub fn iter_engine_ffi_helpers(
+        &self,
+        store_ids: Option<Vec<u64>>,
         f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet),
     ) {
         let ids = match store_ids {
@@ -26,13 +59,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             match lock {
                 Ok(mut l) => {
                     let ffiset = l.get_mut(&id).unwrap();
-                    // let e = &ffiset
-                    //     .engine_store_server
-                    //     .engines
-                    //     .as_ref()
-                    //     .unwrap()
-                    //     .kv
-                    //     .clone();
                     f(id, engine, ffiset);
                 }
                 Err(_) => std::process::exit(1),
@@ -47,7 +73,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
     pub fn post_node_start(&mut self, node_id: u64) {
         // Since we use None to create_ffi_helper_set, we must init again.
         let router = self.sim.rl().get_router(node_id).unwrap();
-        self.iter_ffi_helpers(Some(vec![node_id]), &mut |_, _, ffi: &mut FFIHelperSet| {
+        self.iter_ffi_helpers(Some(vec![node_id]), &mut |_, ffi: &mut FFIHelperSet| {
             ffi.proxy.set_read_index_client(Some(Box::new(
                 engine_store_ffi::ffi::read_index_helper::ReadIndexClient::new(
                     router.clone(),

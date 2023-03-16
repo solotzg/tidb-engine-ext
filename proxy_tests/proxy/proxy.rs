@@ -79,10 +79,18 @@ pub struct States {
     pub ident: StoreIdent,
 }
 
-pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
+pub fn iter_engine_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet) -> (),
+) {
+    cluster.iter_engine_ffi_helpers(store_ids, f);
+}
+
+pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
+    cluster: &Cluster<C>,
+    store_ids: Option<Vec<u64>>,
+    f: &mut dyn FnMut(u64, &mut FFIHelperSet) -> (),
 ) {
     cluster.iter_ffi_helpers(store_ids, f);
 }
@@ -93,7 +101,7 @@ pub fn maybe_collect_states(
     store_ids: Option<Vec<u64>>,
 ) -> HashMap<u64, States> {
     let mut prev_state: HashMap<u64, States> = HashMap::default();
-    iter_ffi_helpers(
+    iter_engine_ffi_helpers(
         cluster,
         store_ids,
         &mut |id: u64, engine: &engine_store_ffi::TiFlashEngine, ffi: &mut FFIHelperSet| {
@@ -193,7 +201,7 @@ pub fn must_get_mem(
             iter_ffi_helpers(
                 &cluster,
                 Some(vec![node_id]),
-                &mut |_, _, ffi: &mut FFIHelperSet| {
+                &mut |_, ffi: &mut FFIHelperSet| {
                     let server = &ffi.engine_store_server;
                     // If the region not exists in the node, will return None.
                     let res = server.get_mem(region_id, cf, &key.to_vec());
@@ -703,7 +711,7 @@ pub fn stop_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
         iter_ffi_helpers(
             &cluster,
             Some(vec![node_id]),
-            &mut |_, _, ffi: &mut FFIHelperSet| {
+            &mut |_, ffi: &mut FFIHelperSet| {
                 let server = &mut ffi.engine_store_server;
                 server.stop();
             },
@@ -717,7 +725,7 @@ pub fn restart_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
         iter_ffi_helpers(
             &cluster,
             Some(vec![node_id]),
-            &mut |_, _, ffi: &mut FFIHelperSet| {
+            &mut |_, ffi: &mut FFIHelperSet| {
                 let server = &mut ffi.engine_store_server;
                 server.restore();
             },

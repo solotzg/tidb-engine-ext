@@ -341,7 +341,7 @@ fn test_split_merge() {
 
     assert_eq!(r1.get_id(), r3_new.get_id());
 
-    iter_ffi_helpers(&cluster, None, &mut |id: u64, _, ffi: &mut FFIHelperSet| {
+    iter_ffi_helpers(&cluster, None, &mut |id: u64, ffi: &mut FFIHelperSet| {
         let server = &ffi.engine_store_server;
         if !server.kvstore.contains_key(&r1_new.get_id()) {
             panic!("node {} has no region {}", id, r1_new.get_id())
@@ -364,7 +364,7 @@ fn test_split_merge() {
     let _r1_new2 = cluster.get_region(b"k1");
     let r3_new2 = cluster.get_region(b"k3");
 
-    iter_ffi_helpers(&cluster, None, &mut |id: u64, _, ffi: &mut FFIHelperSet| {
+    iter_ffi_helpers(&cluster, None, &mut |id: u64, ffi: &mut FFIHelperSet| {
         let server = &ffi.engine_store_server;
 
         // The left region is removed
