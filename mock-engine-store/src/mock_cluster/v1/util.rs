@@ -1,13 +1,12 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use std::{sync::Arc, thread, time::Duration};
+use std::sync::Arc;
 
 use encryption::DataKeyManager;
 use engine_store_ffi::TiFlashEngine;
-use engine_traits::{Engines, Peekable};
+use engine_traits::Engines;
 use file_system::IoRateLimiter;
 use raftstore::store::RaftRouter;
 use tempfile::TempDir;
-use tikv_util::{debug, escape};
 
 use super::{common::*, Cluster, Simulator};
 
