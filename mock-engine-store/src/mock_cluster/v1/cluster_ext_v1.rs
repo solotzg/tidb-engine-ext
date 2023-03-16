@@ -19,7 +19,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         let need_check = store_ids.is_none();
         let ffi_side_ids = self.cluster_ext.iter_ffi_helpers(store_ids, f);
         if need_check {
-            let cluster_side_ids = self.engines.keys().copied().collect::<Vec<_>>();
+            let cluster_side_ids = self.engines.keys().copied();
             assert_eq!(cluster_side_ids.len(), ffi_side_ids.len());
         }
     }
