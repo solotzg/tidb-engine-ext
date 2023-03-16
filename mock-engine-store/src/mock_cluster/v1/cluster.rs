@@ -45,7 +45,7 @@ use test_pd_client::TestPdClient;
 use test_raftstore::{
     is_error_response, make_cb, new_admin_request, new_delete_cmd, new_peer, new_put_cf_cmd,
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
-    new_transfer_leader_cmd, sleep_ms, FilterFactory,
+    new_transfer_leader_cmd, sleep_ms, FilterFactory, RawEngine,
 };
 use tikv::server::Result as ServerResult;
 use tikv_util::{
