@@ -28,12 +28,15 @@ pub use mock_engine_store::{
     general_get_apply_state, general_get_region_local_state, get_raft_local_state, make_new_region,
     mock_cluster::{
         config::Config,
-        must_get_equal, must_get_none, new_put_cmd, new_request,
-        node::NodeCluster,
-        transport_simulate::{
-            CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
+        v1::{
+            must_get_equal, must_get_none, new_put_cmd, new_request,
+            node::NodeCluster,
+            transport_simulate::{
+                CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
+            },
+            Cluster, Simulator,
         },
-        Cluster, FFIHelperSet, ProxyConfig, Simulator,
+        FFIHelperSet, ProxyConfig,
     },
     write_kv_in_mem, RegionStats,
 };

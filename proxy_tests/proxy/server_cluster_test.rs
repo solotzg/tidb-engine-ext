@@ -9,7 +9,10 @@ use futures::executor::block_on;
 use grpcio::{ChannelBuilder, Environment};
 use kvproto::{kvrpcpb::*, tikvpb::TikvClient};
 use mock_engine_store::mock_cluster::{
-    server::{new_server_cluster, ServerCluster},
+    v1::{
+        server::{new_server_cluster, ServerCluster},
+        *,
+    },
     *,
 };
 use tikv_util::HandyRwLock;
