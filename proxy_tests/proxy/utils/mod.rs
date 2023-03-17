@@ -12,10 +12,9 @@ pub use std::{
 pub use collections::HashSet;
 pub use engine_store_ffi::ffi::{interfaces_ffi::KVGetStatus, RaftStoreProxyFFI};
 pub use engine_traits::{
-    MiscExt, Mutable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK, CF_WRITE,
+    MiscExt, Mutable, Peekable, RaftEngineDebug, RaftLogBatch, WriteBatch, CF_DEFAULT, CF_LOCK,
+    CF_RAFT, CF_WRITE,
 };
-// use engine_store_ffi::config::{ensure_no_common_unrecognized_keys, ProxyConfig};
-pub use engine_traits::{Peekable, CF_RAFT};
 pub use kvproto::{
     import_sstpb::SstMeta,
     metapb,

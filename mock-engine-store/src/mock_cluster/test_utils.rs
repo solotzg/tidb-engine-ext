@@ -10,7 +10,7 @@ use tikv_util::error;
 use super::cluster_ext::*;
 use crate::{
     general_get_apply_state, general_get_region_local_state, get_raft_local_state,
-    mock_cluster::v1::{Cluster, Simulator},
+    mock_cluster::v1::{node::NodeCluster, Cluster, Simulator},
 };
 
 #[derive(Debug)]
@@ -83,7 +83,13 @@ pub fn maybe_collect_states(
 
 pub fn collect_all_states(cluster_ext: &ClusterExt, region_id: u64) -> HashMap<u64, States> {
     let prev_state = maybe_collect_states(cluster_ext, region_id, None);
-    // assert_eq!(prev_state.len(), get_all_store_ids(cluster).len());
+    unsafe {
+        // TODO Very hack, but we need it here to protect that we won't FFIHelper and
+        // Engines are corresponding.
+        // Will replaced by a test while adapting v2.
+        let cluster = cluster_ext as *const _ as *const Cluster<NodeCluster>;
+        assert_eq!(prev_state.len(), get_all_store_ids(&*cluster).len());
+    }
     prev_state
 }
 

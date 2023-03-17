@@ -47,6 +47,7 @@ pub struct ClusterExt {
     pub ffi_helper_lst: Vec<FFIHelperSet>,
     pub(crate) ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
     pub test_data: TestData,
+    pub cluster_ptr: isize,
 }
 
 impl ClusterExt {
