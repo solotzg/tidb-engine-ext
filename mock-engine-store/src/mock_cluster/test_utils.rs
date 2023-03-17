@@ -1,6 +1,7 @@
 // Copyright 2023 TiKV Project Authors. Licensed under Apache-2.0.
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::FromIterator};
 
+use collections::HashSet;
 use engine_store_ffi::ffi::interfaces_ffi;
 use engine_traits::Peekable;
 use kvproto::raft_serverpb::{RaftApplyState, RaftLocalState, RegionLocalState, StoreIdent};
@@ -450,4 +451,33 @@ pub fn must_wait_until_cond_states(
             panic!("states not as expect after timeout")
         }
     }
+}
+
+pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
+    get_valid_compact_index_by(states, None)
+}
+
+pub fn get_valid_compact_index_by(
+    states: &HashMap<u64, States>,
+    use_nodes: Option<Vec<u64>>,
+) -> (u64, u64) {
+    let set = use_nodes.map_or(None, |nodes| {
+        Some(HashSet::from_iter(nodes.clone().into_iter()))
+    });
+    states
+        .iter()
+        .filter(|(k, _)| {
+            if let Some(ref s) = set {
+                return s.contains(k);
+            }
+            true
+        })
+        .map(|(_, s)| {
+            (
+                s.in_memory_apply_state.get_applied_index(),
+                s.in_memory_applied_term,
+            )
+        })
+        .min_by(|l, r| l.0.cmp(&r.0))
+        .unwrap()
 }

@@ -3,7 +3,6 @@
 pub use std::{
     collections::HashMap,
     io::Write,
-    iter::FromIterator,
     ops::DerefMut,
     path::{Path, PathBuf},
     str::FromStr,
@@ -174,7 +173,6 @@ pub fn check_key(
     };
     for id in engine_keys {
         let engine = cluster.get_engine(id);
-
         match in_disk {
             Some(b) => {
                 if b {
@@ -196,35 +194,6 @@ pub fn check_key(
             None => (),
         };
     }
-}
-
-pub fn get_valid_compact_index(states: &HashMap<u64, States>) -> (u64, u64) {
-    get_valid_compact_index_by(states, None)
-}
-
-pub fn get_valid_compact_index_by(
-    states: &HashMap<u64, States>,
-    use_nodes: Option<Vec<u64>>,
-) -> (u64, u64) {
-    let set = use_nodes.map_or(None, |nodes| {
-        Some(HashSet::from_iter(nodes.clone().into_iter()))
-    });
-    states
-        .iter()
-        .filter(|(k, _)| {
-            if let Some(ref s) = set {
-                return s.contains(k);
-            }
-            true
-        })
-        .map(|(_, s)| {
-            (
-                s.in_memory_apply_state.get_applied_index(),
-                s.in_memory_applied_term,
-            )
-        })
-        .min_by(|l, r| l.0.cmp(&r.0))
-        .unwrap()
 }
 
 pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
