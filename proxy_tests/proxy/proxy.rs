@@ -331,7 +331,7 @@ pub fn check_apply_state(
 ) {
     let old = prev_states.get(&region_id).unwrap();
     for _ in 1..10 {
-        let new_states = collect_all_states(&cluster, region_id);
+        let new_states = collect_all_states(&cluster.cluster_ext, region_id);
         let new = new_states.get(&region_id).unwrap();
         if let Some(b) = in_mem_eq {
             if b && new.in_memory_applied_term == old.in_memory_applied_term
@@ -356,7 +356,7 @@ pub fn check_apply_state(
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    let new_states = collect_all_states(&cluster, region_id);
+    let new_states = collect_all_states(&cluster.cluster_ext, region_id);
     let new = new_states.get(&region_id).unwrap();
     if let Some(b) = in_mem_eq {
         if b {
@@ -596,7 +596,7 @@ pub fn must_wait_until_cond_states(
 ) -> HashMap<u64, States> {
     let mut retry = 0;
     loop {
-        let new_states = collect_all_states(&cluster, region_id);
+        let new_states = collect_all_states(&cluster.cluster_ext, region_id);
         let mut ok = true;
         for i in prev_states.keys() {
             let old = prev_states.get(i).unwrap();
