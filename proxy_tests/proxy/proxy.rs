@@ -95,6 +95,13 @@ pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster.iter_ffi_helpers(store_ids, f);
 }
 
+pub fn get_all_store_ids<C: Simulator<engine_store_ffi::TiFlashEngine>>(
+    cluster: &Cluster<C>,
+) -> Vec<u64> {
+    // TODO May changed to get from ffi helpers.
+    cluster.engines.keys().map(|k| *k).collect::<Vec<u64>>()
+}
+
 pub fn maybe_collect_states(
     cluster: &Cluster<NodeCluster>,
     region_id: u64,
@@ -107,13 +114,14 @@ pub fn maybe_collect_states(
         &mut |id: u64, engine: &engine_store_ffi::TiFlashEngine, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
             let raft_engine = &cluster.get_engines(id).raft;
+            let ffi_engine = &server.engines.as_ref().unwrap().kv;
             if let Some(region) = server.kvstore.get(&region_id) {
-                let ident = match engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
+                let ident = match ffi_engine.get_msg::<StoreIdent>(keys::STORE_IDENT_KEY) {
                     Ok(Some(i)) => i,
                     _ => unreachable!(),
                 };
-                let apply_state = general_get_apply_state(engine, region_id);
-                let region_state = general_get_region_local_state(engine, region_id);
+                let apply_state = general_get_apply_state(ffi_engine, region_id);
+                let region_state = general_get_region_local_state(ffi_engine, region_id);
                 let raft_state = get_raft_local_state(raft_engine, region_id);
                 if apply_state.is_none() {
                     return;
@@ -143,7 +151,7 @@ pub fn maybe_collect_states(
 
 pub fn collect_all_states(cluster: &Cluster<NodeCluster>, region_id: u64) -> HashMap<u64, States> {
     let prev_state = maybe_collect_states(cluster, region_id, None);
-    assert_eq!(prev_state.len(), cluster.engines.keys().len());
+    assert_eq!(prev_state.len(), get_all_store_ids(cluster).len());
     prev_state
 }
 
@@ -294,7 +302,7 @@ pub fn check_key(
     let engine_keys = {
         match engines {
             Some(e) => e.to_vec(),
-            None => cluster.engines.keys().map(|k| *k).collect::<Vec<u64>>(),
+            None => get_all_store_ids(cluster),
         }
     };
     for id in engine_keys {
