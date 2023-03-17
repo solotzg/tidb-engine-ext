@@ -29,7 +29,7 @@ pub use mock_engine_store::{
     mock_cluster::{
         config::Config,
         v1::{
-            must_get_equal, must_get_none, new_put_cmd, new_request,
+            must_get_equal, must_get_none, new_learner_peer, new_peer, new_put_cmd, new_request,
             node::NodeCluster,
             transport_simulate::{
                 CloneFilterFactory, CollectSnapshotFilter, Direction, RegionPacketFilter,
@@ -44,7 +44,6 @@ pub use pd_client::PdClient;
 pub use raft::eraftpb::{ConfChangeType, MessageType};
 pub use raftstore::coprocessor::ConsistencyCheckMethod;
 pub use test_pd_client::TestPdClient;
-pub use test_raftstore::{new_learner_peer, new_peer};
 pub use tikv_util::{
     box_err, box_try,
     config::{ReadableDuration, ReadableSize},
@@ -79,14 +78,6 @@ pub struct States {
     pub ident: StoreIdent,
 }
 
-pub fn iter_engine_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
-    cluster: &Cluster<C>,
-    store_ids: Option<Vec<u64>>,
-    f: &mut dyn FnMut(u64, &engine_store_ffi::TiFlashEngine, &mut FFIHelperSet) -> (),
-) {
-    cluster.iter_engine_ffi_helpers(store_ids, f);
-}
-
 pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
@@ -108,10 +99,10 @@ pub fn maybe_collect_states(
     store_ids: Option<Vec<u64>>,
 ) -> HashMap<u64, States> {
     let mut prev_state: HashMap<u64, States> = HashMap::default();
-    iter_engine_ffi_helpers(
+    iter_ffi_helpers(
         cluster,
         store_ids,
-        &mut |id: u64, engine: &engine_store_ffi::TiFlashEngine, ffi: &mut FFIHelperSet| {
+        &mut |id: u64, ffi: &mut FFIHelperSet| {
             let server = &ffi.engine_store_server;
             let raft_engine = &cluster.get_engines(id).raft;
             let ffi_engine = &server.engines.as_ref().unwrap().kv;
