@@ -26,7 +26,7 @@ pub struct States {
 pub fn iter_ffi_helpers<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster: &Cluster<C>,
     store_ids: Option<Vec<u64>>,
-    f: &mut dyn FnMut(u64, &mut FFIHelperSet) -> (),
+    f: &mut dyn FnMut(u64, &mut FFIHelperSet),
 ) {
     cluster.iter_ffi_helpers(store_ids, f);
 }
@@ -35,7 +35,7 @@ pub fn get_all_store_ids<C: Simulator<engine_store_ffi::TiFlashEngine>>(
     cluster: &Cluster<C>,
 ) -> Vec<u64> {
     // TODO May changed to get from ffi helpers.
-    cluster.engines.keys().map(|k| *k).collect::<Vec<u64>>()
+    cluster.engines.keys().copied().collect::<Vec<u64>>()
 }
 
 pub fn maybe_collect_states(
@@ -116,7 +116,6 @@ pub fn must_get_mem(
                 }
                 if value.is_none() && last_res.is_none() {
                     ok = true;
-                    return;
                 }
             });
         }
@@ -467,9 +466,7 @@ pub fn get_valid_compact_index_by(
     states: &HashMap<u64, States>,
     use_nodes: Option<Vec<u64>>,
 ) -> (u64, u64) {
-    let set = use_nodes.map_or(None, |nodes| {
-        Some(HashSet::from_iter(nodes.clone().into_iter()))
-    });
+    let set = use_nodes.map(|nodes| HashSet::from_iter(nodes.clone().into_iter()));
     states
         .iter()
         .filter(|(k, _)| {
