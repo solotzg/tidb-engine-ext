@@ -93,6 +93,7 @@ fn test_safe_ts_basic() {
     let physical_time = 646454654654;
     suite
         .cluster
+        .cluster_ext
         .set_expected_safe_ts(physical_time, physical_time);
     suite.must_check_leader(1, TimeStamp::new(physical_time), 1, 1);
 

@@ -216,6 +216,11 @@ impl ClusterExt {
         }
         ids
     }
+
+    pub fn set_expected_safe_ts(&mut self, leader_safe_ts: u64, self_safe_ts: u64) {
+        self.test_data.expected_leader_safe_ts = leader_safe_ts;
+        self.test_data.expected_self_safe_ts = self_safe_ts;
+    }
 }
 
 static mut GLOBAL_ENGINE_HELPER_SET: Option<EngineHelperSet> = None;
