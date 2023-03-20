@@ -180,7 +180,7 @@ fn test_pprof() {
     let check_task = check(status_server.listening_addr(), region_id);
     let rt = tokio::runtime::Runtime::new().unwrap();
     let handle = rt.spawn(check_task);
-    for i in 0..300 {
+    for i in 0..350 {
         let k = format!("k{}", i);
         cluster.must_put(k.as_bytes(), b"v");
         if handle.is_finished() {
