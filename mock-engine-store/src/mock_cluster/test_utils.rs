@@ -5,10 +5,11 @@ use collections::HashSet;
 use engine_store_ffi::ffi::interfaces_ffi;
 use engine_traits::Peekable;
 use kvproto::raft_serverpb::{RaftApplyState, RaftLocalState, RegionLocalState, StoreIdent};
-use tikv_util::error;
 pub use test_raftstore::{
     must_get_equal, must_get_none, new_learner_peer, new_peer, new_put_cmd, new_request,
 };
+use tikv_util::error;
+
 use super::cluster_ext::*;
 use crate::{
     general_get_apply_state, general_get_raft_local_state, general_get_region_local_state,
