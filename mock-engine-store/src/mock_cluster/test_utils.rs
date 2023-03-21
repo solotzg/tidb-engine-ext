@@ -9,7 +9,7 @@ use tikv_util::error;
 
 use super::cluster_ext::*;
 use crate::{
-    general_get_apply_state, general_get_region_local_state, get_raft_local_state,
+    general_get_apply_state, general_get_raft_local_state, general_get_region_local_state,
     mock_cluster::v1::{node::NodeCluster, Cluster, Simulator},
 };
 
@@ -55,7 +55,7 @@ pub fn maybe_collect_states(
             };
             let apply_state = general_get_apply_state(ffi_engine, region_id);
             let region_state = general_get_region_local_state(ffi_engine, region_id);
-            let raft_state = get_raft_local_state(raft_engine, region_id);
+            let raft_state = general_get_raft_local_state(raft_engine, region_id);
             if apply_state.is_none() {
                 return;
             }
