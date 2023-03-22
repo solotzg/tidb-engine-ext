@@ -171,7 +171,6 @@ pub fn check_key(
         }
     };
     for id in engine_keys {
-        let engine = cluster.get_engine(id);
         match in_disk {
             Some(b) => {
                 if b {
@@ -195,13 +194,13 @@ pub fn check_key(
     }
 }
 
-pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
+pub fn disable_auto_gen_compact_log(cluster: &mut impl MixedCluster) {
     // Disable AUTO generated compact log.
     // This will not totally disable, so we use some failpoints later.
-    cluster.cfg.raft_store.raft_log_gc_count_limit = Some(1000);
-    cluster.cfg.raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(100000);
-    cluster.cfg.raft_store.snap_apply_batch_size = ReadableSize(500000);
-    cluster.cfg.raft_store.raft_log_gc_threshold = 10000;
+    cluster.mut_config().raft_store.raft_log_gc_count_limit = Some(1000);
+    cluster.mut_config().raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(100000);
+    cluster.mut_config().raft_store.snap_apply_batch_size = ReadableSize(500000);
+    cluster.mut_config().raft_store.raft_log_gc_threshold = 10000;
 }
 
 pub fn force_compact_log(
@@ -239,7 +238,7 @@ pub fn stop_tiflash_node(cluster: &mut impl MixedCluster, node_id: u64) {
     }
 }
 
-pub fn restart_tiflash_node(cluster: &mut Cluster<NodeCluster>, node_id: u64) {
+pub fn restart_tiflash_node(cluster: &mut impl MixedCluster, node_id: u64) {
     info!("restored node {}", node_id);
     {
         iter_ffi_helpers(

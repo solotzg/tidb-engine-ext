@@ -47,14 +47,14 @@ impl<T: Simulator<TiFlashEngine>> MixedCluster for Cluster<T> {
         };
     }
     fn run_node(&mut self, node_id: u64) {
-        <Cluster<T>>::run_node(self, node_id);
+        <Cluster<T>>::run_node(self, node_id).unwrap();
     }
     fn stop_node(&mut self, node_id: u64) {
         <Cluster<T>>::stop_node(self, node_id);
     }
     fn call_command_on_leader(
         &mut self,
-        mut request: RaftCmdRequest,
+        request: RaftCmdRequest,
         timeout: Duration,
     ) -> raftstore::Result<RaftCmdResponse> {
         self.call_command_on_leader(request, timeout)

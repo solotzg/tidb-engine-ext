@@ -13,7 +13,7 @@ use raftstore::store::RaftRouter;
 use tikv::config::TikvConfig;
 use tikv_util::{debug, sys::SysQuota};
 
-use super::common::*;
+use super::{common::*, test_utils::MixedCluster};
 use crate::{
     mock_cluster::config::MockConfig, mock_store::gen_engine_store_server_helper,
     EngineStoreServer, EngineStoreServerWrap,
