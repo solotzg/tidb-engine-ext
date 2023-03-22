@@ -28,7 +28,7 @@ pub struct States {
 }
 
 pub fn iter_ffi_helpers(
-    cluster: &dyn MixedCluster,
+    cluster: &impl MixedCluster,
     store_ids: Option<Vec<u64>>,
     f: &mut dyn FnMut(u64, &mut FFIHelperSet),
 ) {

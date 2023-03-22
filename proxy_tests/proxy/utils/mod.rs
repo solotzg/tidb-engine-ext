@@ -107,7 +107,7 @@ pub fn new_mock_cluster_snap(id: u64, count: usize) -> (Cluster<NodeCluster>, Ar
 }
 
 pub fn must_put_and_check_key_with_generator<F: Fn(u64) -> (String, String)>(
-    cluster: &mut dyn MixedCluster,
+    cluster: &mut impl MixedCluster,
     gen: F,
     from: u64,
     to: u64,
@@ -133,7 +133,7 @@ pub fn must_put_and_check_key_with_generator<F: Fn(u64) -> (String, String)>(
 }
 
 pub fn must_put_and_check_key(
-    cluster: &mut dyn MixedCluster,
+    cluster: &mut impl MixedCluster,
     from: u64,
     to: u64,
     in_mem: Option<bool>,
@@ -156,7 +156,7 @@ pub fn must_put_and_check_key(
 }
 
 pub fn check_key(
-    cluster: &dyn MixedCluster,
+    cluster: &impl MixedCluster,
     k: &[u8],
     v: &[u8],
     in_mem: Option<bool>,
@@ -171,8 +171,7 @@ pub fn check_key(
         }
     };
     for id in engine_keys {
-        // let engine = cluster.get_engine(id).downcast_ref::<impl
-        // test_raftstore::RawEngine>().unwrap();
+        let engine = cluster.get_engine(id);
         match in_disk {
             Some(b) => {
                 if b {
@@ -206,7 +205,7 @@ pub fn disable_auto_gen_compact_log(cluster: &mut Cluster<NodeCluster>) {
 }
 
 pub fn force_compact_log(
-    cluster: &mut dyn MixedCluster,
+    cluster: &mut impl MixedCluster,
     key: &[u8],
     use_nodes: Option<Vec<u64>>,
 ) -> u64 {
@@ -223,7 +222,7 @@ pub fn force_compact_log(
     return compact_index;
 }
 
-pub fn stop_tiflash_node(cluster: &mut dyn MixedCluster, node_id: u64) {
+pub fn stop_tiflash_node(cluster: &mut impl MixedCluster, node_id: u64) {
     info!("stop node {}", node_id);
     {
         cluster.stop_node(node_id);
