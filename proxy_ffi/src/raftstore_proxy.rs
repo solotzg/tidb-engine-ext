@@ -72,7 +72,7 @@ impl RaftStoreProxy {
         kv_engine.unwrap().get_value_cf(cf, key, cb)
     }
 
-    pub fn get_region_local_state(
+    pub unsafe fn get_region_local_state(
         &self,
         region_id: u64,
         data: RawVoidPtr,
