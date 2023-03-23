@@ -14,7 +14,6 @@ use super::cluster_ext::*;
 pub use super::mixed_cluster::MixedCluster;
 use crate::{
     general_get_apply_state, general_get_raft_local_state, general_get_region_local_state,
-    mock_cluster::v1::{node::NodeCluster, Cluster},
 };
 
 #[derive(Debug)]
@@ -79,16 +78,12 @@ pub fn maybe_collect_states(
 }
 
 pub fn collect_all_states(cluster_ext: &ClusterExt, region_id: u64) -> HashMap<u64, States> {
+    maybe_collect_states(cluster_ext, region_id, None);
     let prev_state = maybe_collect_states(cluster_ext, region_id, None);
-    unsafe {
-        // TODO Very hack, but we need it here to protect that we won't FFIHelper and
-        // Engines are corresponding.
-        // Though we can parameterize ClusterExt, it can be complex.
-        // Will replaced by a test while adapting v2.
-        let cluster = cluster_ext as *const _ as *const Cluster<NodeCluster>;
-        // let cluster = cluster_ext as *const impl test_raftstore::RawEngine;
-        assert_eq!(prev_state.len(), (&*cluster).get_all_store_ids().len());
-    }
+    assert_eq!(
+        prev_state.len(),
+        cluster_ext.ffi_helper_set.lock().expect("poison").len()
+    );
     prev_state
 }
 

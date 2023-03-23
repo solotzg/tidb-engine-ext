@@ -250,7 +250,7 @@ pub fn restart_tiflash_node(cluster: &mut impl MixedCluster, node_id: u64) {
             },
         );
     }
-    cluster.run_node(node_id).unwrap();
+    cluster.run_node(node_id);
 }
 
 pub fn must_not_merged(pd_client: Arc<TestPdClient>, from: u64, duration: Duration) {

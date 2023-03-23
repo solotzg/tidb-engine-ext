@@ -13,7 +13,7 @@ use raftstore::store::RaftRouter;
 use tikv::config::TikvConfig;
 use tikv_util::{debug, sys::SysQuota};
 
-use super::{common::*, test_utils::MixedCluster};
+use super::common::*;
 use crate::{
     mock_cluster::config::MockConfig, mock_store::gen_engine_store_server_helper,
     EngineStoreServer, EngineStoreServerWrap,
@@ -45,12 +45,16 @@ pub struct TestData {
 pub struct ClusterExt {
     // Helper to set ffi_helper_set.
     pub ffi_helper_lst: Vec<FFIHelperSet>,
+    // This field should be pub(crate).
     pub(crate) ffi_helper_set: Arc<Mutex<HashMap<u64, FFIHelperSet>>>,
     pub test_data: TestData,
     pub cluster_ptr: isize,
 }
 
 impl ClusterExt {
+    pub fn get_cluster_size(&self) -> usize {
+        self.ffi_helper_set.lock().expect("poinsoned").len()
+    }
     pub fn make_ffi_helper_set_no_bind(
         id: u64,
         engines: Engines<TiFlashEngine, engine_rocks::RocksEngine>,
