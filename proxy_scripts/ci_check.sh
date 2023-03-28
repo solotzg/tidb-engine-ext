@@ -41,8 +41,10 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --test proxy ingest
     cargo test --package proxy_tests --test proxy engine
     cargo test --package proxy_tests --test proxy config
+    cargo test --package proxy_tests --test proxy store
     cargo test --package proxy_tests --test proxy region
     cargo test --package proxy_tests --test proxy flashback
+    cargo test --package proxy_tests --test proxy v1_specific
     cargo test --package proxy_tests --test proxy server_cluster_test
     cargo test --package proxy_tests --test proxy fast_add_peer
     cargo test --package proxy_tests --test proxy replica_read -- --test-threads 1

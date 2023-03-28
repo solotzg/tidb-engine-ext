@@ -4604,6 +4604,7 @@ dependencies = [
  "profiler",
  "protobuf",
  "proxy_server",
+ "proxy_test_raftstore_v2",
  "raft",
  "raft_log_engine",
  "raftstore",

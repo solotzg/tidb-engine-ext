@@ -1,5 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use crate::utils::*;
+use crate::utils::v1::*;
 
 // This is a panic while panic test, which we can not handle.
 // This double panic is due to:

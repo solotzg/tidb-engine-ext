@@ -2,7 +2,7 @@
 use sst_importer::SstImporter;
 use test_sst_importer::gen_sst_file_with_kvs;
 
-use crate::utils::*;
+use crate::utils::v1::*;
 
 pub fn new_ingest_sst_cmd(meta: SstMeta) -> Request {
     let mut cmd = Request::default();

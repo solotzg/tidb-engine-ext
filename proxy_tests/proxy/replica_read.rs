@@ -7,7 +7,7 @@ use engine_store_ffi::ffi::{
     ProtoMsgBaseBuff,
 };
 
-use crate::utils::*;
+use crate::utils::v1::*;
 
 #[derive(Default)]
 struct GcMonitor {
