@@ -53,7 +53,7 @@ pub struct ClusterExt {
 
 impl ClusterExt {
     pub fn get_cluster_size(&self) -> usize {
-        self.ffi_helper_set.lock().expect("poinsoned").len()
+        self.ffi_helper_set.lock().expect("poisoned").len()
     }
     pub fn make_ffi_helper_set_no_bind(
         id: u64,

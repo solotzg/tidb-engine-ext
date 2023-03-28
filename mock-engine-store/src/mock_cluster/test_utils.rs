@@ -17,12 +17,21 @@ use crate::{
 };
 
 #[derive(Debug)]
+struct FlushIndex {
+    pub admin: u64,
+    pub data: u64,
+}
+
+#[derive(Debug)]
 pub struct States {
     pub in_memory_apply_state: RaftApplyState,
     pub in_memory_applied_term: u64,
     pub in_disk_apply_state: RaftApplyState,
     pub in_disk_region_state: RegionLocalState,
     pub in_disk_raft_state: RaftLocalState,
+    #[allow(unused_variables)]
+    pub in_memory_flush_index: FlushIndex, // TODO maybe unused
+    pub in_disk_flush_index: FlushIndex,
     pub ident: StoreIdent,
 }
 
@@ -69,6 +78,8 @@ pub fn maybe_collect_states(
                     in_disk_apply_state: apply_state.unwrap(),
                     in_disk_region_state: region_state.unwrap(),
                     in_disk_raft_state: raft_state.unwrap(),
+                    in_disk_flush_index: Default::default(),
+                    in_memory_flush_index: Default::default(),
                     ident,
                 },
             );

@@ -2,3 +2,4 @@
 
 pub use engine_store_ffi::TiFlashEngine;
 pub use proxy_server::config::ProxyConfig;
+pub type ProxyRaftEngine = engine_rocks::RocksEngine;
