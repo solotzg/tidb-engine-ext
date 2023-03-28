@@ -29,10 +29,7 @@ pub struct EngineStoreServer {
 }
 
 impl EngineStoreServer {
-    pub fn new(
-        id: u64,
-        engines: Option<Engines<TiFlashEngine, ProxyRaftEngine>>,
-    ) -> Self {
+    pub fn new(id: u64, engines: Option<Engines<TiFlashEngine, ProxyRaftEngine>>) -> Self {
         EngineStoreServer {
             id,
             engines,

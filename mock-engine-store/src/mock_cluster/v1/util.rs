@@ -12,9 +12,9 @@ use super::{common::*, Cluster, Simulator};
 
 pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
     cluster: &mut Cluster<T>,
-    router: Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
+    router: Option<RaftRouter<TiFlashEngine, ProxyRaftEngine>>,
 ) -> (
-    Engines<TiFlashEngine, engine_rocks::RocksEngine>,
+    Engines<TiFlashEngine, ProxyRaftEngine>,
     Option<Arc<DataKeyManager>>,
     TempDir,
 ) {
@@ -52,11 +52,11 @@ pub fn create_tiflash_test_engine_with_cluster_ctx<T: Simulator<TiFlashEngine>>(
 pub fn create_tiflash_test_engine(
     // ref init_tiflash_engines and create_test_engine
     // TODO: pass it in for all cases.
-    _router: Option<RaftRouter<TiFlashEngine, engine_rocks::RocksEngine>>,
+    _router: Option<RaftRouter<TiFlashEngine, ProxyRaftEngine>>,
     limiter: Option<Arc<IoRateLimiter>>,
     cfg: &MixedClusterConfig,
 ) -> (
-    Engines<TiFlashEngine, engine_rocks::RocksEngine>,
+    Engines<TiFlashEngine, ProxyRaftEngine>,
     Option<Arc<DataKeyManager>>,
     TempDir,
 ) {

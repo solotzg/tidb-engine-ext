@@ -16,8 +16,8 @@ use crate::{
     general_get_apply_state, general_get_raft_local_state, general_get_region_local_state,
 };
 
-#[derive(Debug)]
-struct FlushIndex {
+#[derive(Debug, Default)]
+pub struct FlushedIndex {
     pub admin: u64,
     pub data: u64,
 }
@@ -29,9 +29,10 @@ pub struct States {
     pub in_disk_apply_state: RaftApplyState,
     pub in_disk_region_state: RegionLocalState,
     pub in_disk_raft_state: RaftLocalState,
+    // TODO maybe unused, we keep that since the persistence of admin.flushed is async.
     #[allow(unused_variables)]
-    pub in_memory_flush_index: FlushIndex, // TODO maybe unused
-    pub in_disk_flush_index: FlushIndex,
+    pub in_memory_flush_index: FlushedIndex,
+    pub in_disk_flush_index: FlushedIndex,
     pub ident: StoreIdent,
 }
 
