@@ -304,6 +304,7 @@ members = [
   "gen-proxy-ffi",
   "proxy_ffi",
   "proxy_tests",
+  "proxy_test_raftstore_v2",
   "raftstore-proxy",
   "raftstore-proxy-main",
   "tests",
@@ -394,6 +395,7 @@ slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global
 engine_store_ffi = { path = "engine_store_ffi", default-features = false }
 mock-engine-store = { path = "mock-engine-store", default-features = false }
 proxy_server = { path = "proxy_server", default-features = false }
+proxy_test_raftstore_v2 = { path = "proxy_test_raftstore_v2", default-features = false }
 engine_tiflash = { path = "engine_tiflash", default-features = false }
 proxy_ffi = { path = "proxy_ffi", default-features = false }
 

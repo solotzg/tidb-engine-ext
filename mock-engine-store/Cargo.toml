@@ -56,6 +56,7 @@ slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global
 tempfile = "3.0"
 test_pd_client = { workspace = true }
 test_raftstore = { workspace = true }
+proxy_test_raftstore_v2 = { workspace = true }
 test_util = { workspace = true, default-features = false }
 tikv = { workspace = true, default-features = false }
 tikv_util = { workspace = true, default-features = false }
