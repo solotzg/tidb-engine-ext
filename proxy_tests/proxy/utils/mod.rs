@@ -2,4 +2,5 @@
 
 pub mod common;
 pub mod v1;
+pub mod v1_server;
 pub mod v2;
