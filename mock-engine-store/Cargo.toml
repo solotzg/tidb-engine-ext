@@ -14,6 +14,22 @@ protobuf-codec = [
   "protobuf/bytes",
   "kvproto/protobuf-codec",
 ]
+test-engine-kv-rocksdb = [
+  "raftstore/test-engine-kv-rocksdb",
+  "proxy_server/test-engine-kv-rocksdb"
+]
+test-engine-raft-raft-engine = [
+  "raftstore/test-engine-raft-raft-engine",
+  "proxy_server/test-engine-raft-raft-engine"
+]
+test-engines-rocksdb = [
+  "raftstore/test-engines-rocksdb",
+  "proxy_server/test-engines-rocksdb",
+]
+test-engines-panic = [
+  "raftstore/test-engines-panic",
+  "proxy_server/test-engines-panic",
+]
 
 [dependencies]
 api_version = { workspace = true, default-features = false }

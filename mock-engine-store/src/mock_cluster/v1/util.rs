@@ -82,8 +82,9 @@ pub fn create_tiflash_test_engine(
         .storage
         .block_cache
         .build_shared_cache(cfg.storage.engine);
-    let raft_cfs_opt = cfg.raftdb.build_cf_opts(&cache);
 
+    #[allow(unused_variables)]
+    let raft_cfs_opt = cfg.raftdb.build_cf_opts(&cache);
     let kv_cfs_opt = cfg.rocksdb.build_cf_opts(
         &cfg.rocksdb.build_cf_resources(cache),
         None,
@@ -98,13 +99,26 @@ pub fn create_tiflash_test_engine(
     let raft_path = dir.path().join("raft");
     let raft_path_str = raft_path.to_str().unwrap();
 
-    let raft_db_opt = cfg.raftdb.build_opt(env.clone(), None);
-
-    let raft_engine =
-        engine_rocks::util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap();
-
-    // FFI is not usable for now.
-    let engines = Engines::new(engine, raft_engine);
-
-    (engines, key_manager, dir)
+    #[cfg(not(feature = "test-engine-raft-raft-engine"))]
+    {
+        tikv_util::debug!("Using Rocksdb for RaftEngine");
+        let raft_db_opt = cfg.raftdb.build_opt(env.clone(), None);
+        let raft_engine =
+            engine_rocks::util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap();
+        // FFI is not usable for now.
+        let engines = Engines::new(engine, raft_engine);
+        return (engines, key_manager, dir);
+    }
+    #[cfg(feature = "test-engine-raft-raft-engine")]
+    {
+        tikv_util::debug!("Using RaftLogEngine for RaftEngine");
+        let mut raft_log_engine_cfg = cfg.raft_engine.config();
+        raft_log_engine_cfg.dir = String::from(raft_path_str);
+        let raft_engine =
+            raft_log_engine::RaftLogEngine::new(raft_log_engine_cfg, key_manager.clone(), None)
+                .unwrap();
+        // FFI is not usable for now.
+        let engines = Engines::new(engine, raft_engine);
+        return (engines, key_manager, dir);
+    }
 }

@@ -10,7 +10,7 @@ path = "proxy/mod.rs"
 required-features = ["failpoints", "testexport"]
 
 [features]
-default = ["failpoints", "testexport", "test-engine-kv-rocksdb", "test-engine-raft-raft-engine", "cloud-aws", "cloud-gcp", "cloud-azure"]
+default = ["failpoints", "testexport", "test-engine-kv-rocksdb", "cloud-aws", "cloud-gcp", "cloud-azure"]
 failpoints = ["fail/failpoints", "tikv/failpoints"]
 cloud-aws = ["external_storage_export/cloud-aws"]
 cloud-gcp = ["external_storage_export/cloud-gcp"]
@@ -19,16 +19,20 @@ testexport = ["raftstore/testexport", "raftstore-v2/testexport", "tikv/testexpor
 profiling = ["profiler/profiling"]
 
 test-engine-kv-rocksdb = [
-  "raftstore/test-engine-kv-rocksdb"
+  "raftstore/test-engine-kv-rocksdb",
+  "mock-engine-store/test-engine-kv-rocksdb"
 ]
 test-engine-raft-raft-engine = [
-  "raftstore/test-engine-raft-raft-engine"
+  "raftstore/test-engine-raft-raft-engine",
+  "mock-engine-store/test-engine-raft-raft-engine"
 ]
 test-engines-rocksdb = [
   "raftstore/test-engines-rocksdb",
+  "mock-engine-store/test-engines-rocksdb"
 ]
 test-engines-panic = [
   "raftstore/test-engines-panic",
+  "mock-engine-store/test-engines-panic"
 ]
 jemalloc = ["tikv/jemalloc"]
 mimalloc = ["tikv/mimalloc"]

@@ -72,7 +72,7 @@ pub fn delete_kv_in_mem(region: &mut MockRegion, cf_index: usize, k: &[u8]) {
 }
 
 // TODO adapt raftstore-v2
-pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine + engine_traits::Peekable>(
+pub fn copy_meta_from<EK: engine_traits::KvEngine, ER: RaftEngine>(
     source_engines: &Engines<EK, ER>,
     target_engines: &Engines<EK, ER>,
     source: &MockRegion,
