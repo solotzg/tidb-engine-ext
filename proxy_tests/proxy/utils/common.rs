@@ -217,3 +217,39 @@ pub fn must_not_merged(pd_client: Arc<TestPdClient>, from: u64, duration: Durati
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
+
+// TODO maybe use test_raftstore's version.
+pub fn configure_for_lease_read(
+    cluster: &mut impl MixedCluster,
+    base_tick_ms: Option<u64>,
+    election_ticks: Option<usize>,
+) -> Duration {
+    if let Some(base_tick_ms) = base_tick_ms {
+        cluster.mut_config().raft_store.raft_base_tick_interval =
+            ReadableDuration::millis(base_tick_ms);
+    }
+    let base_tick_interval = cluster.mut_config().raft_store.raft_base_tick_interval.0;
+    if let Some(election_ticks) = election_ticks {
+        cluster.mut_config().raft_store.raft_election_timeout_ticks = election_ticks;
+    }
+    let election_ticks = cluster.mut_config().raft_store.raft_election_timeout_ticks as u32;
+    let election_timeout = base_tick_interval * election_ticks;
+    // Adjust max leader lease.
+    cluster.mut_config().raft_store.raft_store_max_leader_lease =
+        ReadableDuration(election_timeout - base_tick_interval);
+    // Use large peer check interval, abnormal and max leader missing duration to
+    // make a valid config, that is election timeout x 2 < peer stale state
+    // check < abnormal < max leader missing duration.
+    cluster
+        .mut_config()
+        .raft_store
+        .peer_stale_state_check_interval = ReadableDuration(election_timeout * 3);
+    cluster
+        .mut_config()
+        .raft_store
+        .abnormal_leader_missing_duration = ReadableDuration(election_timeout * 4);
+    cluster.mut_config().raft_store.max_leader_missing_duration =
+        ReadableDuration(election_timeout * 5);
+
+    election_timeout
+}

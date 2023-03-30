@@ -22,6 +22,8 @@ pub struct FlushedIndex {
     pub data: u64,
 }
 
+/// All in_memory_ state are recorded in EngineStore.
+/// All in_disk_ state can somehow be fetched through KvEngine or RaftEngine.
 #[derive(Debug)]
 pub struct States {
     pub in_memory_apply_state: RaftApplyState,
@@ -32,7 +34,10 @@ pub struct States {
     // TODO maybe unused, we keep that since the persistence of admin.flushed is async.
     #[allow(unused_variables)]
     pub in_memory_flush_index: FlushedIndex,
+    // The flush index in RaftEngine.
     pub in_disk_flush_index: FlushedIndex,
+    // The flush index record in EngineStore.
+    pub in_engine_store_flush_index: FlushedIndex,
     pub ident: StoreIdent,
 }
 
@@ -81,6 +86,7 @@ pub fn maybe_collect_states(
                     in_disk_raft_state: raft_state.unwrap(),
                     in_disk_flush_index: Default::default(),
                     in_memory_flush_index: Default::default(),
+                    in_engine_store_flush_index: Default::default(),
                     ident,
                 },
             );
