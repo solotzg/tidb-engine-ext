@@ -107,7 +107,7 @@ pub fn create_tiflash_test_engine(
             engine_rocks::util::new_engine_opt(raft_path_str, raft_db_opt, raft_cfs_opt).unwrap();
         // FFI is not usable for now.
         let engines = Engines::new(engine, raft_engine);
-        return (engines, key_manager, dir);
+        (engines, key_manager, dir)
     }
     #[cfg(feature = "test-engine-raft-raft-engine")]
     {
@@ -119,6 +119,6 @@ pub fn create_tiflash_test_engine(
                 .unwrap();
         // FFI is not usable for now.
         let engines = Engines::new(engine, raft_engine);
-        return (engines, key_manager, dir);
+        (engines, key_manager, dir)
     }
 }
