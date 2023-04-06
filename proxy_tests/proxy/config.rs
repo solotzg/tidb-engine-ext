@@ -119,7 +119,7 @@ fn test_default_no_config_item() {
 
     assert_eq!(
         config.import.num_threads,
-        std::cmp::max(4, (cpu_num * 2) as usize)
+        std::cmp::max(4, (cpu_num * 2.0) as usize)
     );
     assert_eq!(config.server.status_thread_pool_size, 2);
 

@@ -232,7 +232,7 @@ impl Default for ImportConfig {
         let cpu_num = SysQuota::cpu_cores_quota();
         ImportConfig {
             // We want to use as more resource as possible when doing BR restore.
-            num_threads: std::cmp::max(4, (cpu_num * 2) as usize),
+            num_threads: std::cmp::max(4, (cpu_num * 2.0) as usize),
         }
     }
 }
