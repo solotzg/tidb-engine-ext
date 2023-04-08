@@ -141,7 +141,7 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     register_memory_usage_high_water(high_water);
 
     tikv.core.check_conflict_addr();
-    tikv.init_fs();
+    tikv.core.init_fs();
     tikv.core.init_yatp();
     tikv.core.init_encryption();
 
@@ -743,68 +743,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         );
 
         pd_client
-    }
-
-    fn init_fs(&mut self) {
-        let lock_path = self.core.store_path.join(Path::new("LOCK"));
-
-        let f = File::create(lock_path.as_path())
-            .unwrap_or_else(|e| fatal!("failed to create lock at {}: {}", lock_path.display(), e));
-        if f.try_lock_exclusive().is_err() {
-            fatal!(
-                "lock {} failed, maybe another instance is using this directory.",
-                self.core.store_path.display()
-            );
-        }
-        self.core.lock_files.push(f);
-
-        if tikv_util::panic_mark_file_exists(&self.core.config.storage.data_dir) {
-            fatal!(
-                "panic_mark_file {} exists, there must be something wrong with the db. \
-                     Do not remove the panic_mark_file and force the TiKV node to restart. \
-                     Please contact TiKV maintainers to investigate the issue. \
-                     If needed, use scale in and scale out to replace the TiKV node. \
-                     https://docs.pingcap.com/tidb/stable/scale-tidb-using-tiup",
-                tikv_util::panic_mark_file_path(&self.core.config.storage.data_dir).display()
-            );
-        }
-
-        // We truncate a big file to make sure that both raftdb and kvdb of TiKV have
-        // enough space to do compaction and region migration when TiKV recover.
-        // This file is created in data_dir rather than db_path, because we must
-        // not increase store size of db_path.
-        let disk_stats = fs2::statvfs(&self.core.config.storage.data_dir).unwrap();
-        let mut capacity = disk_stats.total_space();
-        if self.core.config.raft_store.capacity.0 > 0 {
-            capacity = cmp::min(capacity, self.core.config.raft_store.capacity.0);
-        }
-
-        let mut reserve_space = self.core.config.storage.reserve_space.0;
-        if self.core.config.storage.reserve_space.0 != 0 {
-            reserve_space = cmp::max(
-                (capacity as f64 * 0.05) as u64,
-                self.core.config.storage.reserve_space.0,
-            );
-        }
-        disk::set_disk_reserved_space(reserve_space);
-        let path =
-            Path::new(&self.core.config.storage.data_dir).join(file_system::SPACE_PLACEHOLDER_FILE);
-        if let Err(e) = file_system::remove_file(&path) {
-            warn!("failed to remove space holder on starting: {}", e);
-        }
-
-        let available = disk_stats.available_space();
-        // place holder file size is 20% of total reserved space.
-        if available > reserve_space {
-            file_system::reserve_space_for_recover(
-                &self.core.config.storage.data_dir,
-                reserve_space / 5,
-            )
-            .map_err(|e| panic!("Failed to reserve space for recovery: {}.", e))
-            .unwrap();
-        } else {
-            warn!("no enough disk space left to create the place holder file");
-        }
     }
 
     pub fn init_engines(&mut self, engines: Engines<TiFlashEngine, ER>) {
