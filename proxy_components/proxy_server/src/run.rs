@@ -118,8 +118,13 @@ use tikv_util::{
 use tokio::runtime::Builder;
 
 use crate::{
-    config::ProxyConfig, engine::ProxyRocksEngine, fatal,
-    hacked_lock_mgr::HackedLockManager as LockManager, setup::*, status_server::StatusServer,
+    common::{check_system_config, TikvServerCore},
+    config::ProxyConfig,
+    engine::ProxyRocksEngine,
+    fatal,
+    hacked_lock_mgr::HackedLockManager as LockManager,
+    setup::*,
+    status_server::StatusServer,
     util::ffi_server_info,
 };
 
@@ -137,10 +142,10 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     let high_water = (tikv.config.memory_usage_high_water * memory_limit as f64) as u64;
     register_memory_usage_high_water(high_water);
 
-    tikv.check_conflict_addr();
+    tikv.core.check_conflict_addr();
     tikv.init_fs();
-    tikv.init_yatp();
-    tikv.init_encryption();
+    tikv.core.init_yatp();
+    tikv.core.init_encryption();
 
     let mut proxy = RaftStoreProxy::new(
         AtomicU8::new(RaftProxyStatus::Idle as u8),
@@ -179,8 +184,8 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
 
     info!("engine-store server is started");
 
-    let fetcher = tikv.init_io_utility();
-    let listener = tikv.init_flow_receiver();
+    let fetcher = tikv.core.init_io_utility();
+    let listener = tikv.core.init_flow_receiver();
     let engine_store_server_helper_ptr = engine_store_server_helper as *const _ as isize;
     // Will call TiFlashEngine::init
     let (engines, engines_info) =
@@ -511,20 +516,16 @@ const DEFAULT_STORAGE_STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A complete TiKV server.
 struct TiKvServer<ER: RaftEngine> {
-    config: TikvConfig,
     proxy_config: ProxyConfig,
     engine_store_server_helper_ptr: isize,
+    core: TikvServerCore,
     cfg_controller: Option<ConfigController>,
     security_mgr: Arc<SecurityManager>,
     pd_client: Arc<RpcClient>,
     router: RaftRouter<TiFlashEngine, ER>,
-    flow_info_sender: Option<mpsc::Sender<FlowInfo>>,
-    flow_info_receiver: Option<mpsc::Receiver<FlowInfo>>,
     system: Option<RaftBatchSystem<TiFlashEngine, ER>>,
     resolver: Option<resolve::PdStoreAddrResolver>,
-    store_path: PathBuf,
     snap_mgr: Option<SnapManager>, // Will be filled in `init_servers`.
-    encryption_key_manager: Option<Arc<DataKeyManager>>,
     engines: Option<TiKvEngines<TiFlashEngine, ER>>,
     kv_statistics: Option<Arc<RocksStatistics>>,
     raft_statistics: Option<Arc<RocksStatistics>>,
@@ -532,7 +533,6 @@ struct TiKvServer<ER: RaftEngine> {
     region_info_accessor: RegionInfoAccessor,
     coprocessor_host: Option<CoprocessorHost<TiFlashEngine>>,
     to_stop: Vec<Box<dyn Stop>>,
-    lock_files: Vec<File>,
     concurrency_manager: ConcurrencyManager,
     env: Arc<Environment>,
     background_worker: Worker,
@@ -638,18 +638,23 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         ));
 
         TiKvServer {
-            config,
             proxy_config,
             engine_store_server_helper_ptr,
+            core: TikvServerCore {
+                config,
+                store_path,
+                lock_files: vec![],
+                encryption_key_manager: None,
+                flow_info_sender: None,
+                flow_info_receiver: None,
+            },
             cfg_controller: Some(cfg_controller),
             security_mgr,
             pd_client,
             router,
             system: Some(system),
             resolver: None,
-            store_path,
             snap_mgr: None,
-            encryption_key_manager: None,
             engines: None,
             kv_statistics: None,
             raft_statistics: None,
@@ -657,12 +662,9 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             region_info_accessor,
             coprocessor_host,
             to_stop: vec![],
-            lock_files: vec![],
             concurrency_manager,
             env,
             background_worker,
-            flow_info_sender: None,
-            flow_info_receiver: None,
             sst_worker: None,
             quota_limiter,
             resource_manager,
@@ -744,43 +746,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         pd_client
     }
 
-    fn check_conflict_addr(&mut self) {
-        let cur_addr: SocketAddr = self
-            .config
-            .server
-            .addr
-            .parse()
-            .expect("failed to parse into a socket address");
-        let cur_ip = cur_addr.ip();
-        let cur_port = cur_addr.port();
-        let lock_dir = get_lock_dir();
-
-        let search_base = env::temp_dir().join(&lock_dir);
-        file_system::create_dir_all(&search_base)
-            .unwrap_or_else(|_| panic!("create {} failed", search_base.display()));
-
-        for entry in file_system::read_dir(&search_base).unwrap().flatten() {
-            if !entry.file_type().unwrap().is_file() {
-                continue;
-            }
-            let file_path = entry.path();
-            let file_name = file_path.file_name().unwrap().to_str().unwrap();
-            if let Ok(addr) = file_name.replace('_', ":").parse::<SocketAddr>() {
-                let ip = addr.ip();
-                let port = addr.port();
-                if cur_port == port
-                    && (cur_ip == ip || cur_ip.is_unspecified() || ip.is_unspecified())
-                {
-                    let _ = try_lock_conflict_addr(file_path);
-                }
-            }
-        }
-
-        let cur_path = search_base.join(cur_addr.to_string().replace(':', "_"));
-        let cur_file = try_lock_conflict_addr(cur_path);
-        self.lock_files.push(cur_file);
-    }
-
     fn init_fs(&mut self) {
         let lock_path = self.store_path.join(Path::new("LOCK"));
 
@@ -841,35 +806,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         } else {
             warn!("no enough disk space left to create the place holder file");
         }
-    }
-
-    fn init_yatp(&self) {
-        yatp::metrics::set_namespace(Some("tikv"));
-        prometheus::register(Box::new(yatp::metrics::MULTILEVEL_LEVEL0_CHANCE.clone())).unwrap();
-        prometheus::register(Box::new(yatp::metrics::MULTILEVEL_LEVEL_ELAPSED.clone())).unwrap();
-    }
-
-    fn init_encryption(&mut self) {
-        self.encryption_key_manager = data_key_manager_from_config(
-            &self.config.security.encryption,
-            &self.config.storage.data_dir,
-        )
-        .map_err(|e| {
-            panic!(
-                "Encryption failed to initialize: {}. code: {}",
-                e,
-                e.error_code()
-            )
-        })
-        .unwrap()
-        .map(Arc::new);
-    }
-
-    fn init_flow_receiver(&mut self) -> engine_rocks::FlowListener {
-        let (tx, rx) = mpsc::channel();
-        self.flow_info_sender = Some(tx.clone());
-        self.flow_info_receiver = Some(rx);
-        engine_rocks::FlowListener::new(tx)
     }
 
     pub fn init_engines(&mut self, engines: Engines<TiFlashEngine, ER>) {
@@ -1490,28 +1426,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // Backup service.
     }
 
-    fn init_io_utility(&mut self) -> BytesFetcher {
-        let stats_collector_enabled = file_system::init_io_stats_collector()
-            .map_err(|e| warn!("failed to init I/O stats collector: {}", e))
-            .is_ok();
-
-        let limiter = Arc::new(
-            self.config
-                .storage
-                .io_rate_limit
-                .build(!stats_collector_enabled /* enable_statistics */),
-        );
-        let fetcher = if stats_collector_enabled {
-            BytesFetcher::FromIoStatsCollector()
-        } else {
-            BytesFetcher::FromRateLimiter(limiter.statistics().unwrap())
-        };
-        // Set up IO limiter even when rate limit is disabled, so that rate limits can
-        // be dynamically applied later on.
-        set_io_rate_limiter(Some(limiter));
-        fetcher
-    }
-
     fn init_metrics_flusher(
         &mut self,
         fetcher: BytesFetcher,
@@ -1855,67 +1769,6 @@ fn pre_start() {
             "err" => %e
         );
     }
-}
-
-fn check_system_config(config: &TikvConfig) {
-    info!("beginning system configuration check");
-    let mut rocksdb_max_open_files = config.rocksdb.max_open_files;
-    if config.rocksdb.titan.enabled {
-        // Titan engine maintains yet another pool of blob files and uses the same max
-        // number of open files setup as rocksdb does. So we double the max required
-        // open files here
-        rocksdb_max_open_files *= 2;
-    }
-    if let Err(e) = tikv_util::config::check_max_open_fds(
-        RESERVED_OPEN_FDS + (rocksdb_max_open_files + config.raftdb.max_open_files) as u64,
-    ) {
-        fatal!("{}", e);
-    }
-
-    // Check RocksDB data dir
-    if let Err(e) = tikv_util::config::check_data_dir(&config.storage.data_dir) {
-        warn!(
-            "check: rocksdb-data-dir";
-            "path" => &config.storage.data_dir,
-            "err" => %e
-        );
-    }
-    // Check raft data dir
-    if let Err(e) = tikv_util::config::check_data_dir(&config.raft_store.raftdb_path) {
-        warn!(
-            "check: raftdb-path";
-            "path" => &config.raft_store.raftdb_path,
-            "err" => %e
-        );
-    }
-}
-
-fn try_lock_conflict_addr<P: AsRef<Path>>(path: P) -> File {
-    let f = File::create(path.as_ref()).unwrap_or_else(|e| {
-        fatal!(
-            "failed to create lock at {}: {}",
-            path.as_ref().display(),
-            e
-        )
-    });
-
-    if f.try_lock_exclusive().is_err() {
-        fatal!(
-            "{} already in use, maybe another instance is binding with this address.",
-            path.as_ref().file_name().unwrap().to_str().unwrap()
-        );
-    }
-    f
-}
-
-#[cfg(unix)]
-fn get_lock_dir() -> String {
-    format!("{}_TIKV_LOCK_FILES", unsafe { libc::getuid() })
-}
-
-#[cfg(not(unix))]
-fn get_lock_dir() -> String {
-    "TIKV_LOCK_FILES".to_owned()
 }
 
 /// A small trait for components which can be trivially stopped. Lets us keep
