@@ -35,8 +35,8 @@ use engine_store_ffi::{
 };
 use engine_tiflash::PSLogEngine;
 use engine_traits::{
-    Engines, KvEngine, MiscExt, RaftEngine, SingletonFactory, StatisticsReporter, TabletContext,
-    TabletRegistry, CF_DEFAULT, CF_WRITE,
+    Engines, KvEngine, MiscExt, RaftEngine, SingletonFactory, TabletContext, TabletRegistry,
+    CF_DEFAULT, CF_WRITE,
 };
 use error_code::ErrorCodeExt;
 use file_system::{get_io_rate_limiter, BytesFetcher, MetricsManager as IOMetricsManager};
@@ -504,7 +504,6 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
 
 const DEFAULT_METRICS_FLUSH_INTERVAL: Duration = Duration::from_millis(10_000);
 const DEFAULT_MEMTRACE_FLUSH_INTERVAL: Duration = Duration::from_millis(1_000);
-const DEFAULT_ENGINE_METRICS_RESET_INTERVAL: Duration = Duration::from_millis(60_000);
 const DEFAULT_STORAGE_STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A complete TiKV server.
@@ -569,8 +568,11 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 .name_prefix(thd_name!(GRPC_THREAD_PREFIX))
                 .build(),
         );
-        let pd_client =
-            Self::connect_to_pd_cluster(&mut config, env.clone(), Arc::clone(&security_mgr));
+        let pd_client = TikvServerCore::connect_to_pd_cluster(
+            &mut config,
+            env.clone(),
+            Arc::clone(&security_mgr),
+        );
 
         // Initialize and check config
         info!("using proxy config"; "config" => ?proxy_config);
@@ -708,31 +710,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         config.write_into_metrics();
 
         ConfigController::new(config)
-    }
-
-    fn connect_to_pd_cluster(
-        config: &mut TikvConfig,
-        env: Arc<Environment>,
-        security_mgr: Arc<SecurityManager>,
-    ) -> Arc<RpcClient> {
-        let pd_client = Arc::new(
-            RpcClient::new(&config.pd, Some(env), security_mgr)
-                .unwrap_or_else(|e| fatal!("failed to create rpc client: {}", e)),
-        );
-
-        let cluster_id = pd_client
-            .get_cluster_id()
-            .unwrap_or_else(|e| fatal!("failed to get cluster id: {}", e));
-        if cluster_id == DEFAULT_CLUSTER_ID {
-            fatal!("cluster id can't be {}", DEFAULT_CLUSTER_ID);
-        }
-        config.server.cluster_id = cluster_id;
-        info!(
-            "connect to PD cluster";
-            "cluster_id" => cluster_id
-        );
-
-        pd_client
     }
 
     pub fn init_engines(&mut self, engines: Engines<TiFlashEngine, ER>) {

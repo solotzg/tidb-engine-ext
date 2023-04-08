@@ -18,16 +18,12 @@ use engine_rocks::{
 use engine_store_ffi::{self, TiFlashEngine};
 use engine_tiflash::PSLogEngine;
 use engine_traits::{
-    CfOptionsExt, Engines, FlowControlFactorsExt, MiscExt, RaftEngine, StatisticsReporter,
-    CF_DEFAULT, CF_LOCK, CF_WRITE,
+    CfOptionsExt, Engines, FlowControlFactorsExt, RaftEngine, CF_DEFAULT, CF_LOCK, CF_WRITE,
 };
 use file_system::{get_io_rate_limiter, File, IoBudgetAdjustor};
 use raft_log_engine::RaftLogEngine;
 use server::raft_engine_switch::*;
-use tikv::{
-    config::{ConfigController, DbConfigManger, DbType, TikvConfig},
-    storage::Engine,
-};
+use tikv::config::{ConfigController, DbConfigManger, DbType, TikvConfig};
 use tikv_util::{config::RaftDataStateMachine, math::MovingAvgU32, time::Instant};
 
 use crate::{common::Stop, status_server::StatusServer};
