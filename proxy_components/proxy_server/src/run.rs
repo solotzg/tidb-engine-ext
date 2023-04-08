@@ -4,11 +4,10 @@
 use std::{
     cmp,
     convert::TryFrom,
-    fmt,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8},
         mpsc, Arc, Mutex,
     },
     thread,
@@ -18,12 +17,8 @@ use std::{
 
 use api_version::{dispatch_api_version, KvFormat};
 use concurrency_manager::ConcurrencyManager;
-use encryption_export::{data_key_manager_from_config, DataKeyManager};
-use engine_rocks::{
-    flush_engine_statistics, from_rocks_compression_type,
-    raw::{Cache, Env},
-    RocksEngine, RocksStatistics,
-};
+use encryption_export::data_key_manager_from_config;
+use engine_rocks::{from_rocks_compression_type, RocksEngine, RocksStatistics};
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
     self,
@@ -40,14 +35,11 @@ use engine_store_ffi::{
 };
 use engine_tiflash::PSLogEngine;
 use engine_traits::{
-    CachedTablet, CfOptionsExt, Engines, FlowControlFactorsExt, KvEngine, MiscExt, RaftEngine,
-    SingletonFactory, StatisticsReporter, TabletContext, TabletRegistry, CF_DEFAULT, CF_LOCK,
-    CF_WRITE,
+    Engines, KvEngine, MiscExt, RaftEngine, SingletonFactory, StatisticsReporter, TabletContext,
+    TabletRegistry, CF_DEFAULT, CF_WRITE,
 };
 use error_code::ErrorCodeExt;
-use file_system::{
-    get_io_rate_limiter, BytesFetcher, File, IoBudgetAdjustor, MetricsManager as IOMetricsManager,
-};
+use file_system::{get_io_rate_limiter, BytesFetcher, MetricsManager as IOMetricsManager};
 use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
 use grpcio_health::HealthService;
@@ -74,7 +66,7 @@ use resource_control::{
     ResourceGroupManager, ResourceManagerService, MIN_PRIORITY_UPDATE_INTERVAL,
 };
 use security::SecurityManager;
-use server::{memory::*, raft_engine_switch::*};
+use server::memory::*;
 use tikv::{
     config::{ConfigController, DbConfigManger, DbType, TikvConfig},
     coprocessor::{self, MEMTRACE_ROOT as MEMTRACE_COPROCESSOR},
@@ -102,14 +94,13 @@ use tikv::{
 };
 use tikv_util::{
     check_environment_variables,
-    config::{ensure_dir_exist, RaftDataStateMachine, ReadableDuration, VersionTrack},
+    config::{ensure_dir_exist, ReadableDuration, VersionTrack},
     error,
-    math::MovingAvgU32,
     quota_limiter::{QuotaLimitConfigManager, QuotaLimiter},
     sys::{disk, register_memory_usage_high_water, thread::ThreadBuildWrapper, SysQuota},
     thread_group::GroupProperties,
     time::{Instant, Monitor},
-    worker::{Builder as WorkerBuilder, LazyWorker, Scheduler, Worker},
+    worker::{Builder as WorkerBuilder, LazyWorker, Scheduler},
     yatp_pool::CleanupMethod,
     Either,
 };
