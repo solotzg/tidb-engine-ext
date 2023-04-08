@@ -4,8 +4,7 @@
 use std::{
     cmp,
     convert::TryFrom,
-    env, fmt,
-    net::SocketAddr,
+    fmt,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
@@ -23,7 +22,7 @@ use encryption_export::{data_key_manager_from_config, DataKeyManager};
 use engine_rocks::{
     flush_engine_statistics, from_rocks_compression_type,
     raw::{Cache, Env},
-    FlowInfo, RocksEngine, RocksStatistics,
+    RocksEngine, RocksStatistics,
 };
 use engine_rocks_helper::sst_recovery::{RecoveryRunner, DEFAULT_CHECK_INTERVAL};
 use engine_store_ffi::{
@@ -47,8 +46,7 @@ use engine_traits::{
 };
 use error_code::ErrorCodeExt;
 use file_system::{
-    get_io_rate_limiter, set_io_rate_limiter, BytesFetcher, File, IoBudgetAdjustor,
-    MetricsManager as IOMetricsManager,
+    get_io_rate_limiter, BytesFetcher, File, IoBudgetAdjustor, MetricsManager as IOMetricsManager,
 };
 use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
@@ -138,8 +136,8 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     let mut tikv = TiKvServer::<CER>::init(config, proxy_config, engine_store_server_helper_ptr);
 
     // Must be called after `TiKvServer::init`.
-    let memory_limit = tikv.config.memory_usage_limit.unwrap().0;
-    let high_water = (tikv.config.memory_usage_high_water * memory_limit as f64) as u64;
+    let memory_limit = tikv.core.config.memory_usage_limit.unwrap().0;
+    let high_water = (tikv.core.config.memory_usage_high_water * memory_limit as f64) as u64;
     register_memory_usage_high_water(high_water);
 
     tikv.core.check_conflict_addr();
@@ -149,7 +147,7 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
 
     let mut proxy = RaftStoreProxy::new(
         AtomicU8::new(RaftProxyStatus::Idle as u8),
-        tikv.encryption_key_manager.clone(),
+        tikv.core.encryption_key_manager.clone(),
         Some(Box::new(ReadIndexClient::new(
             tikv.router.clone(),
             SysQuota::cpu_cores_quota() as usize * 2,
@@ -423,20 +421,25 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         engine_store_server_helper: isize,
     ) -> (Engines<TiFlashEngine, CER>, Arc<EnginesResourceInfo>) {
         let block_cache = self
+            .core
             .config
             .storage
             .block_cache
-            .build_shared_cache(self.config.storage.engine);
+            .build_shared_cache(self.core.config.storage.engine);
         let env = self
+            .core
             .config
-            .build_shared_rocks_env(self.encryption_key_manager.clone(), get_io_rate_limiter())
+            .build_shared_rocks_env(
+                self.core.encryption_key_manager.clone(),
+                get_io_rate_limiter(),
+            )
             .unwrap();
 
         // Create raft engine
         let (mut raft_engine, raft_statistics) = CER::build(
-            &self.config,
+            &self.core.config,
             &env,
-            &self.encryption_key_manager,
+            &self.core.encryption_key_manager,
             &block_cache,
         );
         self.raft_statistics = raft_statistics;
@@ -449,7 +452,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         }
 
         // Create kv engine.
-        let builder = KvEngineFactoryBuilder::new(env, &self.config, block_cache)
+        let builder = KvEngineFactoryBuilder::new(env, &self.core.config, block_cache)
             // TODO(tiflash) check if we need a old version of RocksEngine, or if we need to upgrade
             // .compaction_filter_router(self.router.clone())
             .region_info_accessor(self.region_info_accessor.clone())
@@ -457,7 +460,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
             .flow_listener(flow_listener);
         let factory = Box::new(builder.build());
         let kv_engine = factory
-            .create_shared_db(&self.store_path)
+            .create_shared_db(&self.core.store_path)
             .unwrap_or_else(|s| fatal!("failed to create kv engine: {}", s));
 
         self.kv_statistics = Some(factory.rocks_statistics());
@@ -490,7 +493,7 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
 
         let reg = TabletRegistry::new(
             Box::new(SingletonFactory::new(kv_engine.rocks.clone())),
-            &self.store_path,
+            &self.core.store_path,
         )
         .unwrap();
         // It always use the singleton kv_engine, use arbitrary id and suffix.
@@ -506,8 +509,6 @@ impl<CER: ConfiguredRaftEngine> TiKvServer<CER> {
         (engines, engines_info)
     }
 }
-
-const RESERVED_OPEN_FDS: u64 = 1000;
 
 const DEFAULT_METRICS_FLUSH_INTERVAL: Duration = Duration::from_millis(10_000);
 const DEFAULT_MEMTRACE_FLUSH_INTERVAL: Duration = Duration::from_millis(1_000);
@@ -583,8 +584,9 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Initialize and check config
         info!("using proxy config"; "config" => ?proxy_config);
-
-        let cfg_controller = Self::init_config(config, &proxy_config);
+        crate::config::address_proxy_config(&mut config, &proxy_config);
+        info!("after address config"; "config" => ?config);
+        let cfg_controller = Self::init_config(config);
         let config = cfg_controller.get_current();
 
         let store_path = Path::new(&config.storage.data_dir).to_owned();
@@ -684,10 +686,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     /// - If the config can't pass `validate()`
     /// - If the max open file descriptor limit is not high enough to support
     ///   the main database and the raft database.
-    fn init_config(mut config: TikvConfig, proxy_config: &ProxyConfig) -> ConfigController {
-        crate::config::address_proxy_config(&mut config, proxy_config);
+    fn init_config(mut config: TikvConfig) -> ConfigController {
         crate::config::validate_and_persist_config(&mut config, true);
-        info!("after address config"; "config" => ?config);
 
         ensure_dir_exist(&config.storage.data_dir).unwrap();
         if !config.rocksdb.wal_dir.is_empty() {
@@ -709,7 +709,6 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         info!(
             "using config";
             "config" => serde_json::to_string(&config).unwrap(),
-            "proxy_config" => serde_json::to_string(proxy_config).unwrap(),
         );
         if config.panic_when_unexpected_key_or_data {
             info!("panic-when-unexpected-key-or-data is on");
@@ -747,26 +746,26 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     }
 
     fn init_fs(&mut self) {
-        let lock_path = self.store_path.join(Path::new("LOCK"));
+        let lock_path = self.core.store_path.join(Path::new("LOCK"));
 
         let f = File::create(lock_path.as_path())
             .unwrap_or_else(|e| fatal!("failed to create lock at {}: {}", lock_path.display(), e));
         if f.try_lock_exclusive().is_err() {
             fatal!(
                 "lock {} failed, maybe another instance is using this directory.",
-                self.store_path.display()
+                self.core.store_path.display()
             );
         }
-        self.lock_files.push(f);
+        self.core.lock_files.push(f);
 
-        if tikv_util::panic_mark_file_exists(&self.config.storage.data_dir) {
+        if tikv_util::panic_mark_file_exists(&self.core.config.storage.data_dir) {
             fatal!(
                 "panic_mark_file {} exists, there must be something wrong with the db. \
                      Do not remove the panic_mark_file and force the TiKV node to restart. \
                      Please contact TiKV maintainers to investigate the issue. \
                      If needed, use scale in and scale out to replace the TiKV node. \
                      https://docs.pingcap.com/tidb/stable/scale-tidb-using-tiup",
-                tikv_util::panic_mark_file_path(&self.config.storage.data_dir).display()
+                tikv_util::panic_mark_file_path(&self.core.config.storage.data_dir).display()
             );
         }
 
@@ -774,22 +773,22 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // enough space to do compaction and region migration when TiKV recover.
         // This file is created in data_dir rather than db_path, because we must
         // not increase store size of db_path.
-        let disk_stats = fs2::statvfs(&self.config.storage.data_dir).unwrap();
+        let disk_stats = fs2::statvfs(&self.core.config.storage.data_dir).unwrap();
         let mut capacity = disk_stats.total_space();
-        if self.config.raft_store.capacity.0 > 0 {
-            capacity = cmp::min(capacity, self.config.raft_store.capacity.0);
+        if self.core.config.raft_store.capacity.0 > 0 {
+            capacity = cmp::min(capacity, self.core.config.raft_store.capacity.0);
         }
 
-        let mut reserve_space = self.config.storage.reserve_space.0;
-        if self.config.storage.reserve_space.0 != 0 {
+        let mut reserve_space = self.core.config.storage.reserve_space.0;
+        if self.core.config.storage.reserve_space.0 != 0 {
             reserve_space = cmp::max(
                 (capacity as f64 * 0.05) as u64,
-                self.config.storage.reserve_space.0,
+                self.core.config.storage.reserve_space.0,
             );
         }
         disk::set_disk_reserved_space(reserve_space);
         let path =
-            Path::new(&self.config.storage.data_dir).join(file_system::SPACE_PLACEHOLDER_FILE);
+            Path::new(&self.core.config.storage.data_dir).join(file_system::SPACE_PLACEHOLDER_FILE);
         if let Err(e) = file_system::remove_file(&path) {
             warn!("failed to remove space holder on starting: {}", e);
         }
@@ -798,7 +797,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // place holder file size is 20% of total reserved space.
         if available > reserve_space {
             file_system::reserve_space_for_recover(
-                &self.config.storage.data_dir,
+                &self.core.config.storage.data_dir,
                 reserve_space / 5,
             )
             .map_err(|e| panic!("Failed to reserve space for recovery: {}.", e))
@@ -836,8 +835,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         let engines = self.engines.as_ref().unwrap();
         let gc_worker = GcWorker::new(
             engines.engine.clone(),
-            self.flow_info_sender.take().unwrap(),
-            self.config.gc.clone(),
+            self.core.flow_info_sender.take().unwrap(),
+            self.core.config.gc.clone(),
             self.pd_client.feature_gate().clone(),
             Arc::new(self.region_info_accessor.clone()),
         );
@@ -853,9 +852,9 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
     fn init_servers<F: KvFormat>(&mut self) -> Arc<VersionTrack<ServerConfig>> {
         let flow_controller = Arc::new(FlowController::Singleton(EngineFlowController::new(
-            &self.config.storage.flow_control,
+            &self.core.config.storage.flow_control,
             self.engines.as_ref().unwrap().engine.kv_engine().unwrap(),
-            self.flow_info_receiver.take().unwrap(),
+            self.core.flow_info_receiver.take().unwrap(),
         )));
         let mut gc_worker = self.init_gc_worker();
         let mut ttl_checker = Box::new(LazyWorker::new("ttl-checker"));
@@ -882,7 +881,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //     .engine
         //     .set_txn_extra_scheduler(Arc::new(txn_extra_scheduler));
 
-        // let lock_mgr = LockManager::new(&self.config.pessimistic_txn);
+        // let lock_mgr = LockManager::new(&self.core.config.pessimistic_txn);
         let lock_mgr = LockManager::new();
         // cfg_controller.register(
         //     tikv::config::Module::PessimisticTxn,
@@ -900,20 +899,24 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             let sst_runner = RecoveryRunner::new(
                 engines.engines.kv.rocks.clone(),
                 engines.store_meta.clone(),
-                self.config.storage.background_error_recovery_window.into(),
+                self.core
+                    .config
+                    .storage
+                    .background_error_recovery_window
+                    .into(),
                 DEFAULT_CHECK_INTERVAL,
             );
             sst_worker.start_with_timer(sst_runner);
         }
 
-        let unified_read_pool = if self.config.readpool.is_unified_pool_enabled() {
+        let unified_read_pool = if self.core.config.readpool.is_unified_pool_enabled() {
             let resource_ctl = self
                 .resource_manager
                 .as_ref()
                 .map(|m| m.derive_controller("unified-read-pool".into(), true));
 
             Some(build_yatp_read_pool(
-                &self.config.readpool.unified,
+                &self.core.config.readpool.unified,
                 pd_sender.clone(),
                 engines.engine.clone(),
                 resource_ctl,
@@ -941,23 +944,25 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // TODO(tiflash) Maybe we can remove this service.
         // Start resource metering.
         let (recorder_notifier, collector_reg_handle, resource_tag_factory, recorder_worker) =
-            resource_metering::init_recorder(self.config.resource_metering.precision.as_millis());
+            resource_metering::init_recorder(
+                self.core.config.resource_metering.precision.as_millis(),
+            );
         self.to_stop.push(recorder_worker);
         let (reporter_notifier, data_sink_reg_handle, reporter_worker) =
             resource_metering::init_reporter(
-                self.config.resource_metering.clone(),
+                self.core.config.resource_metering.clone(),
                 collector_reg_handle.clone(),
             );
         self.to_stop.push(reporter_worker);
         let (address_change_notifier, single_target_worker) = resource_metering::init_single_target(
-            self.config.resource_metering.receiver_address.clone(),
+            self.core.config.resource_metering.receiver_address.clone(),
             self.env.clone(),
             data_sink_reg_handle.clone(),
         );
         self.to_stop.push(single_target_worker);
 
         let cfg_manager = resource_metering::ConfigManager::new(
-            self.config.resource_metering.clone(),
+            self.core.config.resource_metering.clone(),
             recorder_notifier,
             reporter_notifier,
             address_change_notifier,
@@ -967,11 +972,11 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             Box::new(cfg_manager),
         );
 
-        let storage_read_pool_handle = if self.config.readpool.storage.use_unified_pool() {
+        let storage_read_pool_handle = if self.core.config.readpool.storage.use_unified_pool() {
             unified_read_pool.as_ref().unwrap().handle()
         } else {
             let storage_read_pools = ReadPool::from(storage::build_read_pool(
-                &self.config.readpool.storage,
+                &self.core.config.readpool.storage,
                 pd_sender.clone(),
                 engines.engine.clone(),
             ));
@@ -989,7 +994,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         let storage = Storage::<_, _, F>::from_engine(
             engines.engine.clone(),
-            &self.config.storage,
+            &self.core.config.storage,
             storage_read_pool_handle,
             lock_mgr.clone(),
             self.concurrency_manager.clone(),
@@ -1028,20 +1033,21 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Create snapshot manager, server.
         let snap_path = self
+            .core
             .store_path
             .join(Path::new("snap"))
             .to_str()
             .unwrap()
             .to_owned();
 
-        let bps = i64::try_from(self.config.server.snap_io_max_bytes_per_sec.0)
+        let bps = i64::try_from(self.core.config.server.snap_io_max_bytes_per_sec.0)
             .unwrap_or_else(|_| fatal!("snap_io_max_bytes_per_sec > i64::max_value"));
 
         let snap_mgr = SnapManagerBuilder::default()
             .max_write_bytes_per_sec(bps)
-            .max_total_size(self.config.server.snap_max_total_size.0)
-            .encryption_key_manager(self.encryption_key_manager.clone())
-            .max_per_file_size(self.config.raft_store.max_snapshot_file_raw_size.0)
+            .max_total_size(self.core.config.server.snap_max_total_size.0)
+            .encryption_key_manager(self.core.encryption_key_manager.clone())
+            .max_per_file_size(self.core.config.raft_store.max_snapshot_file_raw_size.0)
             .enable_multi_snapshot_files(
                 self.pd_client
                     .feature_gate()
@@ -1050,11 +1056,11 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             .build(snap_path);
 
         // Create coprocessor endpoint.
-        let cop_read_pool_handle = if self.config.readpool.coprocessor.use_unified_pool() {
+        let cop_read_pool_handle = if self.core.config.readpool.coprocessor.use_unified_pool() {
             unified_read_pool.as_ref().unwrap().handle()
         } else {
             let cop_read_pools = ReadPool::from(coprocessor::readpool_impl::build_read_pool(
-                &self.config.readpool.coprocessor,
+                &self.core.config.readpool.coprocessor,
                 pd_sender,
                 engines.engine.clone(),
             ));
@@ -1062,7 +1068,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         };
 
         let mut unified_read_pool_scale_receiver = None;
-        if self.config.readpool.is_unified_pool_enabled() {
+        if self.core.config.readpool.is_unified_pool_enabled() {
             let (unified_read_pool_scale_notifier, rx) = mpsc::sync_channel(10);
             cfg_controller.register(
                 tikv::config::Module::Readpool,
@@ -1070,8 +1076,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                     unified_read_pool.as_ref().unwrap().handle(),
                     unified_read_pool_scale_notifier,
                     &self.background_worker,
-                    self.config.readpool.unified.max_thread_count,
-                    self.config.readpool.unified.auto_adjust_pool_size,
+                    self.core.config.readpool.unified.max_thread_count,
+                    self.core.config.readpool.unified.auto_adjust_pool_size,
                 )),
             );
             unified_read_pool_scale_receiver = Some(rx);
@@ -1081,8 +1087,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // if let ApiVersion::V2 = F::TAG {
         //     let tso = block_on(causal_ts::BatchTsoProvider::new_opt(
         //         self.pd_client.clone(),
-        //         self.config.causal_ts.renew_interval.0,
-        //         self.config.causal_ts.renew_batch_min_size,
+        //         self.core.config.causal_ts.renew_interval.0,
+        //         self.core.config.causal_ts.renew_batch_min_size,
         //     ));
         //     if let Err(e) = tso {
         //         panic!("Causal timestamp provider initialize failed: {:?}", e);
@@ -1104,7 +1110,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // );
 
         // // Create resolved ts worker
-        // let rts_worker = if self.config.resolved_ts.enable {
+        // let rts_worker = if self.core.config.resolved_ts.enable {
         //     let worker = Box::new(LazyWorker::new("resolved-ts"));
         //     // Register the resolved ts observer
         //     let resolved_ts_ob = resolved_ts::Observer::new(worker.scheduler());
@@ -1121,17 +1127,18 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //     None
         // };
 
-        let server_config = Arc::new(VersionTrack::new(self.config.server.clone()));
+        let server_config = Arc::new(VersionTrack::new(self.core.config.server.clone()));
 
-        self.config
+        self.core
+            .config
             .raft_store
             .validate(
-                self.config.coprocessor.region_split_size(),
-                self.config.coprocessor.enable_region_bucket(),
-                self.config.coprocessor.region_bucket_size,
+                self.core.config.coprocessor.region_split_size(),
+                self.core.config.coprocessor.enable_region_bucket(),
+                self.core.config.coprocessor.region_bucket_size,
             )
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
-        let raft_store = Arc::new(VersionTrack::new(self.config.raft_store.clone()));
+        let raft_store = Arc::new(VersionTrack::new(self.core.config.raft_store.clone()));
         let health_service = HealthService::default();
         let mut default_store = kvproto::metapb::Store::default();
 
@@ -1142,10 +1149,10 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             default_store.set_git_hash(self.proxy_config.server.engine_store_git_hash.clone());
         }
         // addr -> store.peer_address
-        if self.config.server.advertise_addr.is_empty() {
-            default_store.set_peer_address(self.config.server.addr.clone());
+        if self.core.config.server.advertise_addr.is_empty() {
+            default_store.set_peer_address(self.core.config.server.addr.clone());
         } else {
-            default_store.set_peer_address(self.config.server.advertise_addr.clone())
+            default_store.set_peer_address(self.core.config.server.advertise_addr.clone())
         }
         // engine_addr -> store.addr
         if !self.proxy_config.server.engine_addr.is_empty() {
@@ -1158,7 +1165,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             self.system.take().unwrap(),
             &server_config.value().clone(),
             raft_store.clone(),
-            self.config.storage.api_version(),
+            self.core.config.storage.api_version(),
             self.pd_client.clone(),
             state,
             self.background_worker.clone(),
@@ -1176,22 +1183,30 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             info!("set store {} to engine-store", node.id());
         }
 
-        let import_path = self.store_path.join("import");
+        let import_path = self.core.store_path.join("import");
         let mut importer = SstImporter::new(
-            &self.config.import,
+            &self.core.config.import,
             import_path,
-            self.encryption_key_manager.clone(),
-            self.config.storage.api_version(),
+            self.core.encryption_key_manager.clone(),
+            self.core.config.storage.api_version(),
         )
         .unwrap();
         for (cf_name, compression_type) in &[
             (
                 CF_DEFAULT,
-                self.config.rocksdb.defaultcf.bottommost_level_compression,
+                self.core
+                    .config
+                    .rocksdb
+                    .defaultcf
+                    .bottommost_level_compression,
             ),
             (
                 CF_WRITE,
-                self.config.rocksdb.writecf.bottommost_level_compression,
+                self.core
+                    .config
+                    .rocksdb
+                    .writecf
+                    .bottommost_level_compression,
             ),
         ] {
             importer.set_compression_type(cf_name, from_rocks_compression_type(*compression_type));
@@ -1220,7 +1235,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 resource_tag_factory,
                 Arc::clone(&self.quota_limiter),
             ),
-            coprocessor_v2::Endpoint::new(&self.config.coprocessor_v2),
+            coprocessor_v2::Endpoint::new(&self.core.config.coprocessor_v2),
             self.resolver.clone().unwrap(),
             Either::Left(snap_mgr.clone()),
             gc_worker.clone(),
@@ -1234,7 +1249,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         let packed_envs = engine_store_ffi::core::PackedEnvs {
             engine_store_cfg: self.proxy_config.engine_store.clone(),
-            pd_endpoints: self.config.pd.endpoints.clone(),
+            pd_endpoints: self.core.config.pd.endpoints.clone(),
             snap_handle_pool_size: self.proxy_config.raft_store.snap_handle_pool_size,
         };
         let tiflash_ob = engine_store_ffi::observer::TiFlashObserver::new(
@@ -1259,7 +1274,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         );
 
         // // Start backup stream
-        // if self.config.backup_stream.enable {
+        // if self.core.config.backup_stream.enable {
         //     // Create backup stream.
         //     let mut backup_stream_worker =
         // Box::new(LazyWorker::new("backup-stream"));
@@ -1277,8 +1292,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         //
         //     let backup_stream_endpoint = backup_stream::Endpoint::new::<String>(
         //         node.id(),
-        //         &self.config.pd.endpoints,
-        //         self.config.backup_stream.clone(),
+        //         &self.core.config.pd.endpoints,
+        //         self.core.config.backup_stream.clone(),
         //         backup_stream_scheduler,
         //         backup_stream_ob,
         //         self.region_info_accessor.clone(),
@@ -1304,7 +1319,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         );
 
         let split_config_manager =
-            SplitConfigManager::new(Arc::new(VersionTrack::new(self.config.split.clone())));
+            SplitConfigManager::new(Arc::new(VersionTrack::new(self.core.config.split.clone())));
         cfg_controller.register(
             tikv::config::Module::Split,
             Box::new(split_config_manager.clone()),
@@ -1312,8 +1327,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         let auto_split_controller = AutoSplitController::new(
             split_config_manager,
-            self.config.server.grpc_concurrency,
-            self.config.readpool.unified.max_thread_count,
+            self.core.config.server.grpc_concurrency,
+            self.core.config.readpool.unified.max_thread_count,
             unified_read_pool_scale_receiver,
         );
 
@@ -1337,12 +1352,12 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             .start(node.id())
             .unwrap_or_else(|e| fatal!("failed to start gc worker: {}", e));
 
-        initial_metric(&self.config.metric);
-        if self.config.storage.enable_ttl {
+        initial_metric(&self.core.config.metric);
+        if self.core.config.storage.enable_ttl {
             ttl_checker.start_with_timer(TtlChecker::new(
                 self.engines.as_ref().unwrap().engine.kv_engine().unwrap(),
                 self.region_info_accessor.clone(),
-                self.config.storage.ttl_check_poll_interval.into(),
+                self.core.config.storage.ttl_check_poll_interval.into(),
             ));
             self.to_stop.push(ttl_checker);
         }
@@ -1374,8 +1389,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
         // Import SST service.
         let import_service = ImportSstService::new(
-            self.config.import.clone(),
-            self.config.raft_store.raft_entry_max_size,
+            self.core.config.import.clone(),
+            self.core.config.raft_store.raft_entry_max_size,
             engines.engine.clone(),
             LocalTablets::Singleton(engines.engines.kv.clone()),
             servers.importer.clone(),
@@ -1411,8 +1426,8 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         // Create Diagnostics service
         let diag_service = DiagnosticsService::new(
             servers.server.get_debug_thread_pool().clone(),
-            self.config.log.file.filename.clone(),
-            self.config.slow_log_file.clone(),
+            self.core.config.log.file.filename.clone(),
+            self.core.config.slow_log_file.clone(),
         );
         if servers
             .server
@@ -1434,7 +1449,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
         let mut engine_metrics = EngineMetricsManager::<RocksEngine, ER>::new(
             self.tablet_registry.clone().unwrap(),
             self.kv_statistics.clone(),
-            self.config.rocksdb.titan.enabled,
+            self.core.config.rocksdb.titan.enabled,
             self.engines.as_ref().unwrap().engines.raft.clone(),
             self.raft_statistics.clone(),
         );
@@ -1462,9 +1477,9 @@ impl<ER: RaftEngine> TiKvServer<ER> {
     }
 
     fn init_storage_stats_task(&self, engines: Engines<TiFlashEngine, ER>) {
-        let config_disk_capacity: u64 = self.config.raft_store.capacity.0;
-        let data_dir = self.config.storage.data_dir.clone();
-        let store_path = self.store_path.clone();
+        let config_disk_capacity: u64 = self.core.config.raft_store.capacity.0;
+        let data_dir = self.core.config.storage.data_dir.clone();
+        let store_path = self.core.store_path.clone();
         let snap_mgr = self.snap_mgr.clone().unwrap();
         let reserve_space = disk::get_disk_reserved_space();
         if reserve_space == 0 {
@@ -1543,6 +1558,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
     fn init_sst_recovery_sender(&mut self) -> Option<Scheduler<String>> {
         if !self
+            .core
             .config
             .storage
             .background_error_recovery_window
@@ -1571,17 +1587,17 @@ impl<ER: RaftEngine> TiKvServer<ER> {
 
     fn run_status_server(&mut self) {
         // Create a status server.
-        let status_enabled = !self.config.server.status_addr.is_empty();
+        let status_enabled = !self.core.config.server.status_addr.is_empty();
         if status_enabled {
             let mut status_server = match StatusServer::new(
                 engine_store_ffi::ffi::gen_engine_store_server_helper(
                     self.engine_store_server_helper_ptr,
                 ),
-                self.config.server.status_thread_pool_size,
+                self.core.config.server.status_thread_pool_size,
                 self.cfg_controller.take().unwrap(),
-                Arc::new(self.config.security.clone()),
+                Arc::new(self.core.config.security.clone()),
                 self.router.clone(),
-                self.store_path.clone(),
+                self.core.store_path.clone(),
             ) {
                 Ok(status_server) => Box::new(status_server),
                 Err(e) => {
@@ -1590,7 +1606,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
                 }
             };
             // Start the status server.
-            if let Err(e) = status_server.start(self.config.server.status_addr.clone()) {
+            if let Err(e) = status_server.start(self.core.config.server.status_addr.clone()) {
                 error_unknown!(%e; "failed to bind addr for status service");
             } else {
                 self.to_stop.push(status_server);

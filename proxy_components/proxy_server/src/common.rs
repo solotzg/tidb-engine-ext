@@ -16,6 +16,8 @@ use file_system::{set_io_rate_limiter, BytesFetcher, File};
 use tikv::config::TikvConfig;
 use tikv_util::sys::{disk, path_in_diff_mount_point};
 
+use crate::fatal;
+
 /// This is the common layer of TiKV-like servers. By holding it in its own
 /// TikvServer implementation, one can easily access the common ability of a
 /// TiKV server.
