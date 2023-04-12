@@ -21,7 +21,7 @@ pub mod raftstore_proxy;
 pub mod raftstore_proxy_helper_impls;
 pub mod read_index_helper;
 // FFI releated with reading from SST/RocksDB files.
-pub mod snapshot_reader;
+pub mod snapshot_reader_impls;
 pub mod utils;
 
 pub use self::{
@@ -32,7 +32,6 @@ pub use self::{
     interfaces::root::DB as interfaces_ffi,
     raftstore_proxy::*,
     raftstore_proxy_helper_impls::*,
-    snapshot_reader::{lock_cf_reader::*, sst_reader_impls::*},
 };
 
 #[allow(clippy::wrong_self_convention)]

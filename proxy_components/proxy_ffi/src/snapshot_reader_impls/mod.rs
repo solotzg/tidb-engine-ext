@@ -2,7 +2,7 @@
 
 pub mod lock_cf_reader;
 pub mod sst_file_reader;
-pub mod sst_reader_impls;
+pub mod sst_reader;
 
 pub use lock_cf_reader::*;
-pub use sst_reader_impls::*;
+pub use sst_reader::*;
