@@ -6,10 +6,7 @@ use engine_rocks::{get_env, RocksSstIterator, RocksSstReader};
 use engine_traits::{IterOptions, Iterator, RefIterable, SstReader};
 
 use super::KIND_SST;
-use crate::{
-    interfaces_ffi::{BaseBuffView, SSTReaderPtr},
-    raftstore_proxy_helper_impls::RaftStoreProxyFFI,
-};
+use crate::interfaces_ffi::{BaseBuffView, SSTReaderPtr};
 pub struct SSTFileReader<'a> {
     iter: RefCell<Option<RocksSstIterator<'a>>>,
     remained: RefCell<bool>,
