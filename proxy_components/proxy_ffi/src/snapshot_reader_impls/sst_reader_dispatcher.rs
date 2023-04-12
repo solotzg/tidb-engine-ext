@@ -1,7 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 //! This is a wrapper of different impl of readers for SST.
 
-use super::{sst_file_reader::*, LockCFFileReader};
+use super::{sst_file_reader::*, tablet_reader::TabletReader, LockCFFileReader};
 use crate::{
     interfaces_ffi::{
         BaseBuffView, ColumnFamilyType, RaftStoreProxyPtr, SSTReaderInterfaces, SSTReaderPtr,
@@ -24,13 +24,33 @@ impl Clone for SSTReaderInterfaces {
     }
 }
 
+/// All impl of SST reader will be dispatched by this ptr.
 impl SSTReaderPtr {
-    unsafe fn as_mut_lock(&mut self) -> &mut LockCFFileReader {
+    unsafe fn as_mut_sst_lock(&mut self) -> &mut LockCFFileReader {
+        assert_eq!(self.kind, KIND_SST);
         &mut *(self.inner as *mut LockCFFileReader)
     }
 
-    unsafe fn as_mut(&mut self) -> &mut SSTFileReader {
+    unsafe fn as_mut_sst_other(&mut self) -> &mut SSTFileReader {
+        assert_eq!(self.kind, KIND_SST);
         &mut *(self.inner as *mut SSTFileReader)
+    }
+
+    unsafe fn as_mut_tablet(&mut self) -> &mut TabletReader {
+        assert_eq!(self.kind, KIND_TABLET);
+        &mut *(self.inner as *mut TabletReader)
+    }
+
+    pub fn parse_kind(_view: &SSTView) -> u64 {
+        // TODO
+        // let s = view.path.to_slice();
+        KIND_SST
+    }
+
+    // TiKV don't make guarantee that a v1 sst file ends with ".sst".
+    // So instead we mark v2's tablet format with prefix "!".
+    pub fn encode_v2(s: &str) -> String {
+        "!".to_owned() + s
     }
 }
 
@@ -60,11 +80,17 @@ pub unsafe extern "C" fn ffi_make_sst_reader(
 ) -> SSTReaderPtr {
     let path = std::str::from_utf8_unchecked(view.path.to_slice());
     let key_manager = proxy_ptr.as_ref().maybe_key_manager();
-    match view.type_ {
-        ColumnFamilyType::Lock => {
-            LockCFFileReader::ffi_get_cf_file_reader(path, key_manager.as_ref())
+    match SSTReaderPtr::parse_kind(&view) {
+        KIND_SST => match view.type_ {
+            ColumnFamilyType::Lock => {
+                LockCFFileReader::ffi_get_cf_file_reader(path, key_manager.as_ref())
+            }
+            _ => SSTFileReader::ffi_get_cf_file_reader(path, key_manager.clone()),
+        },
+        KIND_TABLET => {
+            todo!()
         }
-        _ => SSTFileReader::ffi_get_cf_file_reader(path, key_manager.clone()),
+        _ => unreachable!(),
     }
 }
 
@@ -72,9 +98,13 @@ pub unsafe extern "C" fn ffi_sst_reader_remained(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
 ) -> u8 {
-    match type_ {
-        ColumnFamilyType::Lock => reader.as_mut_lock().ffi_remained(),
-        _ => reader.as_mut().ffi_remained(),
+    match reader.kind {
+        KIND_SST => match type_ {
+            ColumnFamilyType::Lock => reader.as_mut_sst_lock().ffi_remained(),
+            _ => reader.as_mut_sst_other().ffi_remained(),
+        },
+        KIND_TABLET => reader.as_mut_tablet().ffi_remained(),
+        _ => unreachable!(),
     }
 }
 
@@ -82,9 +112,13 @@ pub unsafe extern "C" fn ffi_sst_reader_key(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
 ) -> BaseBuffView {
-    match type_ {
-        ColumnFamilyType::Lock => reader.as_mut_lock().ffi_key(),
-        _ => reader.as_mut().ffi_key(),
+    match reader.kind {
+        KIND_SST => match type_ {
+            ColumnFamilyType::Lock => reader.as_mut_sst_lock().ffi_key(),
+            _ => reader.as_mut_sst_other().ffi_key(),
+        },
+        KIND_TABLET => reader.as_mut_tablet().ffi_key(),
+        _ => unreachable!(),
     }
 }
 
@@ -92,27 +126,41 @@ pub unsafe extern "C" fn ffi_sst_reader_val(
     mut reader: SSTReaderPtr,
     type_: ColumnFamilyType,
 ) -> BaseBuffView {
-    match type_ {
-        ColumnFamilyType::Lock => reader.as_mut_lock().ffi_val(),
-        _ => reader.as_mut().ffi_val(),
+    match reader.kind {
+        KIND_SST => match type_ {
+            ColumnFamilyType::Lock => reader.as_mut_sst_lock().ffi_val(),
+            _ => reader.as_mut_sst_other().ffi_val(),
+        },
+        KIND_TABLET => reader.as_mut_tablet().ffi_val(),
+        _ => unreachable!(),
     }
 }
 
 pub unsafe extern "C" fn ffi_sst_reader_next(mut reader: SSTReaderPtr, type_: ColumnFamilyType) {
-    match type_ {
-        ColumnFamilyType::Lock => reader.as_mut_lock().ffi_next(),
-        _ => reader.as_mut().ffi_next(),
+    match reader.kind {
+        KIND_SST => match type_ {
+            ColumnFamilyType::Lock => reader.as_mut_sst_lock().ffi_next(),
+            _ => reader.as_mut_sst_other().ffi_next(),
+        },
+        KIND_TABLET => reader.as_mut_tablet().ffi_next(),
+        _ => unreachable!(),
     }
 }
 
 pub unsafe extern "C" fn ffi_gc_sst_reader(reader: SSTReaderPtr, type_: ColumnFamilyType) {
-    match type_ {
-        ColumnFamilyType::Lock => {
-            drop(Box::from_raw(reader.inner as *mut LockCFFileReader));
+    match reader.kind {
+        KIND_SST => match type_ {
+            ColumnFamilyType::Lock => {
+                drop(Box::from_raw(reader.inner as *mut LockCFFileReader));
+            }
+            _ => {
+                drop(Box::from_raw(reader.inner as *mut SSTFileReader));
+            }
+        },
+        KIND_TABLET => {
+            drop(Box::from_raw(reader.inner as *mut TabletReader));
         }
-        _ => {
-            drop(Box::from_raw(reader.inner as *mut SSTFileReader));
-        }
+        _ => unreachable!(),
     }
 }
 

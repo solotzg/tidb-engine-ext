@@ -3,6 +3,7 @@
 pub mod lock_cf_reader;
 pub mod sst_file_reader;
 pub mod sst_reader_dispatcher;
+pub mod tablet_reader;
 
 pub use lock_cf_reader::*;
 pub use sst_reader_dispatcher::*;

@@ -13,7 +13,7 @@ pub use proxy_ffi::{
     raftstore_proxy::*,
     raftstore_proxy_helper_impls::*,
     read_index_helper,
-    snapshot_reader_impls::{lock_cf_reader::*, sst_reader::*},
+    snapshot_reader_impls::{lock_cf_reader::*, sst_reader_dispatcher::*},
 };
 
 pub use self::raftstore_proxy_engine::*;
