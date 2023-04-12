@@ -1,4 +1,5 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
+//! This is a wrapper of different impl of readers for SST.
 
 use super::{sst_file_reader::*, LockCFFileReader};
 use crate::{
