@@ -1,5 +1,5 @@
 // Copyright 2023 TiKV Project Authors. Licensed under Apache-2.0.
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use encryption::DataKeyManager;
 use engine_rocks::{RocksCfOptions, RocksDbOptions};
@@ -14,7 +14,8 @@ use crate::{
 
 pub struct TabletReader {
     kv_engine: engine_rocks::RocksEngine,
-    iterator: engine_rocks::RocksEngineIterator,
+    iter: RefCell<Option<engine_rocks::RocksEngineIterator>>,
+    remained: RefCell<bool>,
 }
 
 impl TabletReader {
@@ -38,10 +39,10 @@ impl TabletReader {
         }
         let kv_engine = kv_engine.unwrap();
         let cf_name = cf_to_name(cf);
-        let iterator = kv_engine.iterator(cf_name).unwrap();
         let tr = Box::new(TabletReader {
             kv_engine,
-            iterator,
+            iter: RefCell::new(None),
+            remained: RefCell::new(false),
         });
         SSTReaderPtr {
             inner: Box::into_raw(tr) as *mut _,
@@ -49,27 +50,58 @@ impl TabletReader {
         }
     }
 
+    pub fn create_iter(&'a self) {
+        let iterator = kv_engine.iterator(cf_name).unwrap();
+        let _ = self.iter.borrow_mut().insert(
+            self.inner
+                .kv_engine
+                .iterator(cf_name)
+                .expect("fail gen iter"),
+        );
+        *self.remained.borrow_mut() = self
+            .iter
+            .borrow_mut()
+            .as_mut()
+            .expect("fail get iter")
+            .seek_to_first()
+            .unwrap();
+    }
+
     pub fn ffi_remained(&self) -> u8 {
-        todo!()
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        *self.remained.borrow() as u8
     }
 
     pub fn ffi_key(&self) -> BaseBuffView {
-        todo!()
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let b = self.iterator.borrow();
+        let iter = b.as_ref().unwrap();
+        let ori_key = keys::origin_key(iter.key());
+        ori_key.into()
     }
 
     pub fn ffi_val(&self) -> BaseBuffView {
-        todo!()
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let b = self.iterator.borrow();
+        let iter = b.as_ref().unwrap();
+        let ori_key = keys::origin_key(iter.val());
+        ori_key.into()
     }
 
     pub fn ffi_next(&mut self) {
-        todo!()
-        // let s = self.iterator.seek().unwrap();
-        // for &(k, v) in expected {
-        //     assert_eq!(k, iter.key());
-        //     assert_eq!(v, iter.value());
-        //     iter.next().unwrap();
-        // }
-        // assert!(!iter.valid().unwrap());
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        *self.remained.borrow_mut() = iter.next().unwrap();
+        let mut b = self.iter.borrow_mut();
+        let iter = b.as_mut().unwrap();
+        *self.remained.borrow_mut() = iter.next().unwrap();
     }
 
     pub fn ffi_seek(&self, _: ColumnFamilyType, _: EngineIteratorSeekType, _: BaseBuffView) {

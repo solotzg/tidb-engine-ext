@@ -57,6 +57,7 @@ impl<'a> SSTFileReader<'a> {
             .unwrap();
     }
 
+    // If it is valid to call ffi_key or ffi_val.
     pub fn ffi_remained(&'a self) -> u8 {
         if self.iter.borrow().is_none() {
             self.create_iter();
