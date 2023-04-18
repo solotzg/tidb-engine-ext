@@ -167,8 +167,8 @@ pub unsafe extern "C" fn ffi_gc_sst_reader(reader: SSTReaderPtr, type_: ColumnFa
 }
 
 pub unsafe extern "C" fn ffi_sst_reader_format_kind(
-    mut reader: SSTReaderPtr,
-    type_: ColumnFamilyType,
+    _: SSTReaderPtr,
+    _: ColumnFamilyType,
 ) -> SSTFormatKind {
     reader.kind
 }

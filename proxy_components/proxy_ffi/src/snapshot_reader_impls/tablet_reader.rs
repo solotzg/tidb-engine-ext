@@ -16,6 +16,7 @@ pub struct TabletReader {
     kv_engine: engine_rocks::RocksEngine,
     iter: RefCell<Option<engine_rocks::RocksEngineIterator>>,
     remained: RefCell<bool>,
+    cf: ColumnFamilyType,
 }
 
 impl TabletReader {
@@ -24,7 +25,7 @@ impl TabletReader {
         cf: ColumnFamilyType,
         _key_manager: Option<Arc<DataKeyManager>>,
     ) -> SSTReaderPtr {
-        let mut db_opts = RocksDbOptions::default();
+        let db_opts = RocksDbOptions::default();
         let defaultcf = RocksCfOptions::default();
         let lockcf = RocksCfOptions::default();
         let writecf = RocksCfOptions::default();
@@ -38,11 +39,11 @@ impl TabletReader {
             tikv_util::error!("failed to read tablet snapshot"; "path" => path, "err" => ?e);
         }
         let kv_engine = kv_engine.unwrap();
-        let cf_name = cf_to_name(cf);
         let tr = Box::new(TabletReader {
             kv_engine,
             iter: RefCell::new(None),
             remained: RefCell::new(false),
+            cf,
         });
         SSTReaderPtr {
             inner: Box::into_raw(tr) as *mut _,
@@ -50,14 +51,12 @@ impl TabletReader {
         }
     }
 
-    pub fn create_iter(&'a self) {
-        let iterator = kv_engine.iterator(cf_name).unwrap();
-        let _ = self.iter.borrow_mut().insert(
-            self.inner
-                .kv_engine
-                .iterator(cf_name)
-                .expect("fail gen iter"),
-        );
+    pub fn create_iter(&self) {
+        let cf_name = cf_to_name(self.cf);
+        let _ = self
+            .iter
+            .borrow_mut()
+            .insert(self.kv_engine.iterator(cf_name).expect("fail gen iter"));
         *self.remained.borrow_mut() = self
             .iter
             .borrow_mut()
@@ -78,7 +77,7 @@ impl TabletReader {
         if self.iter.borrow().is_none() {
             self.create_iter();
         }
-        let b = self.iterator.borrow();
+        let b = self.iter.borrow();
         let iter = b.as_ref().unwrap();
         let ori_key = keys::origin_key(iter.key());
         ori_key.into()
@@ -88,9 +87,9 @@ impl TabletReader {
         if self.iter.borrow().is_none() {
             self.create_iter();
         }
-        let b = self.iterator.borrow();
+        let b = self.iter.borrow();
         let iter = b.as_ref().unwrap();
-        let ori_key = keys::origin_key(iter.val());
+        let ori_key = keys::origin_key(iter.value());
         ori_key.into()
     }
 
@@ -98,7 +97,6 @@ impl TabletReader {
         if self.iter.borrow().is_none() {
             self.create_iter();
         }
-        *self.remained.borrow_mut() = iter.next().unwrap();
         let mut b = self.iter.borrow_mut();
         let iter = b.as_mut().unwrap();
         *self.remained.borrow_mut() = iter.next().unwrap();
