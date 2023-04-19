@@ -103,6 +103,15 @@ impl TabletReader {
     }
 
     pub fn ffi_seek(&self, _: ColumnFamilyType, _: EngineIteratorSeekType, _: BaseBuffView) {
-        todo!()
+        if self.iter.borrow().is_none() {
+            self.create_iter();
+        }
+        let mut b = self.iter.borrow_mut();
+        let iter = b.as_mut().unwrap();
+        match et {
+            EngineIteratorSeekType::First => iter.seek_to_first(),
+            EngineIteratorSeekType::Last => iter.seek_to_last(),
+            EngineIteratorSeekType::Key => iter.seek(bf.to_slice()),
+        }
     }
 }
