@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use proxy_ffi::interfaces_ffi::SSTReaderPtr;
 
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
@@ -6,9 +8,12 @@ use crate::{
     fatal,
 };
 
-fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)> {
-    let mut sst_views: Vec<(PathBuf, ColumnFamilyType)> = vec![];
+type SSTInfo = (String, ColumnFamilyType);
+
+fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<SSTInfo> {
+    let mut sst_views: Vec<SSTInfo> = vec![];
     let mut ssts = vec![];
+    let is_v2_format = false;
     for cf_file in snap.cf_files() {
         // Skip empty cf file.
         // CfFile is changed by dynamic region.
@@ -41,7 +46,11 @@ fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)
         }
     }
     for (s, cf) in ssts.iter() {
-        sst_views.push((PathBuf::from_str(s).unwrap(), *cf));
+        if is_v2_format {
+            sst_views.push((SSTReaderPtr::encode_v2(s.as_str()), *cf));
+        } else {
+            sst_views.push((String::from(s), *cf));
+        }
     }
     sst_views
 }
@@ -49,32 +58,18 @@ fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<(PathBuf, ColumnFamilyType)
 fn pre_handle_snapshot_impl(
     engine_store_server_helper: &'static EngineStoreServerHelper,
     peer_id: u64,
-    ssts: Vec<(PathBuf, ColumnFamilyType)>,
+    ssts: Vec<SSTInfo>,
     region: &Region,
     snap_key: &SnapKey,
-    is_v2_format: bool,
 ) -> PtrWrapper {
     let idx = snap_key.idx;
     let term = snap_key.term;
     let ptr = {
-        if is_v2_format {
-            // We must own the modified path.
-            let sst_strs: Vec<(String, ColumnFamilyType)> = ssts
-                .iter()
-                .map(|(b, c)| (SSTReaderPtr::encode_v2(b.to_str().unwrap()), c.clone()))
-                .collect();
-            let sst_views = sst_strs
-                .iter()
-                .map(|(b, c)| (b.as_bytes(), c.clone()))
-                .collect();
-            engine_store_server_helper.pre_handle_snapshot(region, peer_id, sst_views, idx, term)
-        } else {
-            let sst_views = ssts
-                .iter()
-                .map(|(b, c)| (b.to_str().unwrap().as_bytes(), c.clone()))
-                .collect();
-            engine_store_server_helper.pre_handle_snapshot(region, peer_id, sst_views, idx, term)
-        }
+        let sst_views = ssts
+            .iter()
+            .map(|(b, c)| (b.as_bytes(), c.clone()))
+            .collect();
+        engine_store_server_helper.pre_handle_snapshot(region, peer_id, sst_views, idx, term)
     };
     PtrWrapper(ptr)
 }
@@ -103,11 +98,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             Some(s) => s,
         };
 
+        // Simulate loss of sst files.
         fail::fail_point!("on_ob_pre_handle_snapshot_delete", |_| {
             let ssts = retrieve_sst_files(snap);
-            for (pathbuf, _) in ssts.iter() {
-                debug!("delete snapshot file"; "path" => ?pathbuf);
-                std::fs::remove_file(pathbuf.as_path()).unwrap();
+            for (path, _) in ssts.iter() {
+                debug!("delete snapshot file"; "path" => ?path);
+                std::fs::remove_file(Path::new(path)).unwrap();
             }
             return;
         });
@@ -175,7 +171,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         ssts,
                         &region,
                         &snap_key,
-                        false,
                     );
                     match sender.send(res) {
                         Err(_e) => {
@@ -338,7 +333,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 ssts,
                 ob_region,
                 snap_key,
-                false,
             );
             info!("re-gen pre-handled snapshot success";
                 "peer_id" => peer_id,
