@@ -29,12 +29,10 @@ impl TabletReader {
         let cfopt = RocksCfOptions::default();
 
         let cf_opts = vec![(cf_to_name(cf), cfopt)];
-
-        let cf_opts: Vec<_> = cf_opts
+        let cfds: Vec<_> = cf_opts
             .into_iter()
             .map(|(name, opt)| (name, opt.into_raw()))
             .collect();
-        let cfds: Vec<_> = cf_opts.into_iter().collect();
         let db = rocksdb::DB::open_cf_for_read_only(db_opts.into_raw(), path, cfds, false).unwrap();
         let kv_engine = engine_rocks::RocksEngine::new(db);
 
