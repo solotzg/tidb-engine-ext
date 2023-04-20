@@ -101,7 +101,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             let ssts = retrieve_sst_files(snap);
             for (path, _) in ssts.iter() {
                 debug!("delete snapshot file"; "path" => ?path);
-                std::fs::remove_file(Path::new(path)).unwrap();
+                std::fs::remove_file(std::path::Path::new(path)).unwrap();
             }
             return;
         });
