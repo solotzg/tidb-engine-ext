@@ -47,6 +47,7 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --test proxy store
     cargo test --package proxy_tests --test proxy region
     cargo test --package proxy_tests --test proxy flashback
+    cargo test --package proxy_tests --test proxy tablet_snapshot
     cargo test --package proxy_tests --test proxy v1_specific::region_ext
     cargo test --package proxy_tests --test proxy v1_specific::flashback
     cargo test --package proxy_tests --test proxy server_cluster_test
