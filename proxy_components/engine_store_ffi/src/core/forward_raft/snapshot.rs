@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use proxy_ffi::interfaces_ffi::SSTReaderPtr;
 
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
