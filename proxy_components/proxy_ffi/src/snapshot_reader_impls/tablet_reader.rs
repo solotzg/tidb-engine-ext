@@ -26,19 +26,28 @@ impl TabletReader {
         _key_manager: Option<Arc<DataKeyManager>>,
     ) -> SSTReaderPtr {
         let db_opts = RocksDbOptions::default();
-        let defaultcf = RocksCfOptions::default();
-        let lockcf = RocksCfOptions::default();
-        let writecf = RocksCfOptions::default();
-        let cf_opts = vec![
-            (CF_DEFAULT, defaultcf),
-            (CF_LOCK, lockcf),
-            (CF_WRITE, writecf),
-        ];
-        let kv_engine = engine_rocks::util::new_engine_opt(path, db_opts, cf_opts);
-        if let Err(e) = &kv_engine {
-            tikv_util::error!("failed to read tablet snapshot"; "path" => path, "err" => ?e);
-        }
-        let kv_engine = kv_engine.unwrap();
+        let cfopt = RocksCfOptions::default();
+
+        let cf_opts = match cf {
+            ColumnFamilyType::Default => {
+                vec![(CF_DEFAULT, cfopt)]
+            }
+            ColumnFamilyType::Write => {
+                vec![(CF_WRITE, cfopt)]
+            }
+            ColumnFamilyType::Lock => {
+                vec![(CF_LOCK, cfopt)]
+            }
+        };
+
+        let cf_opts: Vec<_> = cf_opts
+            .into_iter()
+            .map(|(name, opt)| (name, opt.into_raw()))
+            .collect();
+        let cfds: Vec<_> = cf_opts.into_iter().collect();
+        let db = rocksdb::DB::open_cf_for_read_only(db_opts.into_raw(), path, cfds, false).unwrap();
+        let kv_engine = engine_rocks::RocksEngine::new(db);
+
         let tr = Box::new(TabletReader {
             kv_engine,
             iter: RefCell::new(None),
@@ -109,9 +118,15 @@ impl TabletReader {
         let mut b = self.iter.borrow_mut();
         let iter = b.as_mut().unwrap();
         match et {
-            EngineIteratorSeekType::First => iter.seek_to_first(),
-            EngineIteratorSeekType::Last => iter.seek_to_last(),
-            EngineIteratorSeekType::Key => iter.seek(bf.to_slice()),
+            EngineIteratorSeekType::First => {
+                let _ = iter.seek_to_first();
+            }
+            EngineIteratorSeekType::Last => {
+                let _ = iter.seek_to_last();
+            }
+            EngineIteratorSeekType::Key => {
+                let _ = iter.seek(bf.to_slice());
+            }
         };
     }
 }

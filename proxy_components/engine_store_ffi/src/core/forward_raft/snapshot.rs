@@ -45,11 +45,11 @@ fn retrieve_sst_files(snap: &store::Snapshot) -> Vec<SSTInfo> {
             ssts.push((full_paths.remove(0), name_to_cf(cf_file.cf)));
         }
     }
-    for (s, cf) in ssts.iter() {
+    for (s, cf) in ssts.into_iter() {
         if is_v2_format {
-            sst_views.push((SSTReaderPtr::encode_v2(s.as_str()), *cf));
+            sst_views.push((SSTReaderPtr::encode_v2(s.as_str()), cf));
         } else {
-            sst_views.push((String::from(s), *cf));
+            sst_views.push((s, cf));
         }
     }
     sst_views
