@@ -3,7 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use encryption::DataKeyManager;
 use engine_rocks::{RocksCfOptions, RocksDbOptions};
-use engine_traits::{Iterable, Iterator, CF_DEFAULT, CF_LOCK, CF_WRITE};
+use engine_traits::{Iterable, Iterator};
 
 use crate::{
     cf_to_name,
@@ -28,17 +28,7 @@ impl TabletReader {
         let db_opts = RocksDbOptions::default();
         let cfopt = RocksCfOptions::default();
 
-        let cf_opts = match cf {
-            ColumnFamilyType::Default => {
-                vec![(CF_DEFAULT, cfopt)]
-            }
-            ColumnFamilyType::Write => {
-                vec![(CF_WRITE, cfopt)]
-            }
-            ColumnFamilyType::Lock => {
-                vec![(CF_LOCK, cfopt)]
-            }
-        };
+        let cf_opts = vec![(cf_to_name(cf), cfopt)];
 
         let cf_opts: Vec<_> = cf_opts
             .into_iter()
