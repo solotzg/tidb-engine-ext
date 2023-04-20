@@ -125,7 +125,8 @@ impl TabletReader {
                 let _ = iter.seek_to_last();
             }
             EngineIteratorSeekType::Key => {
-                let _ = iter.seek(bf.to_slice());
+                let dk = keys::data_key(bf.to_slice());
+                let _ = iter.seek(&dk);
             }
         };
     }

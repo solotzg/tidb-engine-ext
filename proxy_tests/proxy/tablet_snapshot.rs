@@ -4,8 +4,7 @@ use engine_traits::{Checkpointer, KvEngine, SyncMutable};
 use grpcio::Environment;
 use kvproto::raft_serverpb::{RaftMessage, RaftSnapshotData};
 use mock_engine_store::{
-    interfaces_ffi::{BaseBuffView, SSTReaderPtr},
-    mock_cluster::v1::server::new_server_cluster,
+    interfaces_ffi::BaseBuffView, mock_cluster::v1::server::new_server_cluster,
 };
 use proxy_ffi::{
     interfaces_ffi::{ColumnFamilyType, EngineIteratorSeekType},
@@ -71,13 +70,11 @@ fn test_parse_tablet_snapshot() {
     let test_parse_snap = |key_num| {
         let mut cluster_v1 = new_server_cluster(1, 1);
         let mut cluster_v2 = test_raftstore_v2::new_server_cluster(1, 1);
-
         cluster_v1
             .cfg
             .server
             .labels
             .insert(String::from("engine"), String::from("tiflash"));
-
         cluster_v1.run();
         cluster_v2.run();
 
@@ -118,7 +115,8 @@ fn test_parse_tablet_snapshot() {
             let reader =
                 TabletReader::ffi_get_cf_file_reader(path.as_path().to_str().unwrap(), cf, None);
 
-            let k = format!("zk{:04}", 5);
+            // SSTReaderPtr is not aware of the data prefix 'z'.
+            let k = format!("k{:04}", 5);
             let bf = BaseBuffView {
                 data: k.as_ptr() as *const _,
                 len: k.len() as u64,
@@ -135,7 +133,7 @@ fn test_parse_tablet_snapshot() {
 
             // If the sst is "empty" to this region. Will not panic, and remained should be
             // false.
-            let k = format!("zk{:04}", key_num + 10);
+            let k = format!("k{:04}", key_num + 10);
             let bf = BaseBuffView {
                 data: k.as_ptr() as *const _,
                 len: k.len() as u64,
