@@ -247,6 +247,7 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> PeerFsmDelegate<'a, EK, ER,
                         .on_admin_command(self.store_ctx, cmd.request, cmd.ch)
                 }
                 PeerMsg::SimpleWrite(write) => {
+                    debug!(self.fsm.peer.logger, "!!!!!! SimpleWrite");
                     self.on_receive_command(write.send_time);
                     self.fsm.peer_mut().on_simple_write(
                         self.store_ctx,
