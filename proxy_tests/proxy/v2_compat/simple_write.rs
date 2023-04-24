@@ -18,6 +18,12 @@ fn test_write_simple() {
     let r11 = cluster_v1.run_conf_change();
     let r21 = cluster_v2.run_conf_change();
 
+    pd_client_v1
+        .must_add_peer(r11, new_learner_peer(2, 10));
+    cluster_v2
+        .pd_client
+        .must_add_peer(r21, new_learner_peer(2, 10));
+    
     let trans1 = Mutex::new(cluster_v1.sim.read().unwrap().get_router(2).unwrap());
     let trans2 = Mutex::new(cluster_v2.sim.read().unwrap().get_router(1).unwrap());
 
@@ -38,11 +44,6 @@ fn test_write_simple() {
     };
     cluster_v2.add_send_filter(factory2);
 
-    pd_client_v1
-        .must_add_peer(r11, new_learner_peer(2, 10));
-    cluster_v2
-        .pd_client
-        .must_add_peer(r21, new_learner_peer(2, 10));
 
     cluster_v2.must_put(b"k1", b"v1");
     assert_eq!(cluster_v2.must_get(b"k1").unwrap(), "v1".as_bytes().to_vec());
