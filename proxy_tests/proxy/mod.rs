@@ -25,6 +25,6 @@ mod snapshot;
 mod store;
 mod utils;
 mod v1_specific;
-mod v2_specific;
 mod v2_compat;
+mod v2_specific;
 mod write;

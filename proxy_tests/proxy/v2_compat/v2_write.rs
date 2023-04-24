@@ -3,12 +3,13 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+
+use engine_traits::Peekable;
 use kvproto::raft_serverpb::{PeerState, RaftMessage};
 use raftstore::errors::Result;
 use test_raftstore::{new_learner_peer, sleep_ms, Filter, FilterFactory, Simulator as S1};
 use test_raftstore_v2::Simulator as S2;
 use tikv_util::time::Instant;
-use engine_traits::Peekable;
 
 struct ForwardFactory {
     node_id: u64,
@@ -56,7 +57,8 @@ fn test_write_simple() {
     let r11 = cluster_v1.run_conf_change();
     let r21 = cluster_v2.run_conf_change();
 
-    cluster_v1.pd_client
+    cluster_v1
+        .pd_client
         .must_add_peer(r11, new_learner_peer(2, 10));
     cluster_v2
         .pd_client
@@ -83,9 +85,17 @@ fn test_write_simple() {
     cluster_v2.add_send_filter(factory2);
 
     cluster_v2.must_put(b"k1", b"v1");
-    assert_eq!(cluster_v2.must_get(b"k1").unwrap(), "v1".as_bytes().to_vec());
+    assert_eq!(
+        cluster_v2.must_get(b"k1").unwrap(),
+        "v1".as_bytes().to_vec()
+    );
     std::thread::sleep(std::time::Duration::from_millis(1000));
-    let v = cluster_v1.get_engine(2).get_value(b"k1").unwrap().unwrap().to_vec();
+    let v = cluster_v1
+        .get_engine(2)
+        .get_value(b"k1")
+        .unwrap()
+        .unwrap()
+        .to_vec();
     assert_eq!(v, "v1".as_bytes().to_vec());
 
     cluster_v1.shutdown();

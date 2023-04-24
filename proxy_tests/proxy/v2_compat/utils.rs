@@ -6,8 +6,8 @@ use std::{
 };
 
 use kvproto::raft_serverpb::{PeerState, RaftMessage};
-use raftstore::errors::Result;
 use mock_engine_store::mock_cluster::v1::transport_simulate::{Filter, FilterFactory};
+use raftstore::errors::Result;
 use tikv_util::time::Instant;
 
 pub struct ForwardFactory {
