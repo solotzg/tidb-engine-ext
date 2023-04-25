@@ -1,14 +1,10 @@
 // Copyright 2023 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::Arc;
 
-use kvproto::raft_serverpb::{PeerState, RaftMessage};
+use kvproto::raft_serverpb::RaftMessage;
 use mock_engine_store::mock_cluster::v1::transport_simulate::{Filter, FilterFactory};
 use raftstore::errors::Result;
-use tikv_util::time::Instant;
 
 pub struct ForwardFactory {
     pub node_id: u64,
