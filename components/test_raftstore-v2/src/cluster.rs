@@ -239,7 +239,6 @@ pub trait Simulator<EK: KvEngine> {
             PeerMsg::admin_command(request)
         } else {
             let requests = request.get_requests();
-            debug!("!!!!!! HJHJHJHJHJ {:?}", request);
             let mut write_encoder = SimpleWriteEncoder::with_capacity(64);
             for req in requests {
                 match req.get_cmd_type() {

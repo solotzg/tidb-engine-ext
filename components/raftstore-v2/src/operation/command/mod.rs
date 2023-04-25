@@ -220,7 +220,6 @@ impl<EK: KvEngine, ER: RaftEngine> Peer<EK, ER> {
             });
         }
         let last_index = self.raft_group().raft.raft_log.last_index();
-        slog::debug!(store_ctx.logger, "!!!!!! propose_with_ctx");
         self.raft_group_mut().propose(proposal_ctx, data)?;
         if self.raft_group().raft.raft_log.last_index() == last_index {
             // The message is dropped silently, this usually due to leader absence

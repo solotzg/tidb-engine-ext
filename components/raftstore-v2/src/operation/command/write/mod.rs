@@ -103,16 +103,12 @@ impl<EK: KvEngine, ER: RaftEngine> Peer<EK, ER> {
     }
 
     pub fn propose_pending_writes<T>(&mut self, ctx: &mut StoreContext<EK, ER, T>) {
-        slog::debug!(self.logger, "!!!!!! propose_pending_writes 1");
         if let Some(encoder) = self.simple_write_encoder_mut().take() {
-            slog::debug!(self.logger, "!!!!!! propose_pending_writes 2");
             let call_proposed_on_success = if encoder.notify_proposed() {
                 // The request has pass conflict check and called all proposed callbacks.
-                slog::debug!(self.logger, "!!!!!! propose_pending_writes 2.1");
                 false
             } else {
                 // Epoch may have changed since last check.
-                slog::debug!(self.logger, "!!!!!! propose_pending_writes 2.2");
                 let from_epoch = encoder.header().get_region_epoch();
                 let res = util::compare_region_epoch(
                     from_epoch,
@@ -130,7 +126,6 @@ impl<EK: KvEngine, ER: RaftEngine> Peer<EK, ER> {
                 // Only when it applies to current term, the epoch check can be reliable.
                 self.applied_to_current_term()
             };
-            slog::debug!(self.logger, "!!!!!! propose_pending_writes 3");
             let (data, chs) = encoder.encode();
             let res = self.propose(ctx, data);
             self.post_propose_command(ctx, res, chs, call_proposed_on_success);

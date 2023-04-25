@@ -3,4 +3,3 @@
 mod simple_write;
 mod tablet_snapshot;
 pub(crate) mod utils;
-mod v2_write;
