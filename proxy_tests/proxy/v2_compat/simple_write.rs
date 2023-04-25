@@ -64,10 +64,10 @@ fn test_write_simple() {
     cluster_v2.shutdown();
     return;
 
-    cluster_v2.must_put(b"k1", b"v1ffffffffffffffffffffffffffffff");
+    cluster_v2.must_put(b"k1", b"v1");
     assert_eq!(
         cluster_v2.must_get(b"k1").unwrap(),
-        "v1ffffffffffffffffffffffffffffff".as_bytes().to_vec()
+        "v1".as_bytes().to_vec()
     );
     std::thread::sleep(std::time::Duration::from_millis(3000));
     let v = cluster_v1
@@ -76,7 +76,7 @@ fn test_write_simple() {
         .unwrap()
         .unwrap()
         .to_vec();
-    assert_eq!(v, "v1ffffffffffffffffffffffffffffff".as_bytes().to_vec());
+    assert_eq!(v, "v1".as_bytes().to_vec());
 
     cluster_v2.must_split(&cluster_v2.get_region(b"k1"), b"k1");
 
