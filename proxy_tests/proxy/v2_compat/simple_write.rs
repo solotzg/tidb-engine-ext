@@ -12,6 +12,11 @@ fn test_write_simple() {
     let mut cluster_v2 = test_raftstore_v2::new_node_cluster(1, 2);
     let (mut cluster_v1, _) = new_mock_cluster(1, 2);
 
+    cluster_v1
+        .cfg
+        .server
+        .labels
+        .insert(String::from("engine"), String::from("tiflash"));
     // cluster_v1.cfg.tikv.raft_store.enable_v2_compatible_learner = true;
     cluster_v1.pd_client.disable_default_operator();
     cluster_v2.pd_client.disable_default_operator();
