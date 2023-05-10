@@ -26,8 +26,8 @@ impl TabletReader {
         key_manager: Option<Arc<DataKeyManager>>,
     ) -> SSTReaderPtr {
         let env = get_env(key_manager, None).unwrap();
-        let db_opts = RocksDbOptions::default();
-        let cfopt = RocksCfOptions::default();
+        let mut db_opts = RocksDbOptions::default();
+        let mut cfopt = RocksCfOptions::default();
         db_opts.set_env(env);
         cfopt.set_env(env);
 
