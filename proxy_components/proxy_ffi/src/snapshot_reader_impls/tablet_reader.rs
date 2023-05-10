@@ -28,7 +28,7 @@ impl TabletReader {
         let env = get_env(key_manager, None).unwrap();
         let mut db_opts = RocksDbOptions::default();
         let mut cfopt = RocksCfOptions::default();
-        db_opts.set_env(env);
+        db_opts.set_env(env.clone());
         cfopt.set_env(env);
 
         let cf_opts = vec![(cf_to_name(cf), cfopt)];
