@@ -23,10 +23,13 @@ impl TabletReader {
     pub fn ffi_get_cf_file_reader(
         path: &str,
         cf: ColumnFamilyType,
-        _key_manager: Option<Arc<DataKeyManager>>,
+        key_manager: Option<Arc<DataKeyManager>>,
     ) -> SSTReaderPtr {
+        let env = get_env(key_manager, None).unwrap();
         let db_opts = RocksDbOptions::default();
         let cfopt = RocksCfOptions::default();
+        db_opts.set_env(env);
+        cfopt.set_env(env);
 
         let cf_opts = vec![(cf_to_name(cf), cfopt)];
         let cfds: Vec<_> = cf_opts
