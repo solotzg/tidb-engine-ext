@@ -2,7 +2,7 @@
 use std::{cell::RefCell, sync::Arc};
 
 use encryption::DataKeyManager;
-use engine_rocks::{RocksCfOptions, RocksDbOptions};
+use engine_rocks::{get_env, RocksCfOptions, RocksDbOptions};
 use engine_traits::{Iterable, Iterator};
 
 use crate::{
