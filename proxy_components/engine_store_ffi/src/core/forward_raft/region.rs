@@ -100,7 +100,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 }
             }
             MapEntry::Vacant(v) => {
-                info!("{} {}:{} {}, peer created",
+                info!("{}{}:{} {}, peer created",
                     if is_fap_enabled {"fast path: ongoing "} else {" "},
                     self.store_id, region_id, r.peer_id;
                     "region_id" => region_id,
