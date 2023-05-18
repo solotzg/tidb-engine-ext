@@ -90,7 +90,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     self.store_id, region_id, 0;
                     "region_id" => region_id,
                     "leader_id" => r.leader_id,
-                    "role" => r.state,
+                    "role" => ?r.state,
                     "is_replicated" => is_replicated,
                 );
                 if is_replicated {
@@ -105,7 +105,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     self.store_id, region_id, r.peer_id;
                     "region_id" => region_id,
                     "leader_id" => r.leader_id,
-                    "role" => r.state,
+                    "role" => ?r.state,
                     "is_replicated" => is_replicated,
                 );
                 if is_replicated {

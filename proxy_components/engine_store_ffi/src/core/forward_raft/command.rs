@@ -236,6 +236,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         fail::fail_point!("on_empty_cmd_normal", |_| {});
         debug!("encounter empty cmd, maybe due to leadership change";
             "region" => ?ob_region,
+            "region_id" => region_id,
             "index" => index,
             "term" => term,
         );
