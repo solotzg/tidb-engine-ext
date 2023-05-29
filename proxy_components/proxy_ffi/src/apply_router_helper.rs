@@ -1,25 +1,7 @@
-use std::{
-    future::Future,
-    time::{Duration, Instant},
-};
+// Copyright 2023 TiKV Project Authors. Licensed under Apache-2.0.
 
-use engine_traits::{KvEngine, RaftEngine};
-use futures::executor::block_on;
-use futures_util::{compat::Future01CompatExt, future::BoxFuture};
-use kvproto::{
-    kvrpcpb::{ReadIndexRequest, ReadIndexResponse},
-    raft_cmdpb::{CmdType, RaftCmdRequest, RaftRequestHeader, Request as RaftRequest},
-};
-use raftstore::{
-    router::RaftStoreRouter,
-    store::{
-        fsm::{apply::Msg, ApplyRouter, ApplyTask},
-        Callback, RaftCmdExtraOpts, RaftRouter, ReadResponse,
-    },
-};
-use tikv_util::{debug, error, future::paired_future_callback};
-
-use super::utils::ArcNotifyWaker;
+use engine_traits::KvEngine;
+use raftstore::store::fsm::{ApplyRouter, ApplyTask};
 
 pub trait ApplyRouterHelper: Sync + Send {
     fn schedule_compact_log_task(

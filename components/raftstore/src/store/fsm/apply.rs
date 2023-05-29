@@ -1441,8 +1441,9 @@ where
             }
             if req.has_admin_request() {
                 let request = req.get_admin_request();
-                let cmd_type = request.get_cmd_type();
-                if cmd_type == AdminCmdType::CompactLog {
+                // Filtering a CompactLog cmd means the underlying engine has not persisted to
+                // `compact_index` yet.
+                if request.get_cmd_type() == AdminCmdType::CompactLog {
                     let compact_index = request.get_compact_log().get_compact_index();
                     let compact_term = request.get_compact_log().get_compact_term();
                     if compact_index > self.max_compact_index {
@@ -3046,7 +3047,7 @@ where
         &mut self,
         voter_replicated_index: u64,
         voter_replicated_term: u64,
-        use_queue: bool,
+        handle_queue: bool,
     ) -> Result<(bool, Option<ExecResult<EK::Snapshot>>)> {
         PEER_ADMIN_CMD_COUNTER.compact.all.inc();
         let first_index = entry_storage::first_index(&self.apply_state);
@@ -3061,8 +3062,12 @@ where
             return Ok((false, None));
         }
 
-        if !use_queue {
+        if !handle_queue {
+            // When `compact_log_in_queue` is set to false.
             let mut compact_index = voter_replicated_index;
+            // `compact_index` is reported by underlying engine, it can exceed the max
+            // recorded `compact_index` of this region. We will use the recorded
+            // one in this case.
             let mut compact_term = voter_replicated_term;
             if compact_index > self.max_compact_index {
                 compact_index = self.max_compact_index;
@@ -3228,12 +3233,14 @@ where
                 }
             }
         }
-        if let Some((compact_index, compact_term)) =
-            ctx.host
-                .get_compact_index_and_term(self.region_id(), compact_index, compact_term)
+
+        // TODO What's this?
+        if let Some((custom_compact_index, _custom_compact_term)) = ctx
+            .host
+            .get_compact_index_and_term(self.region_id(), compact_index, compact_term)
         {
-            if req.get_compact_log().get_compact_index() > compact_index
-                && compact_index > self.max_compact_index
+            if req.get_compact_log().get_compact_index() > self.max_compact_index
+                && custom_compact_index > self.max_compact_index
             {
                 self.max_compact_index = req.get_compact_log().get_compact_index();
                 self.max_compact_term = req.get_compact_log().get_compact_term();

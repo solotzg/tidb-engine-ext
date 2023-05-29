@@ -240,8 +240,8 @@ struct RaftStoreProxyFFIHelper {
   KVGetStatus (*fn_get_region_local_state)(RaftStoreProxyPtr,
                                            uint64_t region_id, RawVoidPtr data,
                                            RawCppStringPtr *error_msg);
-  void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t, uint64_t,
-                                uint64_t, uint64_t);
+  void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t region_id, uint64_t compact_index,
+                                uint64_t compact_term, uint64_t applied_index);
 };
 
 struct PageStorageInterfaces {

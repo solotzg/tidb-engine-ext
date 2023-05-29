@@ -13,8 +13,6 @@ use std::{
 use encryption::DataKeyManager;
 use kvproto::kvrpcpb;
 use protobuf::Message;
-use raftstore::store::fsm::ApplyTask;
-use tikv_util::store::region;
 
 use super::{
     apply_router_helper,
