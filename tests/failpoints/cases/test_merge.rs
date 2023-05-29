@@ -425,7 +425,7 @@ fn test_node_merge_multiple_snapshots_not_together() {
 fn test_node_merge_multiple_snapshots(together: bool) {
     let mut cluster = new_node_cluster(0, 3);
     configure_for_merge(&mut cluster.cfg);
-    ignore_merge_target_integrity(&mut cluster);
+    ignore_merge_target_integrity(&mut cluster.cfg, &cluster.pd_client);
     let pd_client = Arc::clone(&cluster.pd_client);
     pd_client.disable_default_operator();
     // make it gc quickly to trigger snapshot easily
@@ -1530,7 +1530,7 @@ fn test_retry_pending_prepare_merge_fail() {
     let (propose_tx, propose_rx) = mpsc::sync_channel(10);
     fail::cfg_callback("after_propose", move || propose_tx.send(()).unwrap()).unwrap();
 
-    let rx = cluster.async_put(b"k1", b"v11").unwrap();
+    let mut rx = cluster.async_put(b"k1", b"v11").unwrap();
     propose_rx.recv_timeout(Duration::from_secs(2)).unwrap();
     rx.recv_timeout(Duration::from_millis(200)).unwrap_err();
 

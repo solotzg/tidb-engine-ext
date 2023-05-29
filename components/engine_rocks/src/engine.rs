@@ -194,6 +194,11 @@ impl KvEngine for RocksEngine {
         let e: &dyn Any = &self.db;
         e.downcast_ref().expect("bad engine downcast")
     }
+
+    #[cfg(feature = "testexport")]
+    fn inner_refcount(&self) -> usize {
+        Arc::strong_count(&self.db)
+    }
 }
 
 impl Iterable for RocksEngine {

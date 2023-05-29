@@ -22,8 +22,10 @@ use raftstore::{
     coprocessor::{Config as CopConfig, ConsistencyCheckMethod},
     store::Config as RaftstoreConfig,
 };
+use resource_control::Config as ResourceControlConfig;
 use security::SecurityConfig;
 use slog::Level;
+use test_util::assert_eq_debug;
 use tikv::{
     config::*,
     import::Config as ImportConfig,
@@ -112,7 +114,7 @@ fn test_serde_custom_tikv_config() {
         end_point_request_max_handle_duration: ReadableDuration::secs(12),
         end_point_max_concurrency: 10,
         end_point_perf_level: PerfLevel::EnableTime,
-        snap_max_write_bytes_per_sec: ReadableSize::mb(10),
+        snap_io_max_bytes_per_sec: ReadableSize::mb(10),
         snap_max_total_size: ReadableSize::gb(10),
         stats_concurrency: 10,
         heavy_load_threshold: 25,
@@ -192,9 +194,11 @@ fn test_serde_custom_tikv_config() {
         region_split_check_diff: Some(ReadableSize::mb(20)),
         region_compact_check_interval: ReadableDuration::secs(12),
         clean_stale_peer_delay: ReadableDuration::secs(0),
-        region_compact_check_step: 1_234,
+        region_compact_check_step: Some(1_234),
         region_compact_min_tombstones: 999,
         region_compact_tombstones_percent: 33,
+        region_compact_min_redundant_rows: 999,
+        region_compact_redundant_rows_percent: 33,
         pd_heartbeat_tick_interval: ReadableDuration::minutes(12),
         pd_store_heartbeat_tick_interval: ReadableDuration::secs(12),
         notify_capacity: 12_345,
@@ -258,6 +262,7 @@ fn test_serde_custom_tikv_config() {
         check_request_snapshot_interval: ReadableDuration::minutes(1),
         slow_trend_unsensitive_cause: 10.0,
         slow_trend_unsensitive_result: 0.5,
+        enable_v2_compatible_learner: false,
     };
     value.pd = PdConfig::new(vec!["example.com:443".to_owned()]);
     let titan_cf_config = TitanCfConfig {
@@ -344,7 +349,7 @@ fn test_serde_custom_tikv_config() {
             max_write_buffer_number: 12,
             min_write_buffer_number_to_merge: 12,
             max_bytes_for_level_base: ReadableSize::kb(12),
-            target_file_size_base: ReadableSize::kb(123),
+            target_file_size_base: Some(ReadableSize::kb(123)),
             level0_file_num_compaction_trigger: 123,
             level0_slowdown_writes_trigger: Some(123),
             level0_stop_writes_trigger: Some(123),
@@ -399,7 +404,7 @@ fn test_serde_custom_tikv_config() {
             max_write_buffer_number: 12,
             min_write_buffer_number_to_merge: 12,
             max_bytes_for_level_base: ReadableSize::kb(12),
-            target_file_size_base: ReadableSize::kb(123),
+            target_file_size_base: Some(ReadableSize::kb(123)),
             level0_file_num_compaction_trigger: 123,
             level0_slowdown_writes_trigger: Some(123),
             level0_stop_writes_trigger: Some(123),
@@ -468,7 +473,7 @@ fn test_serde_custom_tikv_config() {
             max_write_buffer_number: 12,
             min_write_buffer_number_to_merge: 12,
             max_bytes_for_level_base: ReadableSize::kb(12),
-            target_file_size_base: ReadableSize::kb(123),
+            target_file_size_base: Some(ReadableSize::kb(123)),
             level0_file_num_compaction_trigger: 123,
             level0_slowdown_writes_trigger: Some(123),
             level0_stop_writes_trigger: Some(123),
@@ -537,7 +542,7 @@ fn test_serde_custom_tikv_config() {
             max_write_buffer_number: 12,
             min_write_buffer_number_to_merge: 12,
             max_bytes_for_level_base: ReadableSize::kb(12),
-            target_file_size_base: ReadableSize::kb(123),
+            target_file_size_base: Some(ReadableSize::kb(123)),
             level0_file_num_compaction_trigger: 123,
             level0_slowdown_writes_trigger: Some(123),
             level0_stop_writes_trigger: Some(123),
@@ -635,7 +640,7 @@ fn test_serde_custom_tikv_config() {
             max_write_buffer_number: 12,
             min_write_buffer_number_to_merge: 12,
             max_bytes_for_level_base: ReadableSize::kb(12),
-            target_file_size_base: ReadableSize::kb(123),
+            target_file_size_base: Some(ReadableSize::kb(123)),
             level0_file_num_compaction_trigger: 123,
             level0_slowdown_writes_trigger: Some(123),
             level0_stop_writes_trigger: Some(123),
@@ -772,7 +777,7 @@ fn test_serde_custom_tikv_config() {
         },
         ..Default::default()
     };
-    value.backup_stream = BackupStreamConfig {
+    value.log_backup = BackupStreamConfig {
         max_flush_interval: ReadableDuration::secs(11),
         num_threads: 7,
         enable: true,
@@ -780,6 +785,7 @@ fn test_serde_custom_tikv_config() {
         file_size_limit: ReadableSize::gb(5),
         initial_scan_pending_memory_quota: ReadableSize::kb(2),
         initial_scan_rate_limit: ReadableSize::mb(3),
+        min_ts_interval: ReadableDuration::secs(2),
     };
     value.import = ImportConfig {
         num_threads: 123,
@@ -824,48 +830,15 @@ fn test_serde_custom_tikv_config() {
         renew_batch_max_size: 8192,
         alloc_ahead_buffer: ReadableDuration::millis(3000),
     };
+    value.resource_control = ResourceControlConfig { enabled: false };
 
     let custom = read_file_in_project_dir("integrations/config/test-custom.toml");
     let load = toml::from_str(&custom).unwrap();
-    if value != load {
-        diff_config(&value, &load);
-    }
+    assert_eq_debug(&value, &load);
+
     let dump = toml::to_string_pretty(&load).unwrap();
     let load_from_dump = toml::from_str(&dump).unwrap();
-    if load != load_from_dump {
-        diff_config(&load, &load_from_dump);
-    }
-}
-
-#[track_caller]
-fn diff_config(lhs: &TikvConfig, rhs: &TikvConfig) {
-    let lhs_str = format!("{:?}", lhs);
-    let rhs_str = format!("{:?}", rhs);
-
-    fn find_index(l: impl Iterator<Item = (u8, u8)>) -> usize {
-        let it = l
-            .enumerate()
-            .take_while(|(_, (l, r))| l == r)
-            .filter(|(_, (l, _))| *l == b' ');
-        let mut last = None;
-        let mut second = None;
-        for a in it {
-            second = last;
-            last = Some(a);
-        }
-        second.map_or(0, |(i, _)| i)
-    }
-    let cpl = find_index(lhs_str.bytes().zip(rhs_str.bytes()));
-    let csl = find_index(lhs_str.bytes().rev().zip(rhs_str.bytes().rev()));
-    if cpl + csl > lhs_str.len() || cpl + csl > rhs_str.len() {
-        assert_eq!(lhs, rhs);
-    }
-    let lhs_diff = String::from_utf8_lossy(&lhs_str.as_bytes()[cpl..lhs_str.len() - csl]);
-    let rhs_diff = String::from_utf8_lossy(&rhs_str.as_bytes()[cpl..rhs_str.len() - csl]);
-    panic!(
-        "config not matched:\nlhs: ...{}...,\nrhs: ...{}...",
-        lhs_diff, rhs_diff
-    );
+    assert_eq_debug(&load, &load_from_dump);
 }
 
 #[test]
@@ -932,4 +905,25 @@ fn test_log_backward_compatible() {
     assert_eq!(cfg.log.file.filename, "foo");
     assert_eq!(cfg.log.format, LogFormat::Json);
     assert_eq!(cfg.log.file.max_size, 1024);
+}
+
+#[test]
+fn test_rename_compatibility() {
+    let old_content = r#"
+[server]
+snap-max-write-bytes-per-sec = "10MiB"
+
+[storage]
+engine = "raft-kv2"
+    "#;
+    let new_content = r#"
+[server]
+snap-io-max-bytes-per-sec = "10MiB"
+
+[storage]
+engine = "partitioned-raft-kv"
+    "#;
+    let old_cfg: TikvConfig = toml::from_str(old_content).unwrap();
+    let new_cfg: TikvConfig = toml::from_str(new_content).unwrap();
+    assert_eq_debug(&old_cfg, &new_cfg);
 }

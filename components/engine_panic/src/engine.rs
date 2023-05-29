@@ -22,6 +22,10 @@ impl KvEngine for PanicEngine {
     fn bad_downcast<T: 'static>(&self) -> &T {
         panic!()
     }
+    #[cfg(feature = "testexport")]
+    fn inner_refcount(&self) -> usize {
+        panic!()
+    }
 }
 
 impl Peekable for PanicEngine {

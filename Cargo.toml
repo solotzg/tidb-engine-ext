@@ -1,6 +1,6 @@
 [package]
 name = "tikv"
-version = "6.7.0-alpha"
+version = "7.1.0"
 authors = ["The TiKV Authors"]
 description = "A distributed transactional key-value database powered by Rust and Raft"
 license = "Apache-2.0"
@@ -39,7 +39,7 @@ cloud-azure = [
   "encryption_export/cloud-azure",
   "sst_importer/cloud-azure",
 ]
-testexport = ["raftstore/testexport", "api_version/testexport", "causal_ts/testexport", "engine_traits/testexport"]
+testexport = ["raftstore/testexport", "api_version/testexport", "causal_ts/testexport", "engine_traits/testexport", "engine_rocks/testexport", "engine_panic/testexport"]
 test-engine-kv-rocksdb = [
   "engine_test/test-engine-kv-rocksdb"
 ]
@@ -55,9 +55,6 @@ test-engines-panic = [
 cloud-storage-grpc = ["sst_importer/cloud-storage-grpc"]
 cloud-storage-dylib = ["sst_importer/cloud-storage-dylib"]
 pprof-fp = ["pprof/frame-pointer"]
-
-# dummy proxy features to make cargo clippy happy.
-enable-pagestorage = []
 
 # for testing configure propegate to other crates
 # https://stackoverflow.com/questions/41700543/can-we-share-test-utilites-between-crates
@@ -189,6 +186,7 @@ api_version = { workspace = true, features = ["testexport"] }
 example_coprocessor_plugin = { workspace = true } # should be a binary dependency
 hyper-openssl = "0.9"
 panic_hook = { workspace = true }
+raftstore = { workspace = true, features = ["testexport"] }
 reqwest = { version = "0.11", features = ["blocking"] }
 test_sst_importer = { workspace = true }
 test_util = { workspace = true }
@@ -221,12 +219,9 @@ fs2 = { git = "https://github.com/tabokie/fs2-rs", branch = "tikv" }
 # Remove this when a new version is release. We need to solve rust-lang/cmake-rs#143.
 cmake = { git = "https://github.com/rust-lang/cmake-rs" }
 
-# TODO: remove this after crossbeam-deque is updated to the next release version.
-# This is a workaround for cargo can't resolving the this patch in yatp.
-crossbeam-deque = { git = "https://github.com/crossbeam-rs/crossbeam", rev = "41ed3d948720f26149b2ebeaf58fe8a193134056" }
-
 # remove this when https://github.com/rust-lang/backtrace-rs/pull/503 is merged.
 backtrace = { git = 'https://github.com/hehechen/backtrace-rs', branch = "v0.3.61" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = { git = "https://github.com/tikv/procinfo-rs", rev = "6599eb9dca74229b2c1fcc44118bef7eff127128" }
 # When you modify TiKV cooperatively with kvproto, this will be useful to submit the PR to TiKV and the PR to
@@ -301,15 +296,20 @@ members = [
   "components/tipb_helper",
   "components/tracker",
   "components/txn_types",
-  "engine_tiflash",
   "fuzz",
   "fuzz/fuzzer-afl",
   "fuzz/fuzzer-honggfuzz",
   "fuzz/fuzzer-libfuzzer",
   "gen-proxy-ffi",
-  "proxy_ffi",
+  "proxy_components/engine_store_ffi",
+  "proxy_components/engine_tiflash",
+  "proxy_components/mock-engine-store",
+  "proxy_components/proxy_ffi",
+  "proxy_components/proxy_server",
+  #"proxy_components/proxy_test_raftstore_v2",
   "proxy_tests",
   "raftstore-proxy",
+  "raftstore-proxy-main",
   "tests",
 ]
 default-members = ["raftstore-proxy"]
@@ -388,18 +388,19 @@ txn_types = { path = "components/txn_types" }
 grpcio = { version = "0.10.4", default-features = false, features = ["openssl-vendored", "protobuf-codec", "nightly"] }
 grpcio-health = { version = "0.10.4", default-features = false, features = ["protobuf-codec"] }
 tipb = { git = "https://github.com/pingcap/tipb.git" }
-kvproto = { git = "https://github.com/pingcap/kvproto.git" }
+kvproto = { git = "https://github.com/pingcap/kvproto.git", branch = "release-7.1" }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 tokio-timer = { git = "https://github.com/tikv/tokio", branch = "tokio-timer-hotfix" }
 slog = { version = "2.3", features = ["max_level_trace", "release_max_level_debug"] }
 slog-global = { version = "0.1", git = "https://github.com/breeswish/slog-global.git", rev = "d592f88e4dbba5eb439998463054f1a44fbf17b9" }
 
 # TiFlash libs
-engine_store_ffi = { path = "engine_store_ffi", default-features = false }
-mock-engine-store = { path = "mock-engine-store", default-features = false }
-proxy_server = { path = "proxy_server", default-features = false }
-engine_tiflash = { path = "engine_tiflash", default-features = false }
-proxy_ffi = { path = "proxy_ffi", default-features = false }
+engine_store_ffi = { path = "proxy_components/engine_store_ffi", default-features = false }
+mock-engine-store = { path = "proxy_components/mock-engine-store", default-features = false }
+proxy_server = { path = "proxy_components/proxy_server", default-features = false }
+# proxy_test_raftstore_v2 = { path = "proxy_components/proxy_test_raftstore_v2", default-features = false }
+engine_tiflash = { path = "proxy_components/engine_tiflash", default-features = false }
+proxy_ffi = { path = "proxy_components/proxy_ffi", default-features = false }
 
 [profile.dev.package.grpcio-sys]
 debug = false

@@ -19,9 +19,10 @@ use backup_stream::{
     },
     observer::BackupStreamObserver,
     router::Router,
-    Endpoint, GetCheckpointResult, RegionCheckpointOperation, RegionSet, Service, Task,
+    utils, BackupStreamResolver, Endpoint, GetCheckpointResult, RegionCheckpointOperation,
+    RegionSet, Service, Task,
 };
-use futures::{executor::block_on, AsyncWriteExt, Future, Stream, StreamExt, TryStreamExt};
+use futures::{executor::block_on, AsyncWriteExt, Future, Stream, StreamExt};
 use grpcio::{ChannelBuilder, Server, ServerBuilder};
 use kvproto::{
     brpb::{CompressionType, Local, Metadata, StorageBackend},
@@ -32,6 +33,8 @@ use kvproto::{
 };
 use pd_client::PdClient;
 use protobuf::parse_from_bytes;
+use raftstore::router::CdcRaftRouter;
+use resolved_ts::LeadershipResolver;
 use tempdir::TempDir;
 use test_raftstore::{new_server_cluster, Cluster, ServerCluster};
 use test_util::retry;
@@ -275,7 +278,10 @@ impl Suite {
     /// create a subscription stream. this has simply asserted no error, because
     /// in theory observing flushing should not emit error. change that if
     /// needed.
-    fn flush_stream(&self) -> impl Stream<Item = (u64, SubscribeFlushEventResponse)> {
+    fn flush_stream(
+        &self,
+        panic_while_fail: bool,
+    ) -> impl Stream<Item = (u64, SubscribeFlushEventResponse)> {
         let streams = self
             .log_backup_cli
             .iter()
@@ -288,8 +294,18 @@ impl Suite {
                     })
                     .unwrap_or_else(|err| panic!("failed to subscribe on {} because {}", id, err));
                 let id = *id;
-                stream.map_ok(move |x| (id, x)).map(move |x| {
-                    x.unwrap_or_else(move |err| panic!("failed to rec from {} because {}", id, err))
+                stream.filter_map(move |x| {
+                    futures::future::ready(match x {
+                        Ok(x) => Some((id, x)),
+                        Err(err) => {
+                            if panic_while_fail {
+                                panic!("failed to rec from {} because {}", id, err)
+                            } else {
+                                println!("[WARN] failed to rec from {} because {}", id, err);
+                                None
+                            }
+                        }
+                    })
                 })
             })
             .collect::<Vec<_>>();
@@ -322,11 +338,24 @@ impl Suite {
         let worker = self.endpoints.get_mut(&id).unwrap();
         let sim = cluster.sim.wl();
         let raft_router = sim.get_server_router(id);
+        let raft_router = CdcRaftRouter(raft_router);
         let cm = sim.get_concurrency_manager(id);
         let regions = sim.region_info_accessors.get(&id).unwrap().clone();
         let ob = self.obs.get(&id).unwrap().clone();
         cfg.enable = true;
         cfg.temp_path = format!("/{}/{}", self.temp_files.path().display(), id);
+        let resolver = LeadershipResolver::new(
+            id,
+            cluster.pd_client.clone(),
+            Arc::clone(&self.env),
+            Arc::clone(&sim.security_mgr),
+            cluster.store_metas[&id]
+                .lock()
+                .unwrap()
+                .region_read_progress
+                .clone(),
+            Duration::from_secs(60),
+        );
         let endpoint = Endpoint::new(
             id,
             self.meta_store.clone(),
@@ -337,13 +366,7 @@ impl Suite {
             raft_router,
             cluster.pd_client.clone(),
             cm,
-            Arc::clone(&self.env),
-            cluster.store_metas[&id]
-                .lock()
-                .unwrap()
-                .region_read_progress
-                .clone(),
-            Arc::clone(&sim.security_mgr),
+            BackupStreamResolver::V1(resolver),
         );
         worker.start(endpoint);
     }
@@ -390,7 +413,7 @@ impl Suite {
         rx.into_iter()
             .map(|r| match r {
                 GetCheckpointResult::Ok { checkpoint, region } => {
-                    info!("getting checkpoint"; "checkpoint" => %checkpoint, "region" => ?region);
+                    info!("getting checkpoint"; "checkpoint" => %checkpoint, utils::slog_region(&region));
                     checkpoint.into_inner()
                 }
                 GetCheckpointResult::NotFound { .. }
@@ -463,6 +486,7 @@ impl Suite {
     }
 
     fn force_flush_files(&self, task: &str) {
+        // TODO: use the callback to make the test more stable.
         self.run(|| Task::ForceFlush(task.to_owned()));
         self.sync();
     }
@@ -805,10 +829,15 @@ mod test {
     use std::time::{Duration, Instant};
 
     use backup_stream::{
-        errors::Error, router::TaskSelector, GetCheckpointResult, RegionCheckpointOperation,
-        RegionSet, Task,
+        errors::Error,
+        metadata::{
+            keys::MetaKey,
+            store::{Keys, MetaStore},
+        },
+        router::TaskSelector,
+        GetCheckpointResult, RegionCheckpointOperation, RegionSet, Task,
     };
-    use futures::{Stream, StreamExt};
+    use futures::{executor::block_on, Stream, StreamExt};
     use pd_client::PdClient;
     use test_raftstore::IsolationFilterFactory;
     use tikv_util::{box_err, defer, info, HandyRwLock};
@@ -1264,7 +1293,7 @@ mod test {
     #[test]
     fn subscribe_flushing() {
         let mut suite = super::SuiteBuilder::new_named("sub_flush").build();
-        let stream = suite.flush_stream();
+        let stream = suite.flush_stream(true);
         for i in 1..10 {
             let split_key = make_split_key_at_record(1, i * 20);
             suite.must_split(&split_key);
@@ -1307,11 +1336,76 @@ mod test {
     }
 
     #[test]
+    fn failure_and_split() {
+        let mut suite = super::SuiteBuilder::new_named("failure_and_split")
+            .nodes(1)
+            .build();
+        fail::cfg("try_start_observe0", "pause").unwrap();
+
+        // write data before the task starting, for testing incremental scanning.
+        let round1 = run_async_test(suite.write_records(0, 128, 1));
+        suite.must_register_task(1, "failure_and_split");
+        suite.sync();
+
+        suite.must_split(&make_split_key_at_record(1, 42));
+        suite.sync();
+        std::thread::sleep(Duration::from_millis(200));
+        fail::cfg("try_start_observe", "2*return").unwrap();
+        fail::cfg("try_start_observe0", "off").unwrap();
+
+        let round2 = run_async_test(suite.write_records(256, 128, 1));
+        suite.force_flush_files("failure_and_split");
+        suite.wait_for_flush();
+        run_async_test(suite.check_for_write_records(
+            suite.flushed_files.path(),
+            round1.union(&round2).map(Vec::as_slice),
+        ));
+        let cp = suite.global_checkpoint();
+        assert!(cp > 512, "it is {}", cp);
+        suite.cluster.shutdown();
+    }
+
+    #[test]
+    fn resolved_follower() {
+        let mut suite = super::SuiteBuilder::new_named("r").build();
+        let round1 = run_async_test(suite.write_records(0, 128, 1));
+        suite.must_register_task(1, "r");
+        suite.run(|| Task::RegionCheckpointsOp(RegionCheckpointOperation::PrepareMinTsForResolve));
+        suite.sync();
+        std::thread::sleep(Duration::from_secs(1));
+
+        let leader = suite.cluster.leader_of_region(1).unwrap();
+        suite.must_shuffle_leader(1);
+        let round2 = run_async_test(suite.write_records(256, 128, 1));
+        suite
+            .endpoints
+            .get(&leader.store_id)
+            .unwrap()
+            .scheduler()
+            .schedule(Task::ForceFlush("r".to_owned()))
+            .unwrap();
+        suite.sync();
+        std::thread::sleep(Duration::from_secs(2));
+        run_async_test(suite.check_for_write_records(
+            suite.flushed_files.path(),
+            round1.iter().map(|x| x.as_slice()),
+        ));
+        assert!(suite.global_checkpoint() > 256);
+        suite.force_flush_files("r");
+        suite.wait_for_flush();
+        assert!(suite.global_checkpoint() > 512);
+        run_async_test(suite.check_for_write_records(
+            suite.flushed_files.path(),
+            round1.union(&round2).map(|x| x.as_slice()),
+        ));
+    }
+
+    #[test]
     fn network_partition() {
         let mut suite = super::SuiteBuilder::new_named("network_partition")
             .nodes(3)
             .build();
-        let stream = suite.flush_stream();
+        let stream = suite.flush_stream(true);
         suite.must_register_task(1, "network_partition");
         let leader = suite.cluster.leader_of_region(1).unwrap();
         let round1 = run_async_test(suite.write_records(0, 64, 1));
@@ -1349,5 +1443,55 @@ mod test {
             suite.flushed_files.path(),
             round1.iter().map(|k| k.as_slice()),
         ))
+    }
+
+    #[test]
+    fn test_retry_abort() {
+        let mut suite = super::SuiteBuilder::new_named("retry_abort")
+            .nodes(1)
+            .build();
+        defer! {
+            fail::list().into_iter().for_each(|(name, _)| fail::remove(name))
+        };
+
+        suite.must_register_task(1, "retry_abort");
+        fail::cfg("subscribe_mgr_retry_start_observe_delay", "return(10)").unwrap();
+        fail::cfg("try_start_observe", "return()").unwrap();
+
+        suite.must_split(&make_split_key_at_record(1, 42));
+        std::thread::sleep(Duration::from_secs(2));
+
+        let error = run_async_test(suite.get_meta_cli().get_last_error("retry_abort", 1)).unwrap();
+        let error = error.expect("no error uploaded");
+        error
+            .get_error_message()
+            .find("retry")
+            .expect("error doesn't contain retry");
+        fail::cfg("try_start_observe", "10*return()").unwrap();
+        // Resume the task manually...
+        run_async_test(async {
+            suite
+                .meta_store
+                .delete(Keys::Key(MetaKey::pause_of("retry_abort")))
+                .await?;
+            suite
+                .meta_store
+                .delete(Keys::Prefix(MetaKey::last_errors_of("retry_abort")))
+                .await?;
+            backup_stream::errors::Result::Ok(())
+        })
+        .unwrap();
+
+        suite.sync();
+        suite.wait_with(move |r| block_on(r.get_task_info("retry_abort")).is_ok());
+        let items = run_async_test(suite.write_records(0, 128, 1));
+        suite.force_flush_files("retry_abort");
+        suite.wait_for_flush();
+        run_async_test(
+            suite.check_for_write_records(
+                suite.flushed_files.path(),
+                items.iter().map(Vec::as_slice),
+            ),
+        );
     }
 }

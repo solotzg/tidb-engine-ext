@@ -411,6 +411,16 @@ where
         }
     }
 
+    async fn get_engine_type(cfg_controller: &ConfigController) -> hyper::Result<Response<Body>> {
+        let engine_type = cfg_controller.get_engine_type();
+        let response = Response::builder()
+            .header("Content-Type", mime::TEXT_PLAIN.to_string())
+            .header("Content-Length", engine_type.len())
+            .body(engine_type.into())
+            .unwrap();
+        Ok(response)
+    }
+
     pub fn stop(self) {
         let _ = self.tx.send(());
         self.thread_pool.shutdown_timeout(Duration::from_secs(3));
@@ -609,6 +619,9 @@ where
                             (Method::POST, "/config") => {
                                 Self::update_config(cfg_controller.clone(), req).await
                             }
+                            (Method::GET, "/engine_type") => {
+                                Self::get_engine_type(&cfg_controller).await
+                            }
                             // This interface is used for configuration file hosting scenarios,
                             // TiKV will not update configuration files, and this interface will
                             // silently ignore configration items that cannot be updated online,
@@ -707,14 +720,15 @@ where
 }
 
 #[derive(Serialize)]
-struct ResouceGroupSetting {
+struct ResourceGroupSetting {
     name: String,
     ru: u64,
+    priority: u32,
     burst_limit: i64,
 }
 
-fn into_debug_request_group(rg: ResourceGroup) -> ResouceGroupSetting {
-    ResouceGroupSetting {
+fn into_debug_request_group(rg: ResourceGroup) -> ResourceGroupSetting {
+    ResourceGroupSetting {
         name: rg.name,
         ru: rg
             .r_u_settings
@@ -722,6 +736,7 @@ fn into_debug_request_group(rg: ResourceGroup) -> ResouceGroupSetting {
             .get_r_u()
             .get_settings()
             .get_fill_rate(),
+        priority: rg.priority,
         burst_limit: rg
             .r_u_settings
             .get_ref()
@@ -1022,6 +1037,7 @@ mod tests {
     use crate::{
         config::{ConfigController, TikvConfig},
         server::status_server::{profile::TEST_PROFILE_MUTEX, LogLevelRequest, StatusServer},
+        storage::config::EngineType,
     };
 
     #[derive(Clone)]
@@ -1570,5 +1586,44 @@ mod tests {
         });
         block_on(handle).unwrap();
         status_server.stop();
+    }
+
+    #[test]
+    fn test_get_engine_type() {
+        let mut multi_rocks_cfg = TikvConfig::default();
+        multi_rocks_cfg.storage.engine = EngineType::RaftKv2;
+        let cfgs = [TikvConfig::default(), multi_rocks_cfg];
+        let resp_strs = ["raft-kv", "partitioned-raft-kv"];
+        for (cfg, resp_str) in IntoIterator::into_iter(cfgs).zip(resp_strs) {
+            let temp_dir = tempfile::TempDir::new().unwrap();
+            let mut status_server = StatusServer::new(
+                1,
+                ConfigController::new(cfg),
+                Arc::new(SecurityConfig::default()),
+                MockRouter,
+                temp_dir.path().to_path_buf(),
+                None,
+            )
+            .unwrap();
+            let addr = "127.0.0.1:0".to_owned();
+            let _ = status_server.start(addr);
+            let client = Client::new();
+            let uri = Uri::builder()
+                .scheme("http")
+                .authority(status_server.listening_addr().to_string().as_str())
+                .path_and_query("/engine_type")
+                .build()
+                .unwrap();
+
+            let handle = status_server.thread_pool.spawn(async move {
+                let res = client.get(uri).await.unwrap();
+                assert_eq!(res.status(), StatusCode::OK);
+                let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+                let engine_type = String::from_utf8(body_bytes.as_ref().to_owned()).unwrap();
+                assert_eq!(engine_type, resp_str);
+            });
+            block_on(handle).unwrap();
+            status_server.stop();
+        }
     }
 }

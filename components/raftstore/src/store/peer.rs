@@ -27,7 +27,7 @@ use fail::fail_point;
 use getset::{Getters, MutGetters};
 use kvproto::{
     errorpb,
-    kvrpcpb::{DiskFullOpt, ExtraOp as TxnExtraOp, LockInfo},
+    kvrpcpb::{DiskFullOpt, ExtraOp as TxnExtraOp},
     metapb::{self, PeerRole},
     pdpb::{self, PeerStats},
     raft_cmdpb::{
@@ -571,13 +571,12 @@ pub fn start_unsafe_recovery_report<EK: KvEngine, ER: RaftEngine>(
 pub fn propose_read_index<T: raft::Storage>(
     raft_group: &mut RawNode<T>,
     request: Option<&raft_cmdpb::ReadIndexRequest>,
-    locked: Option<&LockInfo>,
 ) -> (Uuid, bool) {
     let last_pending_read_count = raft_group.raft.pending_read_count();
     let last_ready_read_count = raft_group.raft.ready_read_count();
 
     let id = Uuid::new_v4();
-    raft_group.read_index(ReadIndexContext::fields_to_bytes(id, request, locked));
+    raft_group.read_index(ReadIndexContext::fields_to_bytes(id, request, None));
 
     let pending_read_count = raft_group.raft.pending_read_count();
     let ready_read_count = raft_group.raft.ready_read_count();
@@ -899,6 +898,13 @@ where
     /// the request index for retrying.
     pub request_index: u64,
 
+    /// It's used to identify the situation where the region worker is
+    /// generating and sending snapshots when the newly elected leader by Raft
+    /// applies the switch witness cmd which commited before the election. This
+    /// flag will prevent immediate data clearing and will be cleared after
+    /// the successful transfer of leadership.
+    pub delay_clean_data: bool,
+
     /// When the witness becomes non-witness, it need to actively request a
     /// snapshot from the leader, In order to avoid log lag, we need to reject
     /// the leader's `MsgAppend` request unless the `term` of the `last index`
@@ -1133,6 +1139,7 @@ where
             pending_remove: false,
             wait_data,
             request_index: last_index,
+            delay_clean_data: false,
             should_reject_msgappend: false,
             should_wake_up: false,
             force_leader: None,
@@ -2323,6 +2330,10 @@ where
                     self.mut_store().cancel_generating_snap(None);
                     self.clear_disk_full_peers(ctx);
                     self.clear_in_memory_pessimistic_locks();
+                    if self.peer.is_witness && self.delay_clean_data {
+                        let _ = self.get_store().clear_data();
+                        self.delay_clean_data = false;
+                    }
                 }
                 _ => {}
             }
@@ -2614,6 +2625,7 @@ where
                     ctx.apply_router
                         .schedule_task(self.region_id, ApplyTask::Recover(self.region_id));
                     self.wait_data = false;
+                    self.should_reject_msgappend = false;
                     return false;
                 }
             }
@@ -3601,7 +3613,7 @@ where
             let term = self.term();
             self.leader_lease
                 .maybe_new_remote_lease(term)
-                .map(ReadProgress::leader_lease)
+                .map(ReadProgress::set_leader_lease)
         };
         if let Some(progress) = progress {
             let mut meta = ctx.store_meta.lock().unwrap();
@@ -4038,7 +4050,7 @@ where
             .get_mut(0)
             .filter(|req| req.has_read_index())
             .map(|req| req.take_read_index());
-        let (id, dropped) = self.propose_read_index(request.as_ref(), None);
+        let (id, dropped) = self.propose_read_index(request.as_ref());
         if dropped && self.is_leader() {
             // The message gets dropped silently, can't be handled anymore.
             apply::notify_stale_req(self.term(), cb);
@@ -4085,9 +4097,8 @@ where
     pub fn propose_read_index(
         &mut self,
         request: Option<&raft_cmdpb::ReadIndexRequest>,
-        locked: Option<&LockInfo>,
     ) -> (Uuid, bool) {
-        propose_read_index(&mut self.raft_group, request, locked)
+        propose_read_index(&mut self.raft_group, request)
     }
 
     /// Returns (minimal matched, minimal committed_index)
@@ -5730,6 +5741,7 @@ fn is_request_urgent(req: &RaftCmdRequest) -> bool {
             | AdminCmdType::PrepareMerge
             | AdminCmdType::CommitMerge
             | AdminCmdType::RollbackMerge
+            | AdminCmdType::BatchSwitchWitness
     )
 }
 
@@ -5828,6 +5840,7 @@ mod tests {
             AdminCmdType::PrepareMerge,
             AdminCmdType::CommitMerge,
             AdminCmdType::RollbackMerge,
+            AdminCmdType::BatchSwitchWitness,
         ];
         for tp in AdminCmdType::values() {
             let mut req = RaftCmdRequest::default();

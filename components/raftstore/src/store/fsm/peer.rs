@@ -64,6 +64,7 @@ use tracker::GLOBAL_TRACKERS;
 use txn_types::WriteBatchFlags;
 
 use self::memtrace::*;
+use super::life::forward_destroy_to_source_peer;
 #[cfg(any(test, feature = "testexport"))]
 use crate::store::PeerInternalStat;
 use crate::{
@@ -2652,6 +2653,7 @@ where
             return;
         }
         if !msg.wait_data {
+            let original_remains_nr = self.fsm.peer.wait_data_peers.len();
             self.fsm
                 .peer
                 .wait_data_peers
@@ -2660,6 +2662,15 @@ where
                 "receive peer ready info";
                 "peer_id" => self.fsm.peer.peer.get_id(),
             );
+            if original_remains_nr != self.fsm.peer.wait_data_peers.len() {
+                info!(
+                   "notify pd with change peer region";
+                   "region_id" => self.fsm.region_id(),
+                   "peer_id" => from.get_id(),
+                   "region" => ?self.fsm.peer.region(),
+                );
+                self.fsm.peer.heartbeat_pd(self.ctx);
+            }
             return;
         }
         self.register_check_peers_availability_tick();
@@ -2731,6 +2742,25 @@ where
         }
     }
 
+    // In v1, gc_peer_request is handled to be compatible with v2.
+    // Note: it needs to be consistent with Peer::on_gc_peer_request in v2.
+    fn on_gc_peer_request(&mut self, msg: RaftMessage) {
+        let extra_msg = msg.get_extra_msg();
+
+        if !extra_msg.has_check_gc_peer() || extra_msg.get_index() == 0 {
+            // Corrupted message.
+            return;
+        }
+        if self.fsm.peer.get_store().applied_index() < extra_msg.get_index() {
+            // Merge not finish.
+            return;
+        }
+
+        forward_destroy_to_source_peer(&msg, |m| {
+            let _ = self.ctx.router.send_raft_message(m);
+        });
+    }
+
     fn on_extra_message(&mut self, mut msg: RaftMessage) {
         match msg.get_extra_msg().get_type() {
             ExtraMessageType::MsgRegionWakeUp | ExtraMessageType::MsgCheckStalePeer => {
@@ -2786,8 +2816,15 @@ where
             ExtraMessageType::MsgVoterReplicatedIndexResponse => {
                 self.on_voter_replicated_index_response(msg.get_extra_msg());
             }
+            ExtraMessageType::MsgGcPeerRequest => {
+                // To make learner (e.g. tiflash engine) compatiable with raftstore v2,
+                // it needs to response GcPeerResponse.
+                if self.ctx.cfg.enable_v2_compatible_learner {
+                    self.on_gc_peer_request(msg);
+                }
+            }
             // It's v2 only message and ignore does no harm.
-            ExtraMessageType::MsgGcPeerRequest | ExtraMessageType::MsgGcPeerResponse => (),
+            ExtraMessageType::MsgGcPeerResponse | ExtraMessageType::MsgFlushMemtable => (),
         }
     }
 
@@ -3938,7 +3975,7 @@ where
         let remain_cnt = self.fsm.peer.last_applying_idx - state.get_index() - 1;
         if total_cnt != 0 {
             self.fsm.peer.raft_log_size_hint =
-            self.fsm.peer.raft_log_size_hint * remain_cnt / total_cnt;
+                self.fsm.peer.raft_log_size_hint * remain_cnt / total_cnt;
         }
         let compact_to = state.get_index() + 1;
         self.fsm.peer.schedule_raftlog_gc(self.ctx, compact_to);
@@ -4978,7 +5015,7 @@ where
                 }
                 ExecResult::IngestSst { ssts } => self.on_ingest_sst_result(ssts),
                 ExecResult::TransferLeader { term } => self.on_transfer_leader(term),
-                ExecResult::SetFlashbackState { region } => self.on_set_flashback_state(region),
+                ExecResult::Flashback { region } => self.on_set_flashback_state(region),
                 ExecResult::BatchSwitchWitness(switches) => {
                     self.on_ready_batch_switch_witness(switches)
                 }
@@ -5152,6 +5189,8 @@ where
             return Err(Error::IsWitness(self.region_id()));
         }
 
+        fail_point!("ignore_forbid_leader_to_be_witness", |_| Ok(None));
+
         // Forbid requests to switch it into a witness when it's a leader
         if self.fsm.peer.is_leader()
             && msg.has_admin_request()
@@ -5224,10 +5263,13 @@ where
         // the apply phase and because a read-only request doesn't need to be applied,
         // so it will be allowed during the flashback progress, for example, a snapshot
         // request.
+        let header = msg.get_header();
+        let admin_type = msg.admin_request.as_ref().map(|req| req.get_cmd_type());
         if let Err(e) = util::check_flashback_state(
             self.region().is_in_flashback,
             self.region().flashback_start_ts,
-            msg,
+            header,
+            admin_type,
             region_id,
             true,
         ) {
@@ -5244,7 +5286,7 @@ where
                     .invalid_proposal
                     .flashback_not_prepared
                     .inc(),
-                _ => unreachable!(),
+                _ => unreachable!("{:?}", e),
             }
             return Err(e);
         }
@@ -5570,7 +5612,14 @@ where
         fail_point!("ignore request snapshot", |_| {
             self.schedule_tick(PeerTick::RequestSnapshot);
         });
-        if !self.fsm.peer.wait_data || self.fsm.peer.is_leader() {
+        if !self.fsm.peer.wait_data {
+            return;
+        }
+        if self.fsm.peer.is_leader()
+            || self.fsm.peer.is_handling_snapshot()
+            || self.fsm.peer.has_pending_snapshot()
+        {
+            self.schedule_tick(PeerTick::RequestSnapshot);
             return;
         }
         self.fsm.peer.request_index = self.fsm.peer.raft_group.raft.raft_log.last_index();
@@ -6458,9 +6507,15 @@ where
         for s in sw.switches {
             let (peer_id, is_witness) = (s.get_peer_id(), s.get_is_witness());
             if self.fsm.peer_id() == peer_id {
-                if is_witness && !self.fsm.peer.is_leader() {
-                    let _ = self.fsm.peer.get_store().clear_data();
+                if is_witness {
                     self.fsm.peer.raft_group.set_priority(-1);
+                    if !self.fsm.peer.is_leader() {
+                        let _ = self.fsm.peer.get_store().clear_data();
+                    } else {
+                        // Avoid calling `clear_data` as the region worker may be scanning snapshot,
+                        // to avoid problems (although no problems were found by testing).
+                        self.fsm.peer.delay_clean_data = true;
+                    }
                 } else {
                     self.fsm
                         .peer

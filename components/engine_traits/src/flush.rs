@@ -13,10 +13,10 @@
 //! be used as the start state.
 
 use std::{
-    collections::LinkedList,
+    collections::{HashMap, LinkedList},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
 };
 
@@ -29,7 +29,7 @@ use crate::{data_cf_offset, RaftEngine, RaftLogBatch, DATA_CFS_LEN};
 pub struct ApplyProgress {
     cf: String,
     apply_index: u64,
-    earliest_seqno: u64,
+    smallest_seqno: u64,
 }
 
 impl ApplyProgress {
@@ -52,6 +52,47 @@ impl ApplyProgress {
 struct FlushProgress {
     prs: LinkedList<ApplyProgress>,
     last_flushed: [u64; DATA_CFS_LEN],
+}
+
+/// A share state between raftstore and underlying engine.
+///
+/// raftstore will update state changes and corresponding sst apply index, when
+/// apply ingest sst request, it should ensure the sst can be deleted
+/// if the flushed index greater than it .
+#[derive(Debug, Clone)]
+pub struct SstApplyState {
+    sst_map: Arc<RwLock<HashMap<Vec<u8>, u64>>>,
+}
+
+impl Default for SstApplyState {
+    fn default() -> Self {
+        Self {
+            sst_map: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl SstApplyState {
+    #[inline]
+    pub fn registe_ssts(&self, uuids: Vec<Vec<u8>>, sst_applied_index: u64) {
+        let mut map = self.sst_map.write().unwrap();
+        for uuid in uuids {
+            map.insert(uuid, sst_applied_index);
+        }
+    }
+
+    /// Query the sst applied index.
+    #[inline]
+    pub fn sst_applied_index(&self, uuid: &Vec<u8>) -> Option<u64> {
+        self.sst_map.read().unwrap().get(uuid).copied()
+    }
+
+    pub fn delete_ssts(&self, uuids: Vec<Vec<u8>>) {
+        let mut map = self.sst_map.write().unwrap();
+        for uuid in uuids {
+            map.remove(&uuid);
+        }
+    }
 }
 
 /// A share state between raftstore and underlying engine.
@@ -123,8 +164,8 @@ impl PersistenceListener {
 
     /// Called when memtable is frozen.
     ///
-    /// `earliest_seqno` should be the smallest seqno of the memtable.
-    pub fn on_memtable_sealed(&self, cf: String, earliest_seqno: u64) {
+    /// `smallest_seqno` should be the smallest seqno of the memtable.
+    pub fn on_memtable_sealed(&self, cf: String, smallest_seqno: u64) {
         // The correctness relies on the assumption that there will be only one
         // thread writting to the DB and increasing apply index.
         // Apply index will be set within DB lock, so it's correct even with manual
@@ -133,16 +174,16 @@ impl PersistenceListener {
         let apply_index = self.state.applied_index.load(Ordering::SeqCst);
         let mut prs = self.progress.lock().unwrap();
         let flushed = prs.last_flushed[offset];
-        if flushed > earliest_seqno {
+        if flushed > smallest_seqno {
             panic!(
                 "sealed seqno has been flushed {} {} {} <= {}",
-                cf, apply_index, earliest_seqno, flushed
+                cf, apply_index, smallest_seqno, flushed
             );
         }
         prs.prs.push_back(ApplyProgress {
             cf,
             apply_index,
-            earliest_seqno,
+            smallest_seqno,
         });
     }
 
@@ -170,8 +211,7 @@ impl PersistenceListener {
                     cursor.move_next();
                     continue;
                 }
-                // Note flushed largest_seqno equals to earliest_seqno of next memtable.
-                if pr.earliest_seqno < largest_seqno {
+                if pr.smallest_seqno <= largest_seqno {
                     match &mut flushed_pr {
                         None => flushed_pr = cursor.remove_current(),
                         Some(flushed_pr) => {

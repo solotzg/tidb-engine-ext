@@ -33,7 +33,10 @@ use engine_rocks::{
         DBCompactionStyle, DBCompressionType, DBRateLimiterMode, DBRecoveryMode, Env,
         PrepopulateBlockCache, RateLimiter, WriteBufferManager,
     },
-    util::{FixedPrefixSliceTransform, FixedSuffixSliceTransform, NoopSliceTransform},
+    util::{
+        FixedPrefixSliceTransform, FixedSuffixSliceTransform, NoopSliceTransform,
+        RangeCompactionFilterFactory, StackingCompactionFilterFactory,
+    },
     RaftDbLogger, RangePropertiesCollectorFactory, RawMvccPropertiesCollectorFactory,
     RocksCfOptions, RocksDbOptions, RocksEngine, RocksEventListener, RocksStatistics,
     RocksTitanDbOptions, RocksdbLogger, TtlPropertiesCollectorFactory,
@@ -86,6 +89,7 @@ use crate::{
 };
 
 pub const DEFAULT_ROCKSDB_SUB_DIR: &str = "db";
+pub const DEFAULT_TABLET_SUB_DIR: &str = "tablets";
 
 /// By default, block cache size will be set to 45% of system memory.
 pub const BLOCK_CACHE_RATE: f64 = 0.45;
@@ -320,7 +324,7 @@ macro_rules! cf_config {
             #[online_config(skip)]
             pub min_write_buffer_number_to_merge: i32,
             pub max_bytes_for_level_base: ReadableSize,
-            pub target_file_size_base: ReadableSize,
+            pub target_file_size_base: Option<ReadableSize>,
             pub level0_file_num_compaction_trigger: i32,
             pub level0_slowdown_writes_trigger: Option<i32>,
             pub level0_stop_writes_trigger: Option<i32>,
@@ -376,6 +380,11 @@ macro_rules! cf_config {
         }
 
         impl $name {
+            #[inline]
+            fn target_file_size_base(&self) -> u64 {
+                self.target_file_size_base.unwrap_or(ReadableSize::mb(8)).0
+            }
+
             fn validate(&self) -> Result<(), Box<dyn Error>> {
                 if self.block_size.0 as usize > MAX_BLOCK_SIZE {
                     return Err(format!(
@@ -449,7 +458,7 @@ macro_rules! write_into_metrics {
             .set($cf.max_bytes_for_level_base.0 as f64);
         $metrics
             .with_label_values(&[$tag, "target_file_size_base"])
-            .set($cf.target_file_size_base.0 as f64);
+            .set($cf.target_file_size_base() as f64);
         $metrics
             .with_label_values(&[$tag, "level0_file_num_compaction_trigger"])
             .set($cf.level0_file_num_compaction_trigger.into());
@@ -571,7 +580,7 @@ macro_rules! build_cf_opt {
         cf_opts.set_max_write_buffer_number($opt.max_write_buffer_number);
         cf_opts.set_min_write_buffer_number_to_merge($opt.min_write_buffer_number_to_merge);
         cf_opts.set_max_bytes_for_level_base($opt.max_bytes_for_level_base.0);
-        cf_opts.set_target_file_size_base($opt.target_file_size_base.0);
+        cf_opts.set_target_file_size_base($opt.target_file_size_base());
         cf_opts.set_level_zero_file_num_compaction_trigger($opt.level0_file_num_compaction_trigger);
         cf_opts.set_level_zero_slowdown_writes_trigger(
             $opt.level0_slowdown_writes_trigger.unwrap_or_default(),
@@ -658,7 +667,7 @@ impl Default for DefaultCfConfig {
             max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
             max_bytes_for_level_base: ReadableSize::mb(512),
-            target_file_size_base: ReadableSize::mb(8),
+            target_file_size_base: None,
             level0_file_num_compaction_trigger: 4,
             level0_slowdown_writes_trigger: None,
             level0_stop_writes_trigger: None,
@@ -697,6 +706,7 @@ impl DefaultCfConfig {
         shared: &CfResources,
         region_info_accessor: Option<&RegionInfoAccessor>,
         api_version: ApiVersion,
+        filter_factory: Option<&RangeCompactionFilterFactory>,
         for_engine: EngineType,
     ) -> RocksCfOptions {
         let mut cf_opts = build_cf_opt!(
@@ -716,29 +726,67 @@ impl DefaultCfConfig {
             RawMvccPropertiesCollectorFactory::default(),
         );
         cf_opts.add_table_properties_collector_factory("tikv.range-properties-collector", f);
-        match api_version {
-            ApiVersion::V1 => {
-                // nothing to do
-            }
-            ApiVersion::V1ttl => {
-                cf_opts.add_table_properties_collector_factory(
-                    "tikv.ttl-properties-collector",
-                    TtlPropertiesCollectorFactory::<ApiV1Ttl>::default(),
-                );
-                cf_opts
-                    .set_compaction_filter_factory(
-                        "ttl_compaction_filter_factory",
+        if let Some(factory) = filter_factory {
+            match api_version {
+                ApiVersion::V1 => {
+                    cf_opts
+                        .set_compaction_filter_factory("range_filter_factory", factory.clone())
+                        .unwrap();
+                }
+                ApiVersion::V1ttl => {
+                    cf_opts.add_table_properties_collector_factory(
+                        "tikv.ttl-properties-collector",
+                        TtlPropertiesCollectorFactory::<ApiV1Ttl>::default(),
+                    );
+                    let factory = StackingCompactionFilterFactory::new(
+                        factory.clone(),
                         TtlCompactionFilterFactory::<ApiV1Ttl>::default(),
-                    )
-                    .unwrap();
-            }
-            ApiVersion::V2 => {
-                cf_opts
-                    .set_compaction_filter_factory(
-                        "apiv2_gc_compaction_filter_factory",
+                    );
+                    cf_opts
+                        .set_compaction_filter_factory(
+                            "range_filter_factory.ttl_compaction_filter_factory",
+                            factory,
+                        )
+                        .unwrap();
+                }
+                ApiVersion::V2 => {
+                    let factory = StackingCompactionFilterFactory::new(
+                        factory.clone(),
                         RawCompactionFilterFactory,
-                    )
-                    .unwrap();
+                    );
+                    cf_opts
+                        .set_compaction_filter_factory(
+                            "range_filter_factory.apiv2_gc_compaction_filter_factory",
+                            factory,
+                        )
+                        .unwrap();
+                }
+            }
+        } else {
+            match api_version {
+                ApiVersion::V1 => {
+                    // nothing to do
+                }
+                ApiVersion::V1ttl => {
+                    cf_opts.add_table_properties_collector_factory(
+                        "tikv.ttl-properties-collector",
+                        TtlPropertiesCollectorFactory::<ApiV1Ttl>::default(),
+                    );
+                    cf_opts
+                        .set_compaction_filter_factory(
+                            "ttl_compaction_filter_factory",
+                            TtlCompactionFilterFactory::<ApiV1Ttl>::default(),
+                        )
+                        .unwrap();
+                }
+                ApiVersion::V2 => {
+                    cf_opts
+                        .set_compaction_filter_factory(
+                            "apiv2_gc_compaction_filter_factory",
+                            RawCompactionFilterFactory,
+                        )
+                        .unwrap();
+                }
             }
         }
         cf_opts.set_titan_cf_options(&self.titan.build_opts());
@@ -783,7 +831,7 @@ impl Default for WriteCfConfig {
             max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
             max_bytes_for_level_base: ReadableSize::mb(512),
-            target_file_size_base: ReadableSize::mb(8),
+            target_file_size_base: None,
             level0_file_num_compaction_trigger: 4,
             level0_slowdown_writes_trigger: None,
             level0_stop_writes_trigger: None,
@@ -821,6 +869,7 @@ impl WriteCfConfig {
         &self,
         shared: &CfResources,
         region_info_accessor: Option<&RegionInfoAccessor>,
+        filter_factory: Option<&RangeCompactionFilterFactory>,
         for_engine: EngineType,
     ) -> RocksCfOptions {
         let mut cf_opts = build_cf_opt!(
@@ -849,12 +898,23 @@ impl WriteCfConfig {
             prop_keys_index_distance: self.prop_keys_index_distance,
         };
         cf_opts.add_table_properties_collector_factory("tikv.range-properties-collector", f);
-        cf_opts
-            .set_compaction_filter_factory(
-                "write_compaction_filter_factory",
-                WriteCompactionFilterFactory,
-            )
-            .unwrap();
+        if let Some(factory) = filter_factory {
+            let factory =
+                StackingCompactionFilterFactory::new(factory.clone(), WriteCompactionFilterFactory);
+            cf_opts
+                .set_compaction_filter_factory(
+                    "range_filter_factory.write_compaction_filter_factory",
+                    factory,
+                )
+                .unwrap();
+        } else {
+            cf_opts
+                .set_compaction_filter_factory(
+                    "write_compaction_filter_factory",
+                    WriteCompactionFilterFactory,
+                )
+                .unwrap();
+        }
         cf_opts.set_titan_cf_options(&self.titan.build_opts());
         cf_opts
     }
@@ -889,7 +949,7 @@ impl Default for LockCfConfig {
             max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
             max_bytes_for_level_base: ReadableSize::mb(128),
-            target_file_size_base: ReadableSize::mb(8),
+            target_file_size_base: None,
             level0_file_num_compaction_trigger: 1,
             level0_slowdown_writes_trigger: None,
             level0_stop_writes_trigger: None,
@@ -923,7 +983,12 @@ impl Default for LockCfConfig {
 }
 
 impl LockCfConfig {
-    pub fn build_opt(&self, shared: &CfResources, for_engine: EngineType) -> RocksCfOptions {
+    pub fn build_opt(
+        &self,
+        shared: &CfResources,
+        filter_factory: Option<&RangeCompactionFilterFactory>,
+        for_engine: EngineType,
+    ) -> RocksCfOptions {
         let no_region_info_accessor: Option<&RegionInfoAccessor> = None;
         let mut cf_opts = build_cf_opt!(
             self,
@@ -941,6 +1006,11 @@ impl LockCfConfig {
         };
         cf_opts.add_table_properties_collector_factory("tikv.range-properties-collector", f);
         cf_opts.set_memtable_prefix_bloom_size_ratio(bloom_filter_ratio(for_engine));
+        if let Some(factory) = filter_factory {
+            cf_opts
+                .set_compaction_filter_factory("range_filter_factory", factory.clone())
+                .unwrap();
+        }
         cf_opts.set_titan_cf_options(&self.titan.build_opts());
         cf_opts
     }
@@ -972,7 +1042,7 @@ impl Default for RaftCfConfig {
             max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
             max_bytes_for_level_base: ReadableSize::mb(128),
-            target_file_size_base: ReadableSize::mb(8),
+            target_file_size_base: None,
             level0_file_num_compaction_trigger: 1,
             level0_slowdown_writes_trigger: None,
             level0_stop_writes_trigger: None,
@@ -1233,6 +1303,14 @@ impl DbConfig {
                 self.write_buffer_limit.get_or_insert(ReadableSize(
                     (total_mem * WRITE_BUFFER_MEMORY_LIMIT_RATE) as u64,
                 ));
+                // In RaftKv2, every region uses its own rocksdb instance, it's actually the
+                // even stricter compaction guard, so use the same output file size base.
+                self.writecf
+                    .target_file_size_base
+                    .get_or_insert(self.writecf.compaction_guard_max_output_file_size);
+                self.defaultcf
+                    .target_file_size_base
+                    .get_or_insert(self.defaultcf.compaction_guard_max_output_file_size);
                 self.defaultcf.disable_write_stall = true;
                 self.writecf.disable_write_stall = true;
                 self.lockcf.disable_write_stall = true;
@@ -1368,19 +1446,28 @@ impl DbConfig {
         shared: &CfResources,
         region_info_accessor: Option<&RegionInfoAccessor>,
         api_version: ApiVersion,
+        filter_factory: Option<&RangeCompactionFilterFactory>,
         for_engine: EngineType,
     ) -> Vec<(&'static str, RocksCfOptions)> {
         let mut cf_opts = Vec::with_capacity(4);
         cf_opts.push((
             CF_DEFAULT,
-            self.defaultcf
-                .build_opt(shared, region_info_accessor, api_version, for_engine),
+            self.defaultcf.build_opt(
+                shared,
+                region_info_accessor,
+                api_version,
+                filter_factory,
+                for_engine,
+            ),
         ));
-        cf_opts.push((CF_LOCK, self.lockcf.build_opt(shared, for_engine)));
+        cf_opts.push((
+            CF_LOCK,
+            self.lockcf.build_opt(shared, filter_factory, for_engine),
+        ));
         cf_opts.push((
             CF_WRITE,
             self.writecf
-                .build_opt(shared, region_info_accessor, for_engine),
+                .build_opt(shared, region_info_accessor, filter_factory, for_engine),
         ));
         if for_engine == EngineType::RaftKv {
             cf_opts.push((CF_RAFT, self.raftcf.build_opt(shared)));
@@ -1474,7 +1561,7 @@ impl Default for RaftDefaultCfConfig {
             max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
             max_bytes_for_level_base: ReadableSize::mb(512),
-            target_file_size_base: ReadableSize::mb(8),
+            target_file_size_base: None,
             level0_file_num_compaction_trigger: 4,
             level0_slowdown_writes_trigger: None,
             level0_stop_writes_trigger: None,
@@ -1714,7 +1801,13 @@ impl Default for RaftEngineConfig {
     fn default() -> Self {
         Self {
             enable: true,
-            config: RawRaftEngineConfig::default(),
+            config: RawRaftEngineConfig {
+                // TODO: after update the dependency to `raft-engine` lib, revokes the
+                // following unelegant settings.
+                // Enable log recycling by default.
+                enable_log_recycle: true,
+                ..RawRaftEngineConfig::default()
+            },
         }
     }
 }
@@ -2569,6 +2662,8 @@ impl Default for BackupConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct BackupStreamConfig {
     #[online_config(skip)]
+    pub min_ts_interval: ReadableDuration,
+
     pub max_flush_interval: ReadableDuration,
     #[online_config(skip)]
     pub num_threads: usize,
@@ -2576,7 +2671,7 @@ pub struct BackupStreamConfig {
     pub enable: bool,
     #[online_config(skip)]
     pub temp_path: String,
-    #[online_config(skip)]
+
     pub file_size_limit: ReadableSize,
     #[online_config(skip)]
     pub initial_scan_pending_memory_quota: ReadableSize,
@@ -2595,6 +2690,20 @@ impl BackupStreamConfig {
             );
             self.num_threads = default_cfg.num_threads;
         }
+        if self.max_flush_interval < ReadableDuration::secs(10) {
+            return Err(format!(
+                "the max_flush_interval is too small, it is {}, and should be greater than 10s.",
+                self.max_flush_interval
+            )
+            .into());
+        }
+        if self.min_ts_interval < ReadableDuration::secs(1) {
+            return Err(format!(
+                "the min_ts_interval is too small, it is {}, and should be greater than 1s.",
+                self.min_ts_interval
+            )
+            .into());
+        }
         Ok(())
     }
 }
@@ -2605,6 +2714,7 @@ impl Default for BackupStreamConfig {
         let total_mem = SysQuota::memory_limit_in_bytes();
         let quota_size = (total_mem as f64 * 0.1).min(ReadableSize::mb(512).0 as _);
         Self {
+            min_ts_interval: ReadableDuration::secs(10),
             max_flush_interval: ReadableDuration::minutes(3),
             // use at most 50% of vCPU by default
             num_threads: (cpu_num * 0.5).clamp(2.0, 12.0) as usize,
@@ -2680,7 +2790,7 @@ impl Default for CdcConfig {
 }
 
 impl CdcConfig {
-    pub fn validate(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn validate(&mut self, raftstore_v2: bool) -> Result<(), Box<dyn Error>> {
         let default_cfg = CdcConfig::default();
         if self.min_ts_interval.is_zero() {
             warn!(
@@ -2714,6 +2824,13 @@ impl CdcConfig {
             );
             self.incremental_scan_ts_filter_ratio = default_cfg.incremental_scan_ts_filter_ratio;
         }
+        if raftstore_v2 && self.hibernate_regions_compatible {
+            warn!(
+                "cdc.hibernate_regions_compatible is overwritten to false for partitioned-raft-kv"
+            );
+            self.hibernate_regions_compatible = false;
+        }
+
         Ok(())
     }
 }
@@ -3018,7 +3135,7 @@ pub struct TikvConfig {
     #[online_config(skip)]
     pub security: SecurityConfig,
 
-    #[online_config(skip)]
+    #[online_config(submodule)]
     pub import: ImportConfig,
 
     #[online_config(submodule)]
@@ -3027,8 +3144,7 @@ pub struct TikvConfig {
     #[online_config(submodule)]
     // The term "log backup" and "backup stream" are identity.
     // The "log backup" should be the only product name exposed to the user.
-    #[serde(rename = "log-backup")]
-    pub backup_stream: BackupStreamConfig,
+    pub log_backup: BackupStreamConfig,
 
     #[online_config(submodule)]
     pub pessimistic_txn: PessimisticTxnConfig,
@@ -3093,7 +3209,7 @@ impl Default for TikvConfig {
             cdc: CdcConfig::default(),
             resolved_ts: ResolvedTsConfig::default(),
             resource_metering: ResourceMeteringConfig::default(),
-            backup_stream: BackupStreamConfig::default(),
+            log_backup: BackupStreamConfig::default(),
             causal_ts: CausalTsConfig::default(),
             resource_control: ResourceControlConfig::default(),
         }
@@ -3140,7 +3256,19 @@ impl TikvConfig {
         if self.storage.engine == EngineType::RaftKv2 {
             self.raft_store.store_io_pool_size = cmp::max(self.raft_store.store_io_pool_size, 1);
             if !self.raft_engine.enable {
-                panic!("partitioned-raft-kv only supports raft log engine.");
+                return Err("partitioned-raft-kv only supports raft log engine.".into());
+            }
+            if self.rocksdb.titan.enabled {
+                return Err("partitioned-raft-kv doesn't support titan.".into());
+            }
+
+            if self.raft_store.enable_v2_compatible_learner {
+                self.raft_store.enable_v2_compatible_learner = false;
+                warn!(
+                    "raftstore.enable-partitioned-raft-kv-compatible-learner was true but \
+                    storage.engine was partitioned-raft-kv, no need to enable \
+                    enable-partitioned-raft-kv-compatible-learner, overwrite to false"
+                );
             }
         }
 
@@ -3173,7 +3301,9 @@ impl TikvConfig {
         let kv_data_exists = if self.storage.engine == EngineType::RaftKv {
             RocksEngine::exists(&kv_db_path)
         } else {
-            Path::new(&self.storage.data_dir).join("tablets").exists()
+            Path::new(&self.storage.data_dir)
+                .join(DEFAULT_TABLET_SUB_DIR)
+                .exists()
         };
 
         RaftDataStateMachine::new(
@@ -3221,8 +3351,8 @@ impl TikvConfig {
             );
         }
 
-        if self.backup_stream.temp_path.is_empty() {
-            self.backup_stream.temp_path =
+        if self.log_backup.temp_path.is_empty() {
+            self.log_backup.temp_path =
                 config::canonicalize_sub_path(&self.storage.data_dir, "log-backup-temp")?;
         }
 
@@ -3239,6 +3369,10 @@ impl TikvConfig {
         self.coprocessor
             .optimize_for(self.storage.engine == EngineType::RaftKv2);
         self.coprocessor.validate()?;
+        self.split
+            .optimize_for(self.coprocessor.region_split_size());
+        self.raft_store
+            .optimize_for(self.storage.engine == EngineType::RaftKv2);
         self.raft_store.validate(
             self.coprocessor.region_split_size(),
             self.coprocessor.enable_region_bucket(),
@@ -3248,8 +3382,9 @@ impl TikvConfig {
             .validate(self.storage.engine == EngineType::RaftKv2)?;
         self.import.validate()?;
         self.backup.validate()?;
-        self.backup_stream.validate()?;
-        self.cdc.validate()?;
+        self.log_backup.validate()?;
+        self.cdc
+            .validate(self.storage.engine == EngineType::RaftKv2)?;
         self.pessimistic_txn.validate()?;
         self.gc.validate()?;
         self.resolved_ts.validate()?;
@@ -4037,7 +4172,7 @@ impl From<&str> for Module {
             "security" => Module::Security,
             "import" => Module::Import,
             "backup" => Module::Backup,
-            "backup_stream" => Module::BackupStream,
+            "log_backup" => Module::BackupStream,
             "pessimistic_txn" => Module::PessimisticTxn,
             "gc" => Module::Gc,
             "cdc" => Module::Cdc,
@@ -4162,6 +4297,13 @@ impl ConfigController {
     pub fn get_current(&self) -> TikvConfig {
         self.inner.read().unwrap().current.clone()
     }
+
+    pub fn get_engine_type(&self) -> &'static str {
+        if self.get_current().storage.engine == EngineType::RaftKv2 {
+            return "partitioned-raft-kv";
+        }
+        "raft-kv"
+    }
 }
 
 #[cfg(test)]
@@ -4176,12 +4318,20 @@ mod tests {
     use grpcio::ResourceQuota;
     use itertools::Itertools;
     use kvproto::kvrpcpb::CommandPri;
-    use raftstore::coprocessor::{
-        config::{RAFTSTORE_V2_SPLIT_SIZE, SPLIT_SIZE},
-        region_info_accessor::MockRegionInfoProvider,
+    use raftstore::{
+        coprocessor::{
+            config::{RAFTSTORE_V2_SPLIT_SIZE, SPLIT_SIZE},
+            region_info_accessor::MockRegionInfoProvider,
+        },
+        store::{
+            BIG_REGION_CPU_OVERLOAD_THRESHOLD_RATIO, DEFAULT_BIG_REGION_BYTE_THRESHOLD,
+            DEFAULT_BIG_REGION_QPS_THRESHOLD, DEFAULT_BYTE_THRESHOLD, DEFAULT_QPS_THRESHOLD,
+            REGION_CPU_OVERLOAD_THRESHOLD_RATIO,
+        },
     };
     use slog::Level;
     use tempfile::Builder;
+    use test_util::assert_eq_debug;
     use tikv_kv::RocksEngine as RocksDBEngine;
     use tikv_util::{
         config::VersionTrack,
@@ -4614,6 +4764,7 @@ mod tests {
                 ),
                 None,
                 cfg.storage.api_version(),
+                None,
                 cfg.storage.engine,
             ),
             None,
@@ -4770,7 +4921,7 @@ mod tests {
         cfg.rocksdb.max_background_jobs = 4;
         cfg.rocksdb.max_background_flushes = 2;
         cfg.rocksdb.defaultcf.disable_auto_compactions = false;
-        cfg.rocksdb.defaultcf.target_file_size_base = ReadableSize::mb(64);
+        cfg.rocksdb.defaultcf.target_file_size_base = Some(ReadableSize::mb(64));
         cfg.rocksdb.defaultcf.block_cache_size = ReadableSize::mb(8);
         cfg.rocksdb.rate_bytes_per_sec = ReadableSize::mb(64);
         cfg.rocksdb.rate_limiter_auto_tuned = false;
@@ -5001,25 +5152,25 @@ mod tests {
             Module::Quota,
             Box::new(QuotaLimitConfigManager::new(Arc::clone(&quota_limiter))),
         );
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         // u64::MAX ns casts to 213503d.
         cfg_controller
             .update_config("quota.max-delay-duration", "213504d")
             .unwrap_err();
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         cfg_controller
             .update_config("quota.foreground-cpu-time", "2000")
             .unwrap();
         cfg.quota.foreground_cpu_time = 2000;
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         cfg_controller
             .update_config("quota.foreground-write-bandwidth", "256MB")
             .unwrap();
         cfg.quota.foreground_write_bandwidth = ReadableSize::mb(256);
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         let mut sample = quota_limiter.new_sample(true);
         sample.add_read_bytes(ReadableSize::mb(32).0 as usize);
@@ -5040,13 +5191,13 @@ mod tests {
             .update_config("quota.background-cpu-time", "2000")
             .unwrap();
         cfg.quota.background_cpu_time = 2000;
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         cfg_controller
             .update_config("quota.background-write-bandwidth", "256MB")
             .unwrap();
         cfg.quota.background_write_bandwidth = ReadableSize::mb(256);
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
 
         let mut sample = quota_limiter.new_sample(false);
         sample.add_read_bytes(ReadableSize::mb(32).0 as usize);
@@ -5057,7 +5208,7 @@ mod tests {
             .update_config("quota.background-read-bandwidth", "512MB")
             .unwrap();
         cfg.quota.background_read_bandwidth = ReadableSize::mb(512);
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
         let mut sample = quota_limiter.new_sample(false);
         sample.add_write_bytes(ReadableSize::mb(128).0 as usize);
         let should_delay = block_on(quota_limiter.consume_sample(sample, false));
@@ -5067,7 +5218,7 @@ mod tests {
             .update_config("quota.max-delay-duration", "50ms")
             .unwrap();
         cfg.quota.max_delay_duration = ReadableDuration::millis(50);
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
         let mut sample = quota_limiter.new_sample(true);
         sample.add_write_bytes(ReadableSize::mb(128).0 as usize);
         let should_delay = block_on(quota_limiter.consume_sample(sample, true));
@@ -5083,7 +5234,7 @@ mod tests {
             .update_config("quota.enable-auto-tune", "true")
             .unwrap();
         cfg.quota.enable_auto_tune = true;
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
     }
 
     #[test]
@@ -5103,7 +5254,7 @@ mod tests {
         );
 
         let check_cfg = |cfg: &TikvConfig| {
-            assert_eq!(&cfg_controller.get_current(), cfg);
+            assert_eq_debug(&cfg_controller.get_current(), cfg);
             assert_eq!(&*version_tracker.value(), &cfg.server);
         };
 
@@ -5117,7 +5268,7 @@ mod tests {
             .update_config("server.raft-msg-max-batch-size", "32")
             .unwrap();
         cfg.server.raft_msg_max_batch_size = 32;
-        assert_eq!(cfg_controller.get_current(), cfg);
+        assert_eq_debug(&cfg_controller.get_current(), &cfg);
         check_cfg(&cfg);
     }
 
@@ -5133,7 +5284,7 @@ mod tests {
         for _ in 0..10 {
             cfg.compatible_adjust();
             cfg.validate().unwrap();
-            assert_eq!(c, cfg);
+            assert_eq_debug(&c, &cfg);
         }
     }
 
@@ -5218,33 +5369,33 @@ mod tests {
         let no_limiter: Option<ConcurrentTaskLimiter> = None;
         // Test comopaction guard disabled.
         let config = DefaultCfConfig {
-            target_file_size_base: ReadableSize::mb(16),
+            target_file_size_base: Some(ReadableSize::mb(16)),
             enable_compaction_guard: Some(false),
             ..Default::default()
         };
         let provider = Some(MockRegionInfoProvider::new(vec![]));
         let cf_opts = build_cf_opt!(config, CF_DEFAULT, &cache, no_limiter.as_ref(), provider);
         assert_eq!(
-            config.target_file_size_base.0,
+            config.target_file_size_base(),
             cf_opts.get_target_file_size_base()
         );
 
         // Test compaction guard enabled but region info provider is missing.
         let config = DefaultCfConfig {
-            target_file_size_base: ReadableSize::mb(16),
+            target_file_size_base: Some(ReadableSize::mb(16)),
             enable_compaction_guard: Some(true),
             ..Default::default()
         };
         let provider: Option<MockRegionInfoProvider> = None;
         let cf_opts = build_cf_opt!(config, CF_DEFAULT, &cache, no_limiter.as_ref(), provider);
         assert_eq!(
-            config.target_file_size_base.0,
+            config.target_file_size_base(),
             cf_opts.get_target_file_size_base()
         );
 
         // Test compaction guard enabled.
         let config = DefaultCfConfig {
-            target_file_size_base: ReadableSize::mb(16),
+            target_file_size_base: Some(ReadableSize::mb(16)),
             enable_compaction_guard: Some(true),
             compaction_guard_min_output_file_size: ReadableSize::mb(4),
             compaction_guard_max_output_file_size: ReadableSize::mb(64),
@@ -5288,6 +5439,13 @@ mod tests {
         cfg.storage.block_cache.capacity = Some(ReadableSize(system * 3 / 4));
         cfg.validate().unwrap();
         assert_eq!(cfg.memory_usage_limit.unwrap(), ReadableSize(system));
+
+        // Test raftstore.enable-partitioned-raft-kv-compatible-learner.
+        let mut cfg = TikvConfig::default();
+        cfg.raft_store.enable_v2_compatible_learner = true;
+        cfg.storage.engine = EngineType::RaftKv2;
+        cfg.validate().unwrap();
+        assert!(!cfg.raft_store.enable_v2_compatible_learner);
     }
 
     #[test]
@@ -5531,7 +5689,7 @@ mod tests {
         cfg.raftdb.max_sub_compactions = default_cfg.raftdb.max_sub_compactions;
         cfg.raftdb.titan.max_background_gc = default_cfg.raftdb.titan.max_background_gc;
         cfg.backup.num_threads = default_cfg.backup.num_threads;
-        cfg.backup_stream.num_threads = default_cfg.backup_stream.num_threads;
+        cfg.log_backup.num_threads = default_cfg.log_backup.num_threads;
 
         // There is another set of config values that we can't directly compare:
         // When the default values are `None`, but are then resolved to `Some(_)` later
@@ -5552,6 +5710,11 @@ mod tests {
             Some(default_cfg.coprocessor.region_split_size() * 3 / 4 / ReadableSize::kb(1));
         default_cfg.raft_store.region_split_check_diff =
             Some(default_cfg.coprocessor.region_split_size() / 16);
+        default_cfg.rocksdb.writecf.target_file_size_base = Some(ReadableSize::mb(8));
+        default_cfg.rocksdb.defaultcf.target_file_size_base = Some(ReadableSize::mb(8));
+        default_cfg.rocksdb.lockcf.target_file_size_base = Some(ReadableSize::mb(8));
+        default_cfg.raftdb.defaultcf.target_file_size_base = Some(ReadableSize::mb(8));
+        default_cfg.raft_store.region_compact_check_step = Some(100);
 
         // Other special cases.
         cfg.pd.retry_max_count = default_cfg.pd.retry_max_count; // Both -1 and isize::MAX are the same.
@@ -5588,23 +5751,42 @@ mod tests {
         cfg.coprocessor
             .optimize_for(default_cfg.storage.engine == EngineType::RaftKv2);
 
-        assert_eq!(cfg, default_cfg);
+        assert_eq_debug(&cfg, &default_cfg);
     }
 
     #[test]
     fn test_region_size_config() {
         let mut default_cfg = TikvConfig::default();
-        default_cfg.coprocessor.optimize_for(false);
-        default_cfg.coprocessor.validate().unwrap();
+        default_cfg.storage.engine = EngineType::RaftKv;
+        default_cfg.validate().unwrap();
         assert_eq!(default_cfg.coprocessor.region_split_size(), SPLIT_SIZE);
         assert!(!default_cfg.coprocessor.enable_region_bucket());
 
+        assert_eq!(default_cfg.split.qps_threshold, DEFAULT_QPS_THRESHOLD);
+        assert_eq!(
+            default_cfg.split.region_cpu_overload_threshold_ratio,
+            REGION_CPU_OVERLOAD_THRESHOLD_RATIO
+        );
+        assert_eq!(default_cfg.split.byte_threshold, DEFAULT_BYTE_THRESHOLD);
+
         let mut default_cfg = TikvConfig::default();
-        default_cfg.coprocessor.optimize_for(true);
-        default_cfg.coprocessor.validate().unwrap();
+        default_cfg.storage.engine = EngineType::RaftKv2;
+        default_cfg.validate().unwrap();
         assert_eq!(
             default_cfg.coprocessor.region_split_size(),
             RAFTSTORE_V2_SPLIT_SIZE
+        );
+        assert_eq!(
+            default_cfg.split.qps_threshold,
+            DEFAULT_BIG_REGION_QPS_THRESHOLD
+        );
+        assert_eq!(
+            default_cfg.split.region_cpu_overload_threshold_ratio,
+            BIG_REGION_CPU_OVERLOAD_THRESHOLD_RATIO
+        );
+        assert_eq!(
+            default_cfg.split.byte_threshold,
+            DEFAULT_BIG_REGION_BYTE_THRESHOLD
         );
         assert!(default_cfg.coprocessor.enable_region_bucket());
 
@@ -5699,6 +5881,16 @@ mod tests {
         "#;
         let mut cfg: TikvConfig = toml::from_str(content).unwrap();
         cfg.validate().unwrap();
+
+        let content = r#"
+            [storage]
+            engine = "partitioned-raft-kv"
+            [cdc]
+            hibernate-regions-compatible = true
+        "#;
+        let mut cfg: TikvConfig = toml::from_str(content).unwrap();
+        cfg.validate().unwrap();
+        assert!(!cfg.cdc.hibernate_regions_compatible);
     }
 
     #[test]
@@ -5717,7 +5909,7 @@ mod tests {
             ("security", Module::Security),
             ("import", Module::Import),
             ("backup", Module::Backup),
-            ("backup_stream", Module::BackupStream),
+            ("log_backup", Module::BackupStream),
             ("pessimistic_txn", Module::PessimisticTxn),
             ("gc", Module::Gc),
             ("cdc", Module::Cdc),

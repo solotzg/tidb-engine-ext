@@ -14,6 +14,7 @@ mod util;
 
 mod config;
 pub mod errors;
+pub mod meta_storage;
 use std::{cmp::Ordering, ops::Deref, sync::Arc, time::Duration};
 
 use futures::future::BoxFuture;
@@ -160,6 +161,10 @@ impl BucketStat {
     pub fn set_meta(&mut self, meta: Arc<BucketMeta>) {
         self.stats = new_bucket_stats(&meta);
         self.meta = meta;
+    }
+
+    pub fn clear_stats(&mut self) {
+        self.stats = new_bucket_stats(&self.meta);
     }
 
     pub fn merge(&mut self, delta: &BucketStat) {
