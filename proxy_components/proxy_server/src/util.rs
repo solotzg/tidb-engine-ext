@@ -11,6 +11,7 @@ use tikv_util::{
     sys::{ioload, SystemExt},
     timer::GLOBAL_TIMER_HANDLE,
 };
+use std::pin::Pin;
 
 fn server_info_for_ffi(req: ServerInfoRequest) -> ServerInfoResponse {
     let tp = req.get_tp();
@@ -72,5 +73,30 @@ pub extern "C" fn ffi_server_info(
 
     let resp = server_info_for_ffi(req);
     engine_store_ffi::ffi::set_server_info_resp(&resp, res);
+    0
+}
+
+pub extern "C" fn ffi_server_info_noproxy(
+    view: BaseBuffView,
+    res: RawVoidPtr,
+) -> u32 {
+    let mut req = ServerInfoRequest::default();
+    assert_ne!(view.data, std::ptr::null());
+    assert_ne!(view.len, 0);
+    req.merge_from_bytes(view.to_slice()).unwrap();
+
+    let resp = server_info_for_ffi(req);
+    let buff = engine_store_ffi::ffi::ProtoMsgBaseBuff::new(&resp);
+    let buff_ptr: BaseBuffView = Pin::new(&buff).into();
+    // self.set_pb_msg_by_bytes(
+    //     interfaces_ffi::MsgPBType::ServerInfoResponse,
+    //     res,
+    //     Pin::new(&buff).into(),
+    //     )
+    unsafe {
+    let v = &mut *(res as *mut kvproto::diagnosticspb::ServerInfoResponse);
+    v.merge_from_bytes(buff_ptr.to_slice()).unwrap();
+    }
+    // engine_store_ffi::ffi::set_server_info_resp(&resp, res);
     0
 }
