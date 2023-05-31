@@ -93,7 +93,6 @@ pub extern "C" fn ffi_server_info_noproxy(
     let resp = server_info_for_ffi(req);
     let buff = engine_store_ffi::ffi::ProtoMsgBaseBuff::new(&resp);
     unsafe {
-        let v = &mut *(res as *mut kvproto::diagnosticspb::ServerInfoResponse);
         let server_helper = &(*(server_helper_ptr
             as *const engine_store_ffi::ffi::interfaces_ffi::EngineStoreServerHelper));
         server_helper.set_pb_msg_by_bytes(
