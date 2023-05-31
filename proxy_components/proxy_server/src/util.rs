@@ -1,6 +1,9 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::time::{Duration, Instant};
+use std::{
+    pin::Pin,
+    time::{Duration, Instant},
+};
 
 use engine_store_ffi::ffi::interfaces_ffi::{BaseBuffView, RaftStoreProxyPtr, RawVoidPtr};
 use futures::{compat::Future01CompatExt, executor::block_on};
@@ -11,7 +14,6 @@ use tikv_util::{
     sys::{ioload, SystemExt},
     timer::GLOBAL_TIMER_HANDLE,
 };
-use std::pin::Pin;
 
 fn server_info_for_ffi(req: ServerInfoRequest) -> ServerInfoResponse {
     let tp = req.get_tp();
@@ -76,10 +78,13 @@ pub extern "C" fn ffi_server_info(
     0
 }
 
+#[no_mangle]
 pub extern "C" fn ffi_server_info_noproxy(
+    server_helper_ptr: isize,
     view: BaseBuffView,
     res: RawVoidPtr,
 ) -> u32 {
+    assert_ne!(server_helper_ptr, 0);
     let mut req = ServerInfoRequest::default();
     assert_ne!(view.data, std::ptr::null());
     assert_ne!(view.len, 0);
@@ -87,16 +92,15 @@ pub extern "C" fn ffi_server_info_noproxy(
 
     let resp = server_info_for_ffi(req);
     let buff = engine_store_ffi::ffi::ProtoMsgBaseBuff::new(&resp);
-    let buff_ptr: BaseBuffView = Pin::new(&buff).into();
-    // self.set_pb_msg_by_bytes(
-    //     interfaces_ffi::MsgPBType::ServerInfoResponse,
-    //     res,
-    //     Pin::new(&buff).into(),
-    //     )
     unsafe {
-    let v = &mut *(res as *mut kvproto::diagnosticspb::ServerInfoResponse);
-    v.merge_from_bytes(buff_ptr.to_slice()).unwrap();
+        let v = &mut *(res as *mut kvproto::diagnosticspb::ServerInfoResponse);
+        let server_helper = &(*(server_helper_ptr
+            as *const engine_store_ffi::ffi::interfaces_ffi::EngineStoreServerHelper));
+        server_helper.set_pb_msg_by_bytes(
+            engine_store_ffi::ffi::interfaces_ffi::MsgPBType::ServerInfoResponse,
+            res,
+            Pin::new(&buff).into(),
+        );
     }
-    // engine_store_ffi::ffi::set_server_info_resp(&resp, res);
     0
 }

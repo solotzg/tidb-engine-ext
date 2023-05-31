@@ -304,4 +304,15 @@ struct EngineStoreServerHelper {
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
                                      uint64_t region_id, uint64_t new_peer_id);
 };
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// Basically same as ffi_server_info, but no need to setup ProxyHelper, only need to setup ServerHelper.
+// Used when proxy not start.
+uint32_t ffi_server_info_noproxy(intptr_t server_helper, BaseBuffView, RawVoidPtr);
+#ifdef __cplusplus
+}
+#endif
+
 }  // namespace DB
