@@ -615,12 +615,12 @@ pub mod root {
         }
         extern "C" {
             pub fn ffi_server_info_noproxy(
-                server_helper: isize,
-                arg1: root::DB::BaseBuffView,
-                arg2: root::DB::RawVoidPtr,
+                arg1: isize,
+                arg2: root::DB::BaseBuffView,
+                arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13376970459625090056;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 12007835858373468057;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

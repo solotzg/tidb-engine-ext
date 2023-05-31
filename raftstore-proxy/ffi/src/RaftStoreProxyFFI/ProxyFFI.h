@@ -308,9 +308,9 @@ struct EngineStoreServerHelper {
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Basically same as ffi_server_info, but no need to setup ProxyHelper, only need to setup ServerHelper.
-// Used when proxy not start.
-uint32_t ffi_server_info_noproxy(intptr_t server_helper, BaseBuffView, RawVoidPtr);
+// Basically same as ffi_server_info, but no need to setup ProxyHelper, only
+// need to setup ServerHelper. Used when proxy not start.
+uint32_t ffi_server_info_noproxy(intptr_t, BaseBuffView, RawVoidPtr);
 #ifdef __cplusplus
 }
 #endif
