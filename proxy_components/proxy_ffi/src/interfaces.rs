@@ -613,7 +613,14 @@ pub mod root {
                 ) -> root::DB::FastAddPeerRes,
             >,
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 3617226644007633432;
+        extern "C" {
+            pub fn ffi_server_info_noproxy(
+                server_helper: isize,
+                arg1: root::DB::BaseBuffView,
+                arg2: root::DB::RawVoidPtr,
+            ) -> u32;
+        }
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 13376970459625090056;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
