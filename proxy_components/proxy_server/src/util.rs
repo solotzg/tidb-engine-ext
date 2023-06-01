@@ -79,7 +79,7 @@ pub extern "C" fn ffi_server_info(
 }
 
 #[no_mangle]
-pub extern "C" fn ffi_server_info_noproxy(
+pub extern "C" fn ffi_get_server_info_from_proxy(
     server_helper_ptr: isize,
     view: BaseBuffView,
     res: RawVoidPtr,
