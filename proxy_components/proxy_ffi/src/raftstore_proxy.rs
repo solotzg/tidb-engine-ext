@@ -279,7 +279,7 @@ impl RaftStoreProxyPtr {
     pub unsafe fn as_ref(&self) -> &RaftStoreProxy {
         &*(self.inner as *const RaftStoreProxy)
     }
-    pub unsafe fn as_mut(&self) -> &mut RaftStoreProxy {
+    pub unsafe fn as_mut(&mut self) -> &mut RaftStoreProxy {
         &mut *(self.inner as *mut RaftStoreProxy)
     }
     pub fn is_null(&self) -> bool {

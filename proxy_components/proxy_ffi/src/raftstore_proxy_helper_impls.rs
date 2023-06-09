@@ -95,6 +95,7 @@ unsafe extern "C" fn ffi_get_cluster_raftstore_version(
     timeout_ms: i64,
 ) -> RaftstoreVer {
     if force_refresh {
+        let mut proxy_ptr = proxy_ptr;
         proxy_ptr
             .as_mut()
             .refresh_cluster_raftstore_version(timeout_ms);

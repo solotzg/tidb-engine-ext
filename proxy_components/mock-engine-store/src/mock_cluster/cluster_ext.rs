@@ -41,6 +41,7 @@ pub struct TestData {
     pub expected_self_safe_ts: u64,
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(Default)]
 pub struct ClusterExt {
     // Helper to set ffi_helper_set.
