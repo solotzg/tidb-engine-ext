@@ -1,19 +1,17 @@
 // Copyright 2023 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::sync::RwLock;
-use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    sync::{atomic::AtomicUsize, Arc, RwLock},
+};
 
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Server, Response, Body};
-
-
+use hyper::{
+    service::{make_service_fn, service_fn},
+    Body, Response, Server,
+};
 use proxy_ffi::interfaces_ffi::RaftstoreVer;
-use tokio::task::JoinHandle;
-use tokio::{runtime::Runtime, sync::oneshot};
-
-use std::sync::atomic::{AtomicUsize};
+use tokio::{runtime::Runtime, sync::oneshot, task::JoinHandle};
 
 use crate::utils::v1::*;
 
@@ -36,14 +34,12 @@ pub struct SharedState {
 impl SharedState {
     fn new(t: ReturnState) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(t))
+            inner: Arc::new(RwLock::new(t)),
         }
     }
 }
 
-async fn handle_request(
-    shared: SharedState,
-) -> Result<Response<Body>, BoxError> {
+async fn handle_request(shared: SharedState) -> Result<Response<Body>, BoxError> {
     let x = shared.inner.read().unwrap().clone();
     match x {
         ReturnState::C403 => Ok(Response::builder()
@@ -121,7 +117,7 @@ impl MockServer {
             res,
             handle,
             index,
-            ports
+            ports,
         }
     }
 }
@@ -139,7 +135,6 @@ impl Drop for MockServer {
     }
 }
 
-
 #[test]
 fn test_with_tiflash() {
     let mock_server = MockServer::new(vec![1111, 1112]);
@@ -152,13 +147,15 @@ fn test_with_tiflash() {
             if index.load(Ordering::Relaxed) == 0 {
                 cfg.server.labels.clear();
             } else {
-                cfg.server.labels.insert("engine".to_string(), "tiflash".to_string());
+                cfg.server
+                    .labels
+                    .insert("engine".to_string(), "tiflash".to_string());
             }
             cfg.server.status_addr = (*status_addrs)[index.load(Ordering::Relaxed)].to_string();
             index.fetch_add(1, Ordering::Relaxed);
         }));
     cluster_v1.run();
-    
+
     // TiFlash will always output as V1, however, we should neglect that.
 
     *mock_server.res[0].inner.write().unwrap() = ReturnState::C403;
@@ -168,7 +165,10 @@ fn test_with_tiflash() {
         .cluster_ext
         .iter_ffi_helpers(None, &mut |_, ffi: &mut FFIHelperSet| {
             ffi.proxy.refresh_cluster_raftstore_version(-1);
-            assert_eq!(ffi.proxy.cluster_raftstore_version(), RaftstoreVer::Uncertain);
+            assert_eq!(
+                ffi.proxy.cluster_raftstore_version(),
+                RaftstoreVer::Uncertain
+            );
         });
 
     cluster_v1.shutdown();
@@ -194,7 +194,7 @@ fn test_normal() {
         .iter_ffi_helpers(None, &mut |_, ffi: &mut FFIHelperSet| {
             assert_eq!(ffi.proxy.cluster_raftstore_version(), RaftstoreVer::V2);
         });
-    
+
     *mock_server.res[0].inner.write().unwrap() = ReturnState::C403;
     *mock_server.res[1].inner.write().unwrap() = ReturnState::V1;
     cluster_v1
@@ -203,10 +203,13 @@ fn test_normal() {
             ffi.proxy.refresh_cluster_raftstore_version(-1);
             assert_eq!(ffi.proxy.cluster_raftstore_version(), RaftstoreVer::V1);
         });
-    
+
     *mock_server.res[0].inner.write().unwrap() = ReturnState::TimeoutV1;
     *mock_server.res[1].inner.write().unwrap() = ReturnState::V2;
-    assert_eq!(*mock_server.res[0].inner.read().unwrap(), ReturnState::TimeoutV1);
+    assert_eq!(
+        *mock_server.res[0].inner.read().unwrap(),
+        ReturnState::TimeoutV1
+    );
     assert_eq!(*mock_server.res[1].inner.read().unwrap(), ReturnState::V2);
     cluster_v1
         .cluster_ext
@@ -214,7 +217,7 @@ fn test_normal() {
             ffi.proxy.refresh_cluster_raftstore_version(500);
             assert_eq!(ffi.proxy.cluster_raftstore_version(), RaftstoreVer::V2);
         });
-    
+
     // All timeout result in uncertain state.
     *mock_server.res[0].inner.write().unwrap() = ReturnState::TimeoutV1;
     *mock_server.res[1].inner.write().unwrap() = ReturnState::TimeoutV1;
@@ -222,10 +225,14 @@ fn test_normal() {
         .cluster_ext
         .iter_ffi_helpers(None, &mut |_, ffi: &mut FFIHelperSet| {
             ffi.proxy.refresh_cluster_raftstore_version(500);
-            assert_eq!(ffi.proxy.cluster_raftstore_version(), RaftstoreVer::Uncertain);
+            assert_eq!(
+                ffi.proxy.cluster_raftstore_version(),
+                RaftstoreVer::Uncertain
+            );
         });
 
-    // If returns 404, means the server is an old v1 TiKV which doesn't have this service.
+    // If returns 404, means the server is an old v1 TiKV which doesn't have this
+    // service.
     *mock_server.res[0].inner.write().unwrap() = ReturnState::C404;
     *mock_server.res[1].inner.write().unwrap() = ReturnState::C404;
     cluster_v1
@@ -237,5 +244,3 @@ fn test_normal() {
 
     cluster_v1.shutdown();
 }
-
-

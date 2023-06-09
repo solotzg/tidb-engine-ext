@@ -6,12 +6,16 @@ use std::sync::{
 };
 
 use encryption::DataKeyManager;
+use futures::executor::block_on;
+use pd_client::PdClient;
+use tikv_util::error;
+use tokio::runtime::Runtime;
 
 use super::{
     get_engine_store_server_helper, interfaces_ffi,
     interfaces_ffi::{
-        ConstRawVoidPtr, KVGetStatus, RaftProxyStatus, RaftStoreProxyPtr, RawCppStringPtr,
-        RawVoidPtr,
+        ConstRawVoidPtr, KVGetStatus, RaftProxyStatus, RaftStoreProxyPtr, RaftstoreVer,
+        RawCppStringPtr, RawVoidPtr,
     },
     raftstore_proxy_helper_impls::*,
     read_index_helper,
@@ -24,6 +28,8 @@ pub struct RaftStoreProxy {
     key_manager: Option<Arc<DataKeyManager>>,
     read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
     raftstore_proxy_engine: RwLock<Option<Eng>>,
+    pd_client: Option<Arc<dyn PdClient>>,
+    cluster_raftstore_ver: RwLock<RaftstoreVer>,
 }
 
 impl RaftStoreProxy {
@@ -32,17 +38,123 @@ impl RaftStoreProxy {
         key_manager: Option<Arc<DataKeyManager>>,
         read_index_client: Option<Box<dyn read_index_helper::ReadIndex>>,
         raftstore_proxy_engine: Option<Eng>,
+        pd_client: Option<Arc<dyn PdClient>>,
     ) -> Self {
         RaftStoreProxy {
             status,
             key_manager,
             read_index_client,
             raftstore_proxy_engine: RwLock::new(raftstore_proxy_engine),
+            pd_client,
+            cluster_raftstore_ver: RwLock::new(RaftstoreVer::Uncertain),
         }
     }
 }
 
 impl RaftStoreProxy {
+    pub fn cluster_raftstore_version(&self) -> RaftstoreVer {
+        *self.cluster_raftstore_ver.read().unwrap()
+    }
+
+    fn generate_request_with_timeout(timeout_ms: i64) -> Option<reqwest::Client> {
+        let headers = reqwest::header::HeaderMap::new();
+        let mut builder = reqwest::Client::builder().default_headers(headers);
+        if timeout_ms >= 0 {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
+        }
+        match builder.build() {
+            Ok(o) => Some(o),
+            Err(e) => {
+                error!("generate_request_with_timeout error {:?}", e);
+                None
+            }
+        }
+    }
+
+    fn parse_response(
+        rt: &Runtime,
+        resp: Result<reqwest::Response, reqwest::Error>,
+    ) -> RaftstoreVer {
+        match resp {
+            Ok(resp) => {
+                if resp.status() == 404 {
+                    // If the port is not implemented.
+                    return RaftstoreVer::V1;
+                } else if resp.status() != 200 {
+                    return RaftstoreVer::Uncertain;
+                }
+                let resp = rt.block_on(async { resp.text().await }).unwrap();
+                if resp.contains("partitioned") {
+                    RaftstoreVer::V2
+                } else {
+                    RaftstoreVer::V1
+                }
+            }
+            Err(e) => {
+                error!("block request response error {:?}", e);
+                RaftstoreVer::Uncertain
+            }
+        }
+    }
+
+    pub fn refresh_cluster_raftstore_version(&mut self, timeout_ms: i64) -> bool {
+        // We don't use infomation stored in `GlobalReplicationState` to decouple.
+        *self.cluster_raftstore_ver.write().unwrap() = RaftstoreVer::Uncertain;
+        let stores = match self.pd_client.as_ref().unwrap().get_all_stores(false) {
+            Ok(stores) => stores,
+            Err(e) => {
+                tikv_util::debug!("get_all_stores error {:?}", e);
+                return false;
+            }
+        };
+
+        let to_try_addrs = stores.iter().filter_map(|store| {
+            let shall_filter = store
+                .get_labels()
+                .iter()
+                .any(|label| label.get_key() == "engine" && label.get_value() == "tiflash");
+            if !shall_filter {
+                Some(format!(
+                    "http://{}/{}",
+                    store.get_status_address(),
+                    "engine_type"
+                ))
+            } else {
+                None
+            }
+        });
+
+        let rt = Runtime::new().unwrap();
+
+        let mut pending = vec![];
+        for addr in to_try_addrs {
+            if let Some(c) = Self::generate_request_with_timeout(timeout_ms) {
+                let f = c.get(&addr).send();
+                pending.push(rt.spawn(f));
+            }
+        }
+
+        loop {
+            if pending.is_empty() {
+                break;
+            }
+            let sel = futures::future::select_all(pending);
+            let (resp, _completed_idx, remaining) = rt.block_on(async { sel.await });
+
+            let res = Self::parse_response(&rt, resp.unwrap());
+
+            if res != RaftstoreVer::Uncertain {
+                *self.cluster_raftstore_ver.write().unwrap() = res;
+                rt.shutdown_timeout(std::time::Duration::from_millis(1));
+                return true;
+            }
+
+            pending = remaining;
+        }
+        rt.shutdown_timeout(std::time::Duration::from_millis(1));
+        false
+    }
+
     pub fn raftstore_version(&self) -> u64 {
         1
     }
@@ -152,6 +264,9 @@ impl RaftStoreProxyFFI for RaftStoreProxy {
 impl RaftStoreProxyPtr {
     pub unsafe fn as_ref(&self) -> &RaftStoreProxy {
         &*(self.inner as *const RaftStoreProxy)
+    }
+    pub unsafe fn as_mut(&self) -> &mut RaftStoreProxy {
+        &mut *(self.inner as *mut RaftStoreProxy)
     }
     pub fn is_null(&self) -> bool {
         self.inner.is_null()
