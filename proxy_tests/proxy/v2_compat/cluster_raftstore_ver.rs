@@ -136,6 +136,35 @@ impl Drop for MockServer {
 }
 
 #[test]
+fn test_with_error_status_addr() {
+    let mock_server = MockServer::new(vec![1111, 1112]);
+    let (mut cluster_v1, _) = new_mock_cluster(1, 3);
+    let addrs = mock_server.ports.iter().map(|e| format!("127.0.0.1:{}", e));
+    let index = mock_server.index.clone();
+    cluster_v1.cluster_ext.pre_run_node_callback =
+        Some(Box::new(move |cfg: &mut MixedClusterConfig| {
+            cfg.server.labels.clear();
+            match index.load(Ordering::Relaxed) {
+                0 => cfg.server.status_addr = "error$#_string".to_string(),
+                1 => cfg.server.status_addr = "".to_string(),
+                _ => cfg.server.status_addr = "localhost:1119".to_string(),
+            }
+            index.fetch_add(1, Ordering::Relaxed);
+        }));
+    cluster_v1.run();
+    cluster_v1
+        .cluster_ext
+        .iter_ffi_helpers(None, &mut |_, ffi: &mut FFIHelperSet| {
+            ffi.proxy.refresh_cluster_raftstore_version(-1);
+            assert_eq!(
+                ffi.proxy.cluster_raftstore_version(),
+                RaftstoreVer::Uncertain
+            );
+        });
+    cluster_v1.shutdown();
+}
+
+#[test]
 fn test_with_tiflash() {
     let mock_server = MockServer::new(vec![1111, 1112]);
     let (mut cluster_v1, _) = new_mock_cluster(1, 2);

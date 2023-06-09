@@ -6,7 +6,6 @@ use std::sync::{
 };
 
 use encryption::DataKeyManager;
-use futures::executor::block_on;
 use pd_client::PdClient;
 use tikv_util::error;
 use tokio::runtime::Runtime;
@@ -93,7 +92,7 @@ impl RaftStoreProxy {
                         }
                     }
                     Err(e) => {
-                        error!("block request response error {:?}", e);
+                        error!("get_engine_type respond error {:?}", e);
                         RaftstoreVer::Uncertain
                     }
                 }
@@ -116,11 +115,19 @@ impl RaftStoreProxy {
                 .iter()
                 .any(|label| label.get_key() == "engine" && label.get_value().contains("tiflash"));
             if !shall_filter {
-                Some(format!(
-                    "https://{}/{}",
-                    store.get_status_address(),
-                    "engine_type"
-                ))
+                // TiKV's status server don't support https.
+                let u = format!("http://{}/{}", store.get_status_address(), "engine_type");
+                // A invalid url may lead to 404, which will enforce a V1 inference, which is
+                // error.
+                if let Ok(stuff) = url::Url::parse(&u) {
+                    if stuff.path() == "/engine_type" {
+                        Some(u)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -135,6 +142,10 @@ impl RaftStoreProxy {
                 let f = c.get(&addr).send();
                 pending.push(rt.spawn(f));
             }
+        }
+
+        if pending.is_empty() {
+            tikv_util::error!("no valid tikv stores with status server");
         }
 
         loop {
@@ -158,8 +169,8 @@ impl RaftStoreProxy {
         false
     }
 
-    pub fn raftstore_version(&self) -> u64 {
-        1
+    pub fn raftstore_version(&self) -> RaftstoreVer {
+        RaftstoreVer::V1
     }
 
     pub fn set_kv_engine(&mut self, kv_engine: Option<Eng>) {
@@ -195,7 +206,7 @@ impl RaftStoreProxy {
     ) -> KVGetStatus {
         let region_state_key = keys::region_state_key(region_id);
         let mut res = KVGetStatus::NotFound;
-        if self.raftstore_version() == 1 {
+        if self.raftstore_version() == RaftstoreVer::V1 {
             self.get_value_cf(engine_traits::CF_RAFT, &region_state_key, &mut |value| {
                 match value {
                     Ok(v) => {
@@ -226,7 +237,7 @@ impl RaftStoreProxy {
     }
 
     pub fn get_raft_apply_state(&self, _region_id: u64) -> interfaces_ffi::KVGetStatus {
-        if self.raftstore_version() == 1 {
+        if self.raftstore_version() == RaftstoreVer::V1 {
             panic!("wrong raftstore version");
         } else {
             unreachable!()
