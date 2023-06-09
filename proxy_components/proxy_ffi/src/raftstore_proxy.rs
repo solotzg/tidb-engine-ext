@@ -56,49 +56,50 @@ impl RaftStoreProxy {
         *self.cluster_raftstore_ver.read().unwrap()
     }
 
-    fn generate_request_with_timeout(timeout_ms: i64) -> Option<reqwest::Client> {
-        let headers = reqwest::header::HeaderMap::new();
-        let mut builder = reqwest::Client::builder().default_headers(headers);
-        if timeout_ms >= 0 {
-            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
-        }
-        match builder.build() {
-            Ok(o) => Some(o),
-            Err(e) => {
-                error!("generate_request_with_timeout error {:?}", e);
-                None
-            }
-        }
-    }
-
-    fn parse_response(
-        rt: &Runtime,
-        resp: Result<reqwest::Response, reqwest::Error>,
-    ) -> RaftstoreVer {
-        match resp {
-            Ok(resp) => {
-                if resp.status() == 404 {
-                    // If the port is not implemented.
-                    return RaftstoreVer::V1;
-                } else if resp.status() != 200 {
-                    return RaftstoreVer::Uncertain;
-                }
-                let resp = rt.block_on(async { resp.text().await }).unwrap();
-                if resp.contains("partitioned") {
-                    RaftstoreVer::V2
-                } else {
-                    RaftstoreVer::V1
-                }
-            }
-            Err(e) => {
-                error!("block request response error {:?}", e);
-                RaftstoreVer::Uncertain
-            }
-        }
-    }
-
+    /// Issue requests to all stores which is not marked as TiFlash.
+    /// Use the result of the first store which is not a Uncertain.
+    /// Or set the result to Uncertain if timeout.
     pub fn refresh_cluster_raftstore_version(&mut self, timeout_ms: i64) -> bool {
-        // We don't use infomation stored in `GlobalReplicationState` to decouple.
+        let generate_request_with_timeout = |timeout_ms: i64| -> Option<reqwest::Client> {
+            let headers = reqwest::header::HeaderMap::new();
+            let mut builder = reqwest::Client::builder().default_headers(headers);
+            if timeout_ms >= 0 {
+                builder = builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
+            }
+            match builder.build() {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    error!("generate_request_with_timeout error {:?}", e);
+                    None
+                }
+            }
+        };
+
+        let parse_response =
+            |rt: &Runtime, resp: Result<reqwest::Response, reqwest::Error>| -> RaftstoreVer {
+                match resp {
+                    Ok(resp) => {
+                        if resp.status() == 404 {
+                            // If the port is not implemented.
+                            return RaftstoreVer::V1;
+                        } else if resp.status() != 200 {
+                            return RaftstoreVer::Uncertain;
+                        }
+                        let resp = rt.block_on(async { resp.text().await }).unwrap();
+                        if resp.contains("partitioned") {
+                            RaftstoreVer::V2
+                        } else {
+                            RaftstoreVer::V1
+                        }
+                    }
+                    Err(e) => {
+                        error!("block request response error {:?}", e);
+                        RaftstoreVer::Uncertain
+                    }
+                }
+            };
+
+        // We don't use information stored in `GlobalReplicationState` to decouple.
         *self.cluster_raftstore_ver.write().unwrap() = RaftstoreVer::Uncertain;
         let stores = match self.pd_client.as_ref().unwrap().get_all_stores(false) {
             Ok(stores) => stores,
@@ -109,13 +110,14 @@ impl RaftStoreProxy {
         };
 
         let to_try_addrs = stores.iter().filter_map(|store| {
+            // There are some other labels such like tiflash_compute.
             let shall_filter = store
                 .get_labels()
                 .iter()
-                .any(|label| label.get_key() == "engine" && label.get_value() == "tiflash");
+                .any(|label| label.get_key() == "engine" && label.get_value().contains("tiflash"));
             if !shall_filter {
                 Some(format!(
-                    "http://{}/{}",
+                    "https://{}/{}",
                     store.get_status_address(),
                     "engine_type"
                 ))
@@ -128,7 +130,8 @@ impl RaftStoreProxy {
 
         let mut pending = vec![];
         for addr in to_try_addrs {
-            if let Some(c) = Self::generate_request_with_timeout(timeout_ms) {
+            if let Some(c) = generate_request_with_timeout(timeout_ms) {
+                let _g = rt.enter();
                 let f = c.get(&addr).send();
                 pending.push(rt.spawn(f));
             }
@@ -141,7 +144,7 @@ impl RaftStoreProxy {
             let sel = futures::future::select_all(pending);
             let (resp, _completed_idx, remaining) = rt.block_on(async { sel.await });
 
-            let res = Self::parse_response(&rt, resp.unwrap());
+            let res = parse_response(&rt, resp.unwrap());
 
             if res != RaftstoreVer::Uncertain {
                 *self.cluster_raftstore_ver.write().unwrap() = res;
