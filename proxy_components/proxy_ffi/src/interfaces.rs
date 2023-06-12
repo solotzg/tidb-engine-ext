@@ -421,7 +421,7 @@ pub mod root {
             pub fn_get_cluster_raftstore_version: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
-                    refresh: bool,
+                    refresh_strategy: u8,
                     timeout_ms: i64,
                 ) -> root::DB::RaftstoreVer,
             >,
@@ -634,7 +634,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 8042455731646166793;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 9421202721206258776;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

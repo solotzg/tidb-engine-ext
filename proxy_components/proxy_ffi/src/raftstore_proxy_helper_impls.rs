@@ -91,14 +91,23 @@ impl RaftStoreProxyFFIHelper {
 
 unsafe extern "C" fn ffi_get_cluster_raftstore_version(
     proxy_ptr: RaftStoreProxyPtr,
-    force_refresh: bool,
+    refresh_strategy: u8,
     timeout_ms: i64,
 ) -> RaftstoreVer {
-    if force_refresh {
+    if refresh_strategy == 1 {
+        // Force refresh
         let mut proxy_ptr = proxy_ptr;
         proxy_ptr
             .as_mut()
             .refresh_cluster_raftstore_version(timeout_ms);
+    } else if refresh_strategy == 2 {
+        // Refresh if uncertain
+        if proxy_ptr.as_ref().cluster_raftstore_version() == RaftstoreVer::Uncertain {
+            let mut proxy_ptr = proxy_ptr;
+            proxy_ptr
+                .as_mut()
+                .refresh_cluster_raftstore_version(timeout_ms);
+        }
     }
     proxy_ptr.as_ref().cluster_raftstore_version()
 }

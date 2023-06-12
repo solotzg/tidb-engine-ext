@@ -243,7 +243,7 @@ struct RaftStoreProxyFFIHelper {
                                            uint64_t region_id, RawVoidPtr data,
                                            RawCppStringPtr *error_msg);
   RaftstoreVer (*fn_get_cluster_raftstore_version)(RaftStoreProxyPtr,
-                                                   bool refresh,
+                                                   uint8_t refresh_strategy,
                                                    int64_t timeout_ms);
 };
 
