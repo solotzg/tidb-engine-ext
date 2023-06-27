@@ -90,7 +90,7 @@ pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<Str
             res = Some(stuff.to_string())
         }
     }
-    return res;
+    res
 }
 
 impl RaftStoreProxy {
