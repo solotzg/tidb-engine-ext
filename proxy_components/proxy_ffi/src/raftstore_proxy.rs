@@ -130,12 +130,7 @@ impl RaftStoreProxy {
                         } else if resp.status() != 200 {
                             return RaftstoreVer::Uncertain;
                         }
-                        let resp = match rt.block_on(async { resp.text().await }) {
-                            Ok(e) => e,
-                            Err(e) => {
-                                error!("refresh_cluster_raftstore_version parse error {:?}", e);
-                            }
-                        }
+                        let resp = rt.block_on(async { resp.text().await }).unwrap();
                         if resp.contains("partitioned") {
                             RaftstoreVer::V2
                         } else {
