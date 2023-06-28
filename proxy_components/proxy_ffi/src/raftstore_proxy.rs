@@ -51,6 +51,7 @@ impl RaftStoreProxy {
 }
 
 pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<String> {
+    tikv_util::debug!("!!!!! maybe_use_backup_addr enter");
     let mut res = None;
     let mut need_backup_ip = false;
 
@@ -144,6 +145,7 @@ impl RaftStoreProxy {
             };
 
         // We don't use information stored in `GlobalReplicationState` to decouple.
+        tikv_util::debug!("!!!!! pd get store");
         *self.cluster_raftstore_ver.write().unwrap() = RaftstoreVer::Uncertain;
         let stores = match self.pd_client.as_ref().unwrap().get_all_stores(false) {
             Ok(stores) => stores,
