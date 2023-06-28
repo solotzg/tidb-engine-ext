@@ -82,9 +82,11 @@ pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<Str
             if !s.starts_with("http") {
                 s = format!("http://{}", s);
             }
+            debug!("!!!!! maybe_use_backup_addr s {}", s);
             if let Ok(back) = url::Url::parse(&s) {
+                let host = back.host_str().unwrap();
                 stuff
-                    .set_ip_host(back.host_str().unwrap().parse().unwrap())
+                    .set_ip_host(host.parse().unwrap())
                     .unwrap();
             }
             res = Some(stuff.to_string())
@@ -160,6 +162,7 @@ impl RaftStoreProxy {
             if !shall_filter {
                 // TiKV's status server don't support https.
                 let mut u = format!("http://{}/{}", store.get_status_address(), "engine_type");
+                tikv_util::debug!("!!!!! try switch from {} to {}", u, store.get_address());
                 if let Some(nu) = maybe_use_backup_addr(&u, || store.get_address().to_string()) {
                     tikv_util::debug!("switch from {} to {}", u, nu);
                     u = nu;
