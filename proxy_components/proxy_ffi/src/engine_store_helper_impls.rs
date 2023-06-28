@@ -156,6 +156,8 @@ impl EngineStoreServerHelper {
         try_until_succeed: bool,
         index: u64,
         term: u64,
+        truncated_index: u64,
+        truncated_term: u64,
     ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
         unsafe {
@@ -170,6 +172,8 @@ impl EngineStoreServerHelper {
                 },
                 index,
                 term,
+                truncated_index,
+                truncated_term,
             ) != 0
         }
     }

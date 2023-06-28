@@ -110,9 +110,10 @@ impl<T: Transport + 'static, ER: RaftEngine> AdminObserver for TiFlashObserver<T
         req: &AdminRequest,
         index: u64,
         term: u64,
+        apply_state: &RaftApplyState,
     ) -> bool {
         self.forwarder
-            .pre_exec_admin(ob_ctx.region(), req, index, term)
+            .pre_exec_admin(ob_ctx.region(), req, index, term, apply_state)
     }
 
     fn post_exec_admin(
@@ -187,15 +188,11 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
     fn pre_write_apply_state(&self, ob_ctx: &mut ObserverContext<'_>) -> bool {
         self.forwarder.pre_write_apply_state(ob_ctx.region())
     }
-}
 
-impl<T: Transport + 'static, ER: RaftEngine> MessageObserver for TiFlashObserver<T, ER> {
-    fn on_raft_message(&self, msg: &RaftMessage) -> bool {
-        self.forwarder.on_raft_message(msg)
-    }
     fn compact_log_in_queue(&self) -> bool {
         false
     }
+
     fn get_compact_index_and_term(
         &self,
         region_id: u64,
@@ -204,6 +201,12 @@ impl<T: Transport + 'static, ER: RaftEngine> MessageObserver for TiFlashObserver
     ) -> Option<(u64, u64)> {
         self.forwarder
             .get_compact_index_and_term(region_id, compact_index, compact_term)
+    }
+}
+
+impl<T: Transport + 'static, ER: RaftEngine> MessageObserver for TiFlashObserver<T, ER> {
+    fn on_raft_message(&self, msg: &RaftMessage) -> bool {
+        self.forwarder.on_raft_message(msg)
     }
 }
 
