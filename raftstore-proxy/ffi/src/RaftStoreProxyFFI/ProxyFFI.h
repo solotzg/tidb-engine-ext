@@ -208,8 +208,8 @@ struct FastAddPeerRes {
 };
 
 struct FlushedState {
-    uint64_t applied_index;
-    uint64_t applied_term;
+  uint64_t applied_index;
+  uint64_t applied_term;
 };
 struct RaftStoreProxyFFIHelper {
   RaftStoreProxyPtr proxy_ptr;
@@ -240,8 +240,9 @@ struct RaftStoreProxyFFIHelper {
   KVGetStatus (*fn_get_region_local_state)(RaftStoreProxyPtr,
                                            uint64_t region_id, RawVoidPtr data,
                                            RawCppStringPtr *error_msg);
-  void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t region_id, uint64_t compact_index,
-                                uint64_t compact_term, uint64_t applied_index);
+  void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t region_id,
+                                uint64_t compact_index, uint64_t compact_term,
+                                uint64_t applied_index);
 };
 
 struct PageStorageInterfaces {
@@ -278,8 +279,10 @@ struct EngineStoreServerHelper {
                                                   BaseBuffView, BaseBuffView,
                                                   RaftCmdHeader);
   uint8_t (*fn_need_flush_data)(EngineStoreServerWrap *, uint64_t);
-  uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t, uint8_t,
-                               uint64_t, uint64_t);
+  uint8_t (*fn_try_flush_data)(EngineStoreServerWrap *, uint64_t region_id,
+                               uint8_t flush_pattern, uint64_t index,
+                               uint64_t term, uint64_t truncated_index,
+                               uint64_t truncated_term);
   void (*fn_atomic_update_proxy)(EngineStoreServerWrap *,
                                  RaftStoreProxyFFIHelper *);
   void (*fn_handle_destroy)(EngineStoreServerWrap *, uint64_t);
@@ -309,6 +312,8 @@ struct EngineStoreServerHelper {
                                    uint64_t leader_safe_ts);
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
                                      uint64_t region_id, uint64_t new_peer_id);
-  FlushedState (*fn_get_flushed_state)(EngineStoreServerWrap *, uint64_t region_id);
+  FlushedState (*fn_get_flushed_state)(EngineStoreServerWrap *,
+                                       uint64_t region_id,
+                                       uint8_t acquire_lock);
 };
 }  // namespace DB

@@ -156,6 +156,8 @@ impl EngineStoreServerHelper {
         try_until_succeed: bool,
         index: u64,
         term: u64,
+        truncated_index: u64,
+        truncated_term: u64,
     ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
         unsafe {
@@ -170,6 +172,8 @@ impl EngineStoreServerHelper {
                 },
                 index,
                 term,
+                truncated_index,
+                truncated_term,
             ) != 0
         }
     }
@@ -333,7 +337,7 @@ impl EngineStoreServerHelper {
     pub fn get_persisted_state(&self, region_id: u64) -> (u64, u64) {
         debug_assert!(self.fn_get_flushed_state.is_some());
         unsafe {
-            let flushed_state = (self.fn_get_flushed_state.into_inner())(self.inner, region_id);
+            let flushed_state = (self.fn_get_flushed_state.into_inner())(self.inner, region_id, 1);
             return (flushed_state.applied_index, flushed_state.applied_term);
         }
     }

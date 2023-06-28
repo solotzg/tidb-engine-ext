@@ -339,9 +339,11 @@ extern "C" fn ffi_need_flush_data(
 unsafe extern "C" fn ffi_try_flush_data(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,
-    _try_until_succeed: u8,
+    _flush_pattern: u8,
     index: u64,
     term: u64,
+    _truncated_index: u64,
+    _truncated_term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let kvstore = &mut (*store.engine_store_server).kvstore;

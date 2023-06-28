@@ -113,6 +113,7 @@ pub trait AdminObserver: Coprocessor {
         _: &AdminRequest,
         _: u64,
         _: u64,
+        _: &RaftApplyState,
     ) -> bool {
         false
     }
@@ -153,7 +154,14 @@ pub trait QueryObserver: Coprocessor {
 
     /// Hook before exec write request, returns whether we should skip this
     /// write.
-    fn pre_exec_query(&self, _: &mut ObserverContext<'_>, _: &[Request], _: u64, _: u64) -> bool {
+    fn pre_exec_query(
+        &self,
+        _: &mut ObserverContext<'_>,
+        _: &[Request],
+        _: u64,
+        _: u64,
+        _: &RaftApplyState,
+    ) -> bool {
         false
     }
 
@@ -337,18 +345,13 @@ pub trait RegionChangeObserver: Coprocessor {
     fn pre_write_apply_state(&self, _: &mut ObserverContext<'_>) -> bool {
         true
     }
-}
-
-pub trait MessageObserver: Coprocessor {
-    /// Returns false if the message should not be stepped later.
-    fn on_raft_message(&self, _: &RaftMessage) -> bool {
-        true
-    }
 
     /// Returns true if need to get compact log index from pending queue.
     fn compact_log_in_queue(&self) -> bool {
         true
     }
+
+    /// Returns the maximum index the underlying engine can compact.
     fn get_compact_index_and_term(
         &self,
         region_id: u64,
@@ -356,6 +359,13 @@ pub trait MessageObserver: Coprocessor {
         compact_term: u64,
     ) -> Option<(u64, u64)> {
         None
+    }
+}
+
+pub trait MessageObserver: Coprocessor {
+    /// Returns false if the message should not be stepped later.
+    fn on_raft_message(&self, _: &RaftMessage) -> bool {
+        true
     }
 }
 

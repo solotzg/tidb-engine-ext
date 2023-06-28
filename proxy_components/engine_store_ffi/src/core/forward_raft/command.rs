@@ -75,6 +75,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         req: &AdminRequest,
         index: u64,
         term: u64,
+        apply_state: &RaftApplyState,
     ) -> bool {
         match req.get_cmd_type() {
             AdminCmdType::CompactLog => {
@@ -84,6 +85,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     false,
                     index,
                     term,
+                    apply_state.get_truncated_state().get_index(),
+                    apply_state.get_truncated_state().get_term(),
                 ) {
                     info!("can't flush data, filter CompactLog";
                         "region_id" => ?ob_region.get_id(),
