@@ -51,7 +51,6 @@ impl RaftStoreProxy {
 }
 
 pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<String> {
-    tikv_util::info!("!!!!! maybe_use_backup_addr enter");
     let mut res = None;
     let mut need_backup_ip = false;
 
@@ -85,10 +84,7 @@ pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<Str
             }
             tikv_util::info!("!!!!! maybe_use_backup_addr s {}", s);
             if let Ok(back) = url::Url::parse(&s) {
-                let host = back.host_str().unwrap();
-                stuff
-                    .set_ip_host(host.parse().unwrap())
-                    .unwrap();
+                stuff.set_host(back.host_str()).unwrap();
             }
             res = Some(stuff.to_string())
         }
@@ -145,7 +141,6 @@ impl RaftStoreProxy {
             };
 
         // We don't use information stored in `GlobalReplicationState` to decouple.
-        tikv_util::info!("!!!!! pd get store");
         *self.cluster_raftstore_ver.write().unwrap() = RaftstoreVer::Uncertain;
         let stores = match self.pd_client.as_ref().unwrap().get_all_stores(false) {
             Ok(stores) => stores,
@@ -164,7 +159,6 @@ impl RaftStoreProxy {
             if !shall_filter {
                 // TiKV's status server don't support https.
                 let mut u = format!("http://{}/{}", store.get_status_address(), "engine_type");
-                tikv_util::info!("!!!!! try switch from {} to {}", u, store.get_address());
                 if let Some(nu) = maybe_use_backup_addr(&u, || store.get_address().to_string()) {
                     tikv_util::info!("switch from {} to {}", u, nu);
                     u = nu;
