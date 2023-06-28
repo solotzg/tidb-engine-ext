@@ -82,7 +82,7 @@ pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<Str
             if !s.starts_with("http") {
                 s = format!("http://{}", s);
             }
-            debug!("!!!!! maybe_use_backup_addr s {}", s);
+            tikv_util::debug!("!!!!! maybe_use_backup_addr s {}", s);
             if let Ok(back) = url::Url::parse(&s) {
                 let host = back.host_str().unwrap();
                 stuff
