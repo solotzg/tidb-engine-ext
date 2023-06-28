@@ -51,7 +51,7 @@ impl RaftStoreProxy {
 }
 
 pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<String> {
-    tikv_util::debug!("!!!!! maybe_use_backup_addr enter");
+    tikv_util::info!("!!!!! maybe_use_backup_addr enter");
     let mut res = None;
     let mut need_backup_ip = false;
 
@@ -83,7 +83,7 @@ pub fn maybe_use_backup_addr(u: &str, backup: impl Fn() -> String) -> Option<Str
             if !s.starts_with("http") {
                 s = format!("http://{}", s);
             }
-            tikv_util::debug!("!!!!! maybe_use_backup_addr s {}", s);
+            tikv_util::info!("!!!!! maybe_use_backup_addr s {}", s);
             if let Ok(back) = url::Url::parse(&s) {
                 let host = back.host_str().unwrap();
                 stuff
@@ -130,7 +130,12 @@ impl RaftStoreProxy {
                         } else if resp.status() != 200 {
                             return RaftstoreVer::Uncertain;
                         }
-                        let resp = rt.block_on(async { resp.text().await }).unwrap();
+                        let resp = match rt.block_on(async { resp.text().await }) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                error!("refresh_cluster_raftstore_version parse error {:?}", e);
+                            }
+                        }
                         if resp.contains("partitioned") {
                             RaftstoreVer::V2
                         } else {
@@ -145,12 +150,12 @@ impl RaftStoreProxy {
             };
 
         // We don't use information stored in `GlobalReplicationState` to decouple.
-        tikv_util::debug!("!!!!! pd get store");
+        tikv_util::info!("!!!!! pd get store");
         *self.cluster_raftstore_ver.write().unwrap() = RaftstoreVer::Uncertain;
         let stores = match self.pd_client.as_ref().unwrap().get_all_stores(false) {
             Ok(stores) => stores,
             Err(e) => {
-                tikv_util::debug!("get_all_stores error {:?}", e);
+                tikv_util::info!("get_all_stores error {:?}", e);
                 return false;
             }
         };
@@ -164,9 +169,9 @@ impl RaftStoreProxy {
             if !shall_filter {
                 // TiKV's status server don't support https.
                 let mut u = format!("http://{}/{}", store.get_status_address(), "engine_type");
-                tikv_util::debug!("!!!!! try switch from {} to {}", u, store.get_address());
+                tikv_util::info!("!!!!! try switch from {} to {}", u, store.get_address());
                 if let Some(nu) = maybe_use_backup_addr(&u, || store.get_address().to_string()) {
-                    tikv_util::debug!("switch from {} to {}", u, nu);
+                    tikv_util::info!("switch from {} to {}", u, nu);
                     u = nu;
                 }
                 // A invalid url may lead to 404, which will enforce a V1 inference, which is
