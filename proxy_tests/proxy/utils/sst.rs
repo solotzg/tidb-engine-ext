@@ -58,6 +58,8 @@ pub mod RecordFormat {
     #![allow(non_snake_case)]
 
     use super::*;
+    const ENC_GROUP_SIZE: usize = 8;
+    const ENC_MARKER: u8 = 0xff;
     pub fn decodeInt64(p: &[u8]) -> i64 {
         const SIGN_MASK: u64 = 1u64 << 63;
         let y = (BigEndian::read_u64(p) ^ SIGN_MASK) as i64;
@@ -91,13 +93,20 @@ pub mod RecordFormat {
         decodeInt64(&data[1..])
     }
 
+    fn checkKeyPaddingValid(key: &[u8], ptr: usize, pad_size: u8) -> bool {
+        let p = unsafe { *(&key[ptr..] as *const [u8] as *const u64) }
+            >> ((ENC_GROUP_SIZE - pad_size as usize) * 8);
+        p == 0
+    }
+
     pub fn decodeTiKVKeyFull(key: &[u8]) -> Vec<u8> {
         let mut res: Vec<u8> = vec![];
-        const ENC_GROUP_SIZE: usize = 8;
         let chunk_len: usize = ENC_GROUP_SIZE + 1;
-        const ENC_MARKER: u8 = 0xff;
 
         for ptr in (0..).step_by(chunk_len) {
+            if ptr + chunk_len > key.len() {
+                panic!("Unexpexcted EOF");
+            }
             let marker = key[ptr + ENC_GROUP_SIZE];
             let pad_size: u8 = ENC_MARKER - marker;
             if pad_size == 0 {
@@ -105,11 +114,16 @@ pub mod RecordFormat {
                 res.append(&mut v);
                 continue;
             }
-
+            if pad_size as usize > ENC_GROUP_SIZE {
+                panic!("key padding");
+            }
             let a: usize = ptr + ENC_GROUP_SIZE - (pad_size as usize);
             let mut v = key[ptr..a].to_vec();
             res.append(&mut v);
 
+            if !checkKeyPaddingValid(key, ptr, pad_size) {
+                panic!("Key padding, wrong end")
+            }
             return res;
         }
         unreachable!()
