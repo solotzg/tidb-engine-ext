@@ -124,8 +124,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
     pub fn get_compact_index_and_term(
         &self,
         region_id: u64,
-        compact_index: u64,
-        compact_term: u64,
+        _: u64,
+        _: u64,
     ) -> Option<(u64, u64)> {
         let res = self
             .engine_store_server_helper

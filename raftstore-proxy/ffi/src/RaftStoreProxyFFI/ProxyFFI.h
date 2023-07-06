@@ -85,6 +85,12 @@ enum class EngineStoreServerStatus : uint8_t {
                // shutdown.
 };
 
+enum class RaftstoreVer : uint8_t {
+  Uncertain = 0,
+  V1,
+  V2,
+};
+
 using RawCppPtrType = uint32_t;
 using RawRustPtrType = uint32_t;
 
@@ -243,6 +249,9 @@ struct RaftStoreProxyFFIHelper {
   void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t region_id,
                                 uint64_t compact_index, uint64_t compact_term,
                                 uint64_t applied_index);
+  RaftstoreVer (*fn_get_cluster_raftstore_version)(RaftStoreProxyPtr,
+                                                   uint8_t refresh_strategy,
+                                                   int64_t timeout_ms);
 };
 
 struct PageStorageInterfaces {
@@ -316,4 +325,15 @@ struct EngineStoreServerHelper {
                                        uint64_t region_id,
                                        uint8_t acquire_lock);
 };
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// Basically same as ffi_server_info, but no need to setup ProxyHelper, only
+// need to setup ServerHelper. Used when proxy not start.
+uint32_t ffi_get_server_info_from_proxy(intptr_t, BaseBuffView, RawVoidPtr);
+#ifdef __cplusplus
+}
+#endif
+
 }  // namespace DB

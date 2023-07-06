@@ -3927,8 +3927,8 @@ where
             } => {
                 write!(
                     f,
-                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}",
-                    region_id, voter_replicated_index, voter_replicated_term
+                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}, applied_index: {}",
+                    region_id, voter_replicated_index, voter_replicated_term, applied_index
                 )
             }
         }

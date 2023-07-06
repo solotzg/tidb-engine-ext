@@ -21,7 +21,7 @@ use tikv::server::tablet_snap::send_snap as send_snap_v2;
 use tikv_util::time::Limiter;
 
 use super::utils::*;
-use crate::utils::v1::*;
+use crate::utils::{sst::*, v1::*};
 
 fn random_long_vec(length: usize) -> Vec<u8> {
     let mut rng = rand::thread_rng();

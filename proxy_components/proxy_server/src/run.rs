@@ -146,6 +146,14 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
         Some(Box::new(ProxyApplyRouterHelper::new(
             tikv.system.as_ref().unwrap().apply_router(),
         ))),
+        Some(tikv.pd_client.clone()),
+    );
+    info!("start probing cluster's raftstore version");
+    // We wait for a maximum of 10 seconds for every store.
+    proxy.refresh_cluster_raftstore_version(10 * 1000);
+    info!(
+        "cluster's raftstore version is {:?}",
+        proxy.cluster_raftstore_version()
     );
 
     let proxy_ref = &proxy;
@@ -257,6 +265,7 @@ fn run_impl_only_for_decryption<CER: ConfiguredRaftEngine, F: KvFormat>(
         AtomicU8::new(RaftProxyStatus::Idle as u8),
         encryption_key_manager.clone(),
         Option::None,
+        None,
         None,
         None,
     );
@@ -1174,6 +1183,7 @@ impl<ER: RaftEngine> TiKvServer<ER> {
             snap_mgr.clone(),
             packed_envs,
             DebugStruct::default(),
+            self.core.encryption_key_manager.clone(),
         );
         tiflash_ob.register_to(self.coprocessor_host.as_mut().unwrap());
 
