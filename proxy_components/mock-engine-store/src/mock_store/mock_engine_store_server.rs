@@ -523,7 +523,7 @@ unsafe extern "C" fn ffi_handle_compute_store_stats(
 unsafe extern "C" fn ffi_get_flushed_state(
     _arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     _region_id: u64,
-    _acquire_lock: u8
+    _acquire_lock: u8,
 ) -> interfaces_ffi::FlushedState {
     interfaces_ffi::FlushedState {
         applied_index: 0,

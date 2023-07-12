@@ -3057,7 +3057,7 @@ where
         &mut self,
         voter_replicated_index: u64,
         voter_replicated_term: u64,
-        handle_queue: bool,
+        compact_log_in_queue: bool,
     ) -> Result<(bool, Option<ExecResult<EK::Snapshot>>)> {
         PEER_ADMIN_CMD_COUNTER.compact.all.inc();
         let first_index = entry_storage::first_index(&self.apply_state);
@@ -3072,7 +3072,7 @@ where
             return Ok((false, None));
         }
 
-        if !handle_queue {
+        if !compact_log_in_queue {
             // When `compact_log_in_queue` is set to false.
             // It it a compact request from underlying engine.
             let mut compact_index = voter_replicated_index;
@@ -3245,21 +3245,32 @@ where
             }
         }
 
-        if let Some((custom_compact_index, custom_compact_term)) = ctx
-            .host
-            .get_compact_index_and_term(self.region_id(), compact_index, compact_term)
-        {
-            if custom_compact_index < compact_index {
-                // If the underlying engine has not compact to expected yet,
-                // We will compact to what the underlying engine tells which is a best effort.
-                compact_index = custom_compact_index;
-                compact_term = custom_compact_term;
-            }
-            if compact_index > self.max_compact_index {
-                self.max_compact_index = compact_index;
-                self.max_compact_term = compact_term;
-            }
+        // if let Some((custom_compact_index, custom_compact_term)) = ctx
+        //     .host
+        //     .get_compact_index_and_term(self.region_id(), compact_index,
+        // compact_term) {
+        //     if custom_compact_index < compact_index {
+        //         // This may happen when the underlying engine has done a flush before
+        // this CompactLog, but to a smaller index.         // Previously, if
+        // the underlying engine has not compact to expected yet,         // we
+        // will just reject the CompactLog by `pre_exec`.         // Now, We
+        // will compact to where the underlying engine tells which is a best effort.
+        //         compact_index = custom_compact_index;
+        //         compact_term = custom_compact_term;
+        //     }
+        //     if compact_index > self.max_compact_index {
+        //         self.max_compact_index = compact_index;
+        //         self.max_compact_term = compact_term;
+        //     }
+        // }
+
+        // Safety: compact index is monotonicly increased guarded by `compact_raft_log`
+        // and `entry_storage::first_index`.
+        if compact_index > self.max_compact_index {
+            self.max_compact_index = compact_index;
+            self.max_compact_term = compact_term;
         }
+
         if compact_index < first_index {
             debug!(
                 "compact index < first index, no need to compact";
@@ -4396,10 +4407,11 @@ where
             return;
         }
 
+        let compact_log_in_queue = ctx.host.compact_log_in_queue();
         let res = self.delegate.try_compact_log(
             voter_replicated_index,
             voter_replicated_term,
-            ctx.host.compact_log_in_queue(),
+            compact_log_in_queue,
         );
         match res {
             Ok((should_write, res)) => {

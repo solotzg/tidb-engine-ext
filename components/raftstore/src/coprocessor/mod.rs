@@ -352,12 +352,7 @@ pub trait RegionChangeObserver: Coprocessor {
     }
 
     /// Returns the maximum index the underlying engine can compact.
-    fn get_compact_index_and_term(
-        &self,
-        _: u64,
-        _: u64,
-        _: u64,
-    ) -> Option<(u64, u64)> {
+    fn get_compact_index_and_term(&self, _: u64, _: u64, _: u64) -> Option<(u64, u64)> {
         None
     }
 }

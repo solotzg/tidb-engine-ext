@@ -366,6 +366,62 @@ fn test_unsupport_admin_cmd() {
 }
 
 #[test]
+fn test_failed_compact_log() {
+    let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
+    disable_auto_gen_compact_log(&mut cluster);
+    cluster.run();
+
+    cluster.must_put(b"k", b"v");
+    let region = cluster.get_region("k".as_bytes());
+    let region_id = region.get_id();
+    fail::cfg("try_flush_data", "return(1)").unwrap();
+    for i in 0..5 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+    for i in 0..5 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let prev_state = collect_all_states(&cluster.cluster_ext, region_id);
+    let (compact_index, compact_term) = get_valid_compact_index(&prev_state);
+    let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
+    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+    let res = cluster
+        .call_command_on_leader(req, Duration::from_secs(3))
+        .unwrap();
+    // compact index should less than applied index
+    assert!(!res.get_header().has_error(), "{:?}", res);
+
+    for i in 5..10 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        cluster.must_put(k.as_bytes(), v.as_bytes());
+    }
+    for i in 5..10 {
+        let k = format!("k{}", i);
+        let v = format!("v{}", i);
+        check_key(&cluster, k.as_bytes(), v.as_bytes(), Some(true), None, None);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let prev_state = collect_all_states(&cluster.cluster_ext, region_id);
+    let compact_log = test_raftstore::new_compact_log_request(1, compact_term);
+    let req = test_raftstore::new_admin_request(region_id, region.get_region_epoch(), compact_log);
+    let res = cluster
+        .call_command_on_leader(req, Duration::from_secs(3))
+        .unwrap();
+    // compact index should less than applied index
+    assert!(!res.get_header().has_error(), "{:?}", res);
+
+    let new_state = collect_all_states(&cluster.cluster_ext, region_id);
+    must_unaltered_disk_truncated_state(&prev_state, &new_state);
+    cluster.shutdown();
+}
+
+#[test]
 fn test_compact_log() {
     let (mut cluster, _pd_client) = new_mock_cluster(0, 3);
 
