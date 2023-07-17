@@ -3163,7 +3163,7 @@ where
 
     fn exec_compact_log(
         &mut self,
-        ctx: &mut ApplyContext<EK>,
+        ctx: &ApplyContext<EK>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         PEER_ADMIN_CMD_COUNTER.compact.all.inc();

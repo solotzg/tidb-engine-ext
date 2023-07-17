@@ -38,6 +38,7 @@ elif [[ $M == "testnew" ]]; then
     cargo check --package proxy_server --features="$ENABLE_FEATURES"
     # tests based on mock-engine-store, with compat for new proxy
     cargo test --package proxy_tests --test proxy shared::write
+    cargo test --package proxy_tests --test proxy shared::proactive_flush
     cargo test --package proxy_tests --test proxy shared::snapshot
     cargo test --package proxy_tests --test proxy shared::normal::store
     cargo test --package proxy_tests --test proxy shared::normal::config

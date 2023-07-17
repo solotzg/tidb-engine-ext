@@ -299,6 +299,7 @@ pub extern "C" fn ffi_notify_compact_log(
     assert!(!proxy_ptr.is_null());
     unsafe {
         if proxy_ptr.as_ref().maybe_apply_router_helper().is_none() {
+            tikv_util::info!("Apply router helper is none");
             return;
         }
     }

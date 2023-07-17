@@ -6,6 +6,7 @@ use collections::HashMap;
 use engine_store_ffi::{ffi::RaftStoreProxyFFI, TiFlashEngine};
 use engine_tiflash::DB;
 use engine_traits::{Engines, KvEngine};
+use raftstore::store::fsm::ApplyRouter;
 use tikv_util::{sys::SysQuota, HandyRwLock};
 
 use super::{common::*, Cluster, Simulator};
@@ -15,7 +16,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         self.cluster_ext.access_ffi_helpers(f)
     }
 
-    pub fn post_node_start(&mut self, node_id: u64) {
+    pub fn post_node_start<EK: KvEngine>(&mut self, node_id: u64, apply_router: ApplyRouter<EK>) {
         // Since we use None to create_ffi_helper_set, we must init again.
         let router = self.sim.rl().get_router(node_id).unwrap();
         self.cluster_ext
@@ -26,6 +27,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
                         SysQuota::cpu_cores_quota() as usize * 2,
                     ),
                 )));
+                ffi.proxy.setup_apply_router_helper(apply_router.clone());
             });
     }
 

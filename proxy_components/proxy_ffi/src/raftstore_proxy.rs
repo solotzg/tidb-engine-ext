@@ -6,7 +6,9 @@ use std::sync::{
 };
 
 use encryption::DataKeyManager;
+use engine_traits::KvEngine;
 use pd_client::PdClient;
+use raftstore::store::fsm::ApplyRouter;
 use tikv_util::error;
 use tokio::runtime::Runtime;
 
@@ -327,6 +329,14 @@ impl RaftStoreProxyFFI for RaftStoreProxy {
         &self,
     ) -> &Option<Box<dyn apply_router_helper::ApplyRouterHelper>> {
         &self.apply_router_client
+    }
+}
+
+impl RaftStoreProxy {
+    pub fn setup_apply_router_helper<EK: KvEngine>(&mut self, ar: ApplyRouter<EK>) {
+        self.apply_router_client = Some(Box::new(
+            crate::apply_router_helper::ProxyApplyRouterHelper::new(ar),
+        ));
     }
 }
 

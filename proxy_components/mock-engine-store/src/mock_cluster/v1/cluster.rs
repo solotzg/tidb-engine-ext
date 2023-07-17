@@ -259,7 +259,6 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             debug!("recover node"; "node_id" => node_id);
             // Like TiKVServer::init
             self.run_node(node_id)?;
-            self.post_node_start(node_id);
         }
 
         // Try start new nodes.
@@ -271,6 +270,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             }
             let (router, system) =
                 create_raft_batch_system(&self.cfg.raft_store, &self.resource_manager);
+            let apply_router = system.apply_router();
             self.create_engine(Some(router.clone()));
 
             let store_meta = Arc::new(Mutex::new(StoreMeta::new(PENDING_MSG_CAP)));
@@ -300,7 +300,7 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
             self.store_metas.insert(node_id, store_meta);
             self.key_managers_map.insert(node_id, key_manager.clone());
             self.register_ffi_helper_set(None, node_id);
-            self.post_node_start(node_id);
+            self.post_node_start(node_id, apply_router);
         }
         assert_eq!(self.count, self.engines.len());
         assert_eq!(self.count, self.dbs.len());
@@ -355,10 +355,13 @@ impl<T: Simulator<TiFlashEngine>> Cluster<T> {
         tikv_util::thread_group::set_properties(Some(props));
         debug!("calling run node"; "node_id" => node_id);
 
+        let apply_router = system.apply_router();
         // FIXME: rocksdb event listeners may not work, because we change the router.
         self.sim
             .wl()
             .run_node(node_id, cfg, engines, store_meta, key_mgr, router, system)?;
+
+        self.post_node_start(node_id, apply_router);
         debug!("node {} started", node_id);
         Ok(())
     }

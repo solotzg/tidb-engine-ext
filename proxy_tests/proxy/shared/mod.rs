@@ -7,6 +7,7 @@ mod ffi;
 mod ingest;
 mod mock;
 mod normal;
+mod proactive_flush;
 mod region;
 mod replica_read;
 mod server_cluster_test;
