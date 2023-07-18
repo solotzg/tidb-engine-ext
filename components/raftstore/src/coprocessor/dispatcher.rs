@@ -861,22 +861,6 @@ impl<E: KvEngine> CoprocessorHost<E> {
         return true;
     }
 
-    pub fn get_compact_index_and_term(
-        &self,
-        region_id: u64,
-        compact_index: u64,
-        compact_term: u64,
-    ) -> Option<(u64, u64)> {
-        for observer in &self.registry.region_change_observers {
-            let observer = observer.observer.inner();
-            let res = observer.get_compact_index_and_term(region_id, compact_index, compact_term);
-            if res.is_some() {
-                return res;
-            }
-        }
-        return None;
-    }
-
     pub fn shutdown(&self) {
         for entry in &self.registry.admin_observers {
             entry.observer.inner().stop();

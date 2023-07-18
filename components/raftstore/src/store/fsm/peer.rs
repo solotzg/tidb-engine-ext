@@ -2736,7 +2736,7 @@ where
                     region_id: self.region_id(),
                     voter_replicated_index,
                     voter_replicated_term,
-                    applied_index: self.fsm.peer.get_store().applied_index(),
+                    applied_index: None,
                 },
             )
         }

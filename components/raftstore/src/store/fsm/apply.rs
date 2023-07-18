@@ -1198,6 +1198,24 @@ where
         });
     }
 
+    fn write_apply_state_by_underlying_engine(
+        &self,
+        wb: &mut EK::WriteBatch,
+        apply_state: &RaftApplyState,
+    ) {
+        wb.put_msg_cf(
+            CF_RAFT,
+            &keys::apply_state_key(self.region.get_id()),
+            apply_state,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "{} failed to save apply state to write batch, error: {:?}",
+                self.tag, e
+            );
+        });
+    }
+
     fn maybe_write_apply_state(&self, apply_ctx: &mut ApplyContext<EK>) {
         let can_write = apply_ctx.host.pre_write_apply_state(&self.region);
         if can_write {
@@ -3245,25 +3263,6 @@ where
             }
         }
 
-        // if let Some((custom_compact_index, custom_compact_term)) = ctx
-        //     .host
-        //     .get_compact_index_and_term(self.region_id(), compact_index,
-        // compact_term) {
-        //     if custom_compact_index < compact_index {
-        //         // This may happen when the underlying engine has done a flush before
-        // this CompactLog, but to a smaller index.         // Previously, if
-        // the underlying engine has not compact to expected yet,         // we
-        // will just reject the CompactLog by `pre_exec`.         // Now, We
-        // will compact to where the underlying engine tells which is a best effort.
-        //         compact_index = custom_compact_index;
-        //         compact_term = custom_compact_term;
-        //     }
-        //     if compact_index > self.max_compact_index {
-        //         self.max_compact_index = compact_index;
-        //         self.max_compact_term = compact_term;
-        //     }
-        // }
-
         // Safety: compact index is monotonicly increased guarded by `compact_raft_log`
         // and `entry_storage::first_index`.
         if compact_index > self.max_compact_index {
@@ -3852,7 +3851,7 @@ where
         region_id: u64,
         voter_replicated_index: u64,
         voter_replicated_term: u64,
-        applied_index: u64,
+        applied_index: Option<u64>,
     },
 }
 
@@ -3938,7 +3937,7 @@ where
             } => {
                 write!(
                     f,
-                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}, applied_index: {}",
+                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}, applied_index: {:?}",
                     region_id, voter_replicated_index, voter_replicated_term, applied_index
                 )
             }
@@ -4401,7 +4400,7 @@ where
         ctx: &mut ApplyContext<EK>,
         voter_replicated_index: u64,
         voter_replicated_term: u64,
-        applied_index: u64,
+        maybe_applied_index: Option<u64>,
     ) {
         if self.delegate.pending_remove || self.delegate.stopped {
             return;
@@ -4419,29 +4418,23 @@ where
                     if ctx.timer.is_none() {
                         ctx.timer = Some(Instant::now_coarse());
                     }
-                    let origin_applied_index = self.delegate.apply_state.get_applied_index();
-                    // flush with applied_index that TiFlash has flushed cache.
-                    self.delegate.apply_state.set_applied_index(applied_index);
                     ctx.prepare_for(&mut self.delegate);
                     let mut result = VecDeque::new();
                     // If modified `truncated_state` in `try_compact_log`, the apply state should be
                     // persisted.
                     if should_write {
-                        self.delegate.write_apply_state(ctx.kv_wb_mut());
+                        if let Some(underlying_engine_applied) = maybe_applied_index.as_ref() {
+                            let mut state = self.delegate.apply_state.clone();
+                            state.set_applied_index(*underlying_engine_applied);
+                            self.delegate
+                                .write_apply_state_by_underlying_engine(ctx.kv_wb_mut(), &state);
+                        } else {
+                            self.delegate.write_apply_state(ctx.kv_wb_mut());
+                        };
                         ctx.commit_opt(&mut self.delegate, true);
                     }
                     result.push_back(res);
-                    self.delegate
-                        .apply_state
-                        .set_applied_index(origin_applied_index);
                     ctx.finish_for(&mut self.delegate, result);
-
-                    info!(
-                        "trigger compact log";
-                        "region_id" => self.delegate.region.get_id(),
-                        "applied_index" => applied_index,
-                        "origin applied_index" => origin_applied_index,
-                    );
                 }
             }
             Err(e) => error!(?e;

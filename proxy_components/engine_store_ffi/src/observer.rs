@@ -195,16 +195,6 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
     fn compact_log_in_queue(&self) -> bool {
         false
     }
-
-    fn get_compact_index_and_term(
-        &self,
-        region_id: u64,
-        compact_index: u64,
-        compact_term: u64,
-    ) -> Option<(u64, u64)> {
-        self.forwarder
-            .get_compact_index_and_term(region_id, compact_index, compact_term)
-    }
 }
 
 impl<T: Transport + 'static, ER: RaftEngine> MessageObserver for TiFlashObserver<T, ER> {
