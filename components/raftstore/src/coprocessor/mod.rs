@@ -346,9 +346,16 @@ pub trait RegionChangeObserver: Coprocessor {
         true
     }
 
-    /// Returns true if need to get compact log index from pending queue.
-    fn compact_log_in_queue(&self) -> bool {
-        true
+    fn post_compact_log_from_underlying_engine(
+        &self,
+        do_write: bool,
+        compact_index: u64,
+        compact_term: u64,
+        max_compact_index: u64,
+        max_compact_term: u64,
+        request_applied_index: u64,
+        raftstore_applied_index: u64,
+    ) {
     }
 }
 

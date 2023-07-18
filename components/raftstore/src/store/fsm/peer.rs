@@ -2737,6 +2737,7 @@ where
                     voter_replicated_index,
                     voter_replicated_term,
                     applied_index: None,
+                    from_underlying_engine: false,
                 },
             )
         }

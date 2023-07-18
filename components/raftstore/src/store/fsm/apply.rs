@@ -3075,7 +3075,7 @@ where
         &mut self,
         voter_replicated_index: u64,
         voter_replicated_term: u64,
-        compact_log_in_queue: bool,
+        from_underlying_engine: bool,
     ) -> Result<(bool, Option<ExecResult<EK::Snapshot>>)> {
         PEER_ADMIN_CMD_COUNTER.compact.all.inc();
         let first_index = entry_storage::first_index(&self.apply_state);
@@ -3090,9 +3090,7 @@ where
             return Ok((false, None));
         }
 
-        if !compact_log_in_queue {
-            // When `compact_log_in_queue` is set to false.
-            // It it a compact request from underlying engine.
+        if from_underlying_engine {
             let mut compact_index = voter_replicated_index;
             // `compact_index` is reported by underlying engine, it may be greater than the
             // recorded `max_compact_index`. We will use the smaller one of this
@@ -3852,6 +3850,7 @@ where
         voter_replicated_index: u64,
         voter_replicated_term: u64,
         applied_index: Option<u64>,
+        from_underlying_engine: bool,
     },
 }
 
@@ -3934,11 +3933,16 @@ where
                 voter_replicated_index,
                 voter_replicated_term,
                 applied_index,
+                from_underlying_engine,
             } => {
                 write!(
                     f,
-                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}, applied_index: {:?}",
-                    region_id, voter_replicated_index, voter_replicated_term, applied_index
+                    "[region {}] check compact, voter_replicated_index: {}, voter_replicated_term: {}, applied_index: {:?}, from_underlying_engine {}",
+                    region_id,
+                    voter_replicated_index,
+                    voter_replicated_term,
+                    applied_index,
+                    from_underlying_engine
                 )
             }
         }
@@ -4401,16 +4405,16 @@ where
         voter_replicated_index: u64,
         voter_replicated_term: u64,
         maybe_applied_index: Option<u64>,
+        from_underlying_engine: bool,
     ) {
         if self.delegate.pending_remove || self.delegate.stopped {
             return;
         }
 
-        let compact_log_in_queue = ctx.host.compact_log_in_queue();
         let res = self.delegate.try_compact_log(
             voter_replicated_index,
             voter_replicated_term,
-            compact_log_in_queue,
+            from_underlying_engine,
         );
         match res {
             Ok((should_write, res)) => {
@@ -4422,6 +4426,15 @@ where
                     let mut result = VecDeque::new();
                     // If modified `truncated_state` in `try_compact_log`, the apply state should be
                     // persisted.
+                    ctx.host.post_compact_log_from_underlying_engine(
+                        should_write,
+                        voter_replicated_index,
+                        voter_replicated_term,
+                        self.delegate.max_compact_index,
+                        self.delegate.max_compact_term,
+                        maybe_applied_index.unwrap_or(0),
+                        self.delegate.apply_state.get_applied_index(),
+                    );
                     if should_write {
                         if let Some(underlying_engine_applied) = maybe_applied_index.as_ref() {
                             let mut state = self.delegate.apply_state.clone();
@@ -4524,6 +4537,7 @@ where
                     voter_replicated_index,
                     voter_replicated_term,
                     applied_index,
+                    from_underlying_engine,
                     ..
                 } => {
                     self.check_pending_compact_log(
@@ -4531,6 +4545,7 @@ where
                         voter_replicated_index,
                         voter_replicated_term,
                         applied_index,
+                        from_underlying_engine,
                     );
                 }
             }

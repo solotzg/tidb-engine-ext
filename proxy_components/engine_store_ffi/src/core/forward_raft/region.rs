@@ -120,4 +120,21 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             .access_cached_region_info_mut(region_id, f)
             .unwrap();
     }
+
+    pub fn post_compact_log_from_underlying_engine(
+        &self,
+        _: bool,
+        _: u64,
+        _: u64,
+        _: u64,
+        _: u64,
+        _: u64,
+        _: u64,
+    ) {
+        self.engine
+            .proxy_ext
+            .debug_struct
+            .proactive_compact_log_count
+            .fetch_add(1, Ordering::SeqCst);
+    }
 }

@@ -40,6 +40,7 @@ impl<EK: KvEngine> ApplyRouterHelper for ProxyApplyRouterHelper<EK> {
                 voter_replicated_index: compact_index,
                 voter_replicated_term: compact_term,
                 applied_index: Some(applied_index),
+                from_underlying_engine: true,
             },
         )
     }

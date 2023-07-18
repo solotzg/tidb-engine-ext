@@ -66,6 +66,7 @@ impl RocksEngine {
             engine_store_hub,
             config_set,
             cached_region_info_manager: Some(Arc::new(crate::CachedRegionInfoManager::new())),
+            debug_struct: Arc::new(Default::default()),
         };
         let ps_ext = PageStorageExt {
             engine_store_server_helper,

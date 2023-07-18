@@ -2,12 +2,22 @@
 use std::{
     fmt::Formatter,
     sync::{
-        atomic::{AtomicIsize, Ordering},
+        atomic::{AtomicIsize, AtomicU64, Ordering},
         Arc,
     },
 };
 
 use crate::proxy_utils::EngineStoreHub;
+
+#[cfg(not(feature = "testexport"))]
+#[derive(Debug, Default)]
+pub struct DebugStruct {}
+
+#[cfg(feature = "testexport")]
+#[derive(Debug, Default)]
+pub struct DebugStruct {
+    pub proactive_compact_log_count: AtomicU64,
+}
 
 // This struct should be safe to copy.
 #[derive(Clone)]
@@ -18,6 +28,7 @@ pub struct ProxyEngineExt {
     pub engine_store_hub: Option<Arc<dyn EngineStoreHub + Send + Sync>>,
     pub config_set: Option<Arc<crate::ProxyEngineConfigSet>>,
     pub cached_region_info_manager: Option<Arc<crate::CachedRegionInfoManager>>,
+    pub debug_struct: Arc<DebugStruct>,
 }
 
 impl std::fmt::Debug for ProxyEngineExt {
@@ -45,6 +56,7 @@ impl Default for ProxyEngineExt {
             engine_store_hub: None,
             config_set: None,
             cached_region_info_manager: None,
+            debug_struct: Arc::new(Default::default()),
         }
     }
 }

@@ -853,12 +853,28 @@ impl<E: KvEngine> CoprocessorHost<E> {
         }
     }
 
-    pub fn compact_log_in_queue(&self) -> bool {
+    pub fn post_compact_log_from_underlying_engine(
+        &self,
+        do_write: bool,
+        compact_index: u64,
+        compact_term: u64,
+        max_compact_index: u64,
+        max_compact_term: u64,
+        request_applied_index: u64,
+        raftstore_applied_index: u64,
+    ) {
         for observer in &self.registry.region_change_observers {
             let observer = observer.observer.inner();
-            return observer.compact_log_in_queue();
+            return observer.post_compact_log_from_underlying_engine(
+                do_write,
+                compact_index,
+                compact_term,
+                max_compact_index,
+                max_compact_term,
+                request_applied_index,
+                raftstore_applied_index,
+            );
         }
-        return true;
     }
 
     pub fn shutdown(&self) {
