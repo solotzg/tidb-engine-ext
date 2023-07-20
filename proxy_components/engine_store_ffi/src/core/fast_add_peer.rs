@@ -111,6 +111,10 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                     "do_fallback" => do_fallback,
                             );
                             if do_fallback {
+                                /// Safety
+                                /// MsgAppend can be handled only when we set
+                                /// inited_or_fallback to true,
+                                /// so deleting raft logs here brings no race.
                                 let mut wb = self.raft_engine.log_batch(2);
                                 let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
                                 self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
