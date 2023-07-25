@@ -866,7 +866,7 @@ impl<E: KvEngine> CoprocessorHost<E> {
     ) {
         for observer in &self.registry.region_change_observers {
             let observer = observer.observer.inner();
-            return observer.post_compact_log_from_underlying_engine(
+            observer.post_compact_log_from_underlying_engine(
                 region_id,
                 do_write,
                 compact_index,

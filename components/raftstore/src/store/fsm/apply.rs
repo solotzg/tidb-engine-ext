@@ -1748,7 +1748,7 @@ where
             AdminCmdType::ChangePeerV2 => self.exec_change_peer_v2(ctx, request),
             AdminCmdType::Split => self.exec_split(ctx, request),
             AdminCmdType::BatchSplit => self.exec_batch_split(ctx, request),
-            AdminCmdType::CompactLog => self.exec_compact_log(ctx, request),
+            AdminCmdType::CompactLog => self.exec_compact_log(request),
             AdminCmdType::TransferLeader => self.exec_transfer_leader(request, ctx.exec_log_term),
             AdminCmdType::ComputeHash => self.exec_compute_hash(ctx, request),
             AdminCmdType::VerifyHash => self.exec_verify_hash(ctx, request),
@@ -3179,7 +3179,6 @@ where
 
     fn exec_compact_log(
         &mut self,
-        ctx: &ApplyContext<EK>,
         req: &AdminRequest,
     ) -> Result<(AdminResponse, ApplyResult<EK::Snapshot>)> {
         PEER_ADMIN_CMD_COUNTER.compact.all.inc();
