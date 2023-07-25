@@ -321,9 +321,6 @@ struct EngineStoreServerHelper {
                                    uint64_t leader_safe_ts);
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
                                      uint64_t region_id, uint64_t new_peer_id);
-  FlushedState (*fn_get_flushed_state)(EngineStoreServerWrap *,
-                                       uint64_t region_id,
-                                       uint8_t acquire_lock);
 };
 
 #ifdef __cplusplus

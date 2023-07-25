@@ -643,13 +643,6 @@ pub mod root {
                     new_peer_id: u64,
                 ) -> root::DB::FastAddPeerRes,
             >,
-            pub fn_get_flushed_state: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: *mut root::DB::EngineStoreServerWrap,
-                    region_id: u64,
-                    acquire_lock: u8,
-                ) -> root::DB::FlushedState,
-            >,
         }
         extern "C" {
             pub fn ffi_get_server_info_from_proxy(
@@ -658,7 +651,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 4409497044760140371;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 1785250247080530932;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

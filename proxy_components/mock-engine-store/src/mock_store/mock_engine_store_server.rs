@@ -318,7 +318,6 @@ pub fn gen_engine_store_server_helper(
             fn_is_ps_empty: Some(ffi_mockps_is_ps_empty),
             fn_handle_purge_ps: Some(ffi_mockps_handle_purge_ps),
         },
-        fn_get_flushed_state: Some(ffi_get_flushed_state),
     }
 }
 
