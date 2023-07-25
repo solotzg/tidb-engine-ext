@@ -348,13 +348,14 @@ pub trait RegionChangeObserver: Coprocessor {
 
     fn post_compact_log_from_underlying_engine(
         &self,
-        do_write: bool,
-        compact_index: u64,
-        compact_term: u64,
-        max_compact_index: u64,
-        max_compact_term: u64,
-        request_applied_index: u64,
-        raftstore_applied_index: u64,
+        _region_id: u64,
+        _do_write: bool,
+        _compact_index: u64,
+        _compact_term: u64,
+        _max_compact_index: u64,
+        _max_compact_term: u64,
+        _request_applied_index: u64,
+        _raftstore_applied_index: u64,
     ) {
     }
 }

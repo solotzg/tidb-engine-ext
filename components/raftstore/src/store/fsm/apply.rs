@@ -4427,6 +4427,7 @@ where
                     // If modified `truncated_state` in `try_compact_log`, the apply state should be
                     // persisted.
                     ctx.host.post_compact_log_from_underlying_engine(
+                        self.delegate.region.get_id(),
                         should_write,
                         voter_replicated_index,
                         voter_replicated_term,

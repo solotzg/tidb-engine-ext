@@ -855,6 +855,7 @@ impl<E: KvEngine> CoprocessorHost<E> {
 
     pub fn post_compact_log_from_underlying_engine(
         &self,
+        region_id: u64,
         do_write: bool,
         compact_index: u64,
         compact_term: u64,
@@ -866,6 +867,7 @@ impl<E: KvEngine> CoprocessorHost<E> {
         for observer in &self.registry.region_change_observers {
             let observer = observer.observer.inner();
             return observer.post_compact_log_from_underlying_engine(
+                region_id,
                 do_write,
                 compact_index,
                 compact_term,

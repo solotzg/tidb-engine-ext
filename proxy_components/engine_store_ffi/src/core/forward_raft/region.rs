@@ -123,14 +123,27 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
 
     pub fn post_compact_log_from_underlying_engine(
         &self,
-        _: bool,
-        _: u64,
-        _: u64,
-        _: u64,
-        _: u64,
-        _: u64,
-        _: u64,
+        region_id: u64,
+        do_write: bool,
+        compact_index: u64,
+        compact_term: u64,
+        max_compact_index: u64,
+        max_compact_term: u64,
+        request_applied_index: u64,
+        raftstore_applied_index: u64,
     ) {
+        debug!(
+            "post_compact_log_from_underlying_engine";
+            "region_id" => region_id,
+            "do_write" => do_write,
+            "compact_index" => compact_index,
+            "compact_term" => compact_term,
+            "max_compact_index" => max_compact_index,
+            "max_compact_term" => max_compact_term,
+            "request_applied_index" => request_applied_index,
+            "raftstore_applied_index" => raftstore_applied_index,
+        );
+        #[cfg(any(test, feature = "testexport"))]
         self.engine
             .proxy_ext
             .debug_struct

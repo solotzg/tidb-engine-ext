@@ -194,6 +194,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
 
     fn post_compact_log_from_underlying_engine(
         &self,
+        region_id: u64,
         do_write: bool,
         compact_index: u64,
         compact_term: u64,
@@ -203,6 +204,7 @@ impl<T: Transport + 'static, ER: RaftEngine> RegionChangeObserver for TiFlashObs
         raftstore_applied_index: u64,
     ) {
         self.forwarder.post_compact_log_from_underlying_engine(
+            region_id,
             do_write,
             compact_index,
             compact_term,
