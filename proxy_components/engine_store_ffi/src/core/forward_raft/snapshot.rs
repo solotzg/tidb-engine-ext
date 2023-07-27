@@ -111,6 +111,34 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         snap_key: &store::SnapKey,
         snap: Option<&store::Snapshot>,
     ) {
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            #[allow(clippy::redundant_closure_call)]
+            let mock_duplicated_snapshot: bool = (|| {
+                fail::fail_point!("on_ob_pre_handle_duplicated", |t| {
+                    let t = t.unwrap().parse::<u64>().unwrap();
+                    t
+                });
+                0
+            })() != 0;
+            if mock_duplicated_snapshot {
+                // A handling snapshot may block handling later MsgAppend.
+                // So we fake send.
+                debug!("mock duplicated snapshot");
+                self.pre_apply_snapshot_impl(ob_region, peer_id, snap_key, snap)
+            }
+        }
+        self.pre_apply_snapshot_impl(ob_region, peer_id, snap_key, snap)
+    }
+
+    #[allow(clippy::single_match)]
+    pub fn pre_apply_snapshot_impl(
+        &self,
+        ob_region: &Region,
+        peer_id: u64,
+        snap_key: &store::SnapKey,
+        snap: Option<&store::Snapshot>,
+    ) {
         let region_id = ob_region.get_id();
         info!("pre apply snapshot";
             "peer_id" => peer_id,
