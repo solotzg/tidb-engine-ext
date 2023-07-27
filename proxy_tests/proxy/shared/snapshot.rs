@@ -426,7 +426,7 @@ fn test_basic_concurrent_snapshot() {
 #[test]
 fn test_many_concurrent_snapshot() {
     let c = 4;
-    let (mut cluster, pd_client) = new_split_region_cluster(3);
+    let (mut cluster, pd_client) = new_split_region_cluster(c);
 
     for i in 0..c {
         let k = format!("k{:0>4}", 2 * i + 1);
