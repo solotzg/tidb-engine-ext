@@ -449,3 +449,46 @@ fn test_many_concurrent_snapshot() {
 
     cluster.shutdown();
 }
+
+#[test]
+fn test_duplicated_snapshot() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
+
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable default max peer count check.
+    pd_client.disable_default_operator();
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+
+    let region = cluster.get_region(b"k1");
+    let region_id = region.get_id();
+
+    let pending_count = cluster
+        .engines
+        .get(&2)
+        .unwrap()
+        .kv
+        .proxy_ext
+        .pending_applies_count
+        .clone();
+
+    cluster.must_put(b"k2", b"v");
+    // Mock if we received the next snapshot when the first one is still handling.
+    fail::cfg("on_ob_pre_handle_duplicated", "return(1)").unwrap();
+    pd_client.must_add_peer(region_id, new_peer(2, 2));
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    check_key(
+        &cluster,
+        b"k1",
+        b"v1",
+        Some(true),
+        Some(true),
+        Some(vec![2]),
+    );
+    assert_eq!(pending_count.load(Ordering::SeqCst), 0);
+    fail::remove("on_ob_pre_handle_duplicated");
+    cluster.shutdown();
+}
