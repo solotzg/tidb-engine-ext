@@ -169,12 +169,7 @@ impl RaftStoreProxy {
                             }
                             _ => {
                                 // For other error, we don't wait.
-                                tikv_util::error!(
-                                    "get_all_stores error {:?} after {}/{} retries, quit",
-                                    e,
-                                    retry_count,
-                                    RETRY_LIMIT
-                                );
+                                tikv_util::error!("get_all_stores error {:?}", e,);
                                 return false;
                             }
                         }
