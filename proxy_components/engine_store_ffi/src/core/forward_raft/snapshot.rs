@@ -237,6 +237,10 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 );
             }
         }
+
+        fail::fail_point!("on_ob_cancel_after_pre_handle_snapshot", |_| {
+            self.cancel_apply_snapshot(region_id, peer_id)
+        });
     }
 
     pub fn post_apply_snapshot(
@@ -423,8 +427,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "region_id" => region_id,
         );
         // Notify TiFlash to stop pre handling snapshot. No blocking wait.
-        self.engine_store_server_helper
-            .abort_pre_handle_snapshot(region_id, peer_id);
         let maybe_prehandle_task = {
             let mut lock = match self.pre_handle_snapshot_ctx.lock() {
                 Ok(l) => l,
@@ -434,15 +436,26 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             ctx.tracer.remove(&region_id)
         };
         if let Some(t) = maybe_prehandle_task {
-            info!("cancel apply snapshot find no prehandle task";
-                "peer_id" => peer_id,
-                "region_id" => region_id,
-            );
+            // If `cancel_applying_snap` is called, applying snapshot is cancelled.
+            // It will happen only if the peer is scheduled away.
+            // However, if the region will somehow request for a prehandled snapshot,
+            // We can still reply on regenerate snapshot though it will take much time.
+            // See `test_apply_cancelled_pre_handle`.
+            self.engine_store_server_helper
+                .abort_pre_handle_snapshot(region_id, peer_id);
+
+            let current_cnt = self
+                .engine
+                .proxy_ext
+                .pending_applies_count
+                .fetch_sub(1, Ordering::SeqCst)
+                - 1;
             match t.recv.recv() {
                 Ok(f) => {
                     info!("cancel apply snapshot start cancel pre handled snapshot";
                         "peer_id" => peer_id,
                         "region_id" => region_id,
+                        "pending_applies_count" => current_cnt,
                     );
                     self.engine_store_server_helper
                         .release_pre_handled_snapshot(f.0);
@@ -451,6 +464,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     info!("cancel apply snapshot find error in prehandle task {:?}", e;
                         "peer_id" => peer_id,
                         "region_id" => region_id,
+                        "pending_applies_count" => current_cnt,
                     );
                 }
             }
