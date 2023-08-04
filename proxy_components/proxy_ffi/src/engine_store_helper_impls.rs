@@ -158,7 +158,7 @@ impl EngineStoreServerHelper {
         term: u64,
     ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
-        // TODO Support truncated state here.
+        // TODO(proactive flush)
         unsafe {
             (self.fn_try_flush_data.into_inner())(
                 self.inner,

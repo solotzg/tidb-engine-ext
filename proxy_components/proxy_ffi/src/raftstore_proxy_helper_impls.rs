@@ -91,13 +91,13 @@ impl RaftStoreProxyFFIHelper {
 }
 
 pub extern "C" fn ffi_notify_compact_log(
-    proxy_ptr: RaftStoreProxyPtr,
-    region_id: u64,
-    compact_index: u64,
-    compact_term: u64,
-    applied_index: u64,
+    _proxy_ptr: RaftStoreProxyPtr,
+    _region_id: u64,
+    _compact_index: u64,
+    _compact_term: u64,
+    _applied_index: u64,
 ) {
-    // TODO Will add these logics when TiKV PR merged.
+    // TODO(proactive flush)
     todo!()
 }
 
