@@ -85,8 +85,20 @@ impl RaftStoreProxyFFIHelper {
             fn_poll_timer_task: Some(ffi_poll_timer_task),
             fn_get_region_local_state: Some(ffi_get_region_local_state),
             fn_get_cluster_raftstore_version: Some(ffi_get_cluster_raftstore_version),
+            fn_notify_compact_log: Some(ffi_notify_compact_log),
         }
     }
+}
+
+pub extern "C" fn ffi_notify_compact_log(
+    proxy_ptr: RaftStoreProxyPtr,
+    region_id: u64,
+    compact_index: u64,
+    compact_term: u64,
+    applied_index: u64,
+) {
+    // TODO Will add these logics when TiKV PR merged.
+    todo!()
 }
 
 unsafe extern "C" fn ffi_get_cluster_raftstore_version(
