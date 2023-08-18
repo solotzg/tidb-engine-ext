@@ -300,7 +300,7 @@ mod tests {
     }
 }
 
-#[cfg(feature = "mem-profiling")]
+// #[cfg(feature = "mem-profiling")]
 mod profiling {
     use std::ffi::CString;
 
@@ -418,17 +418,17 @@ mod profiling {
     }
 }
 
-#[cfg(not(feature = "mem-profiling"))]
-mod profiling {
-    use super::{ProfError, ProfResult};
+// #[cfg(not(feature = "mem-profiling"))]
+// mod profiling {
+//     use super::{ProfError, ProfResult};
 
-    pub fn dump_prof(_path: &str) -> ProfResult<()> {
-        Err(ProfError::MemProfilingNotEnabled)
-    }
-    pub fn activate_prof() -> ProfResult<()> {
-        Err(ProfError::MemProfilingNotEnabled)
-    }
-    pub fn deactivate_prof() -> ProfResult<()> {
-        Err(ProfError::MemProfilingNotEnabled)
-    }
-}
+//     pub fn dump_prof(_path: &str) -> ProfResult<()> {
+//         Err(ProfError::MemProfilingNotEnabled)
+//     }
+//     pub fn activate_prof() -> ProfResult<()> {
+//         Err(ProfError::MemProfilingNotEnabled)
+//     }
+//     pub fn deactivate_prof() -> ProfResult<()> {
+//         Err(ProfError::MemProfilingNotEnabled)
+//     }
+// }

@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [features]
+default = ["mem-profiling"]
 tcmalloc = ["proxy_server/tcmalloc"]
 jemalloc = ["proxy_server/jemalloc"]
 mimalloc = ["proxy_server/mimalloc"]
