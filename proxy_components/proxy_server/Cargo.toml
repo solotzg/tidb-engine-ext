@@ -12,7 +12,7 @@ mimalloc = ["tikv/mimalloc"]
 snmalloc = ["tikv/snmalloc"]
 portable = ["tikv/portable"]
 sse = ["tikv/sse"]
-mem-profiling = ["tikv/mem-profiling"]
+mem-profiling = ["tikv/mem-profiling", "tikv_alloc/mem-profiling"]
 failpoints = ["tikv/failpoints"]
 
 cloud-aws = ["encryption_export/cloud-aws"]

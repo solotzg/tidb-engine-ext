@@ -301,7 +301,7 @@ mod tests {
 }
 
 // #[cfg(feature = "mem-profiling")]
-mod profiling {
+pub mod profiling {
     use std::ffi::CString;
 
     use libc::c_char;

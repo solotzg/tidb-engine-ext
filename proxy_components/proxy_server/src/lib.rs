@@ -31,6 +31,7 @@ pub use server::fatal;
 
 fn proxy_version_info() -> String {
     let fallback = "Unknown (env var does not exist when building)";
+    // tikv_util::activate_prof();
     format!(
         "Git Commit Hash:   {}\
          \nGit Commit Branch: {}\
@@ -39,7 +40,9 @@ fn proxy_version_info() -> String {
          \nStorage Engine:    {}\
          \nPrometheus Prefix: {}\
          \nProfile:           {}\
-         \nEnable Features:   {}",
+         \nKKKKK:   {}
+         \nEnable Features:   {}"
+         ,
         option_env!("PROXY_BUILD_GIT_HASH").unwrap_or(fallback),
         option_env!("PROXY_BUILD_GIT_BRANCH").unwrap_or(fallback),
         option_env!("PROXY_BUILD_TIME").unwrap_or(fallback),
@@ -47,6 +50,7 @@ fn proxy_version_info() -> String {
         option_env!("ENGINE_LABEL_VALUE").unwrap_or(fallback),
         option_env!("PROMETHEUS_METRIC_NAME_PREFIX").unwrap_or(fallback),
         option_env!("PROXY_PROFILE").unwrap_or(fallback),
+        if cfg!(feature = "mem-profiling") { "YES" } else { "NO" },
         option_env!("ENABLE_FEATURES").unwrap_or(fallback),
     )
 }

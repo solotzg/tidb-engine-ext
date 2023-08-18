@@ -66,6 +66,7 @@ ENABLE_FEATURES += pprof-fp
 endif
 
 ENABLE_FEATURES += mem-profiling
+ENABLE_FEATURES += jemalloc
 
 # Pick an allocator
 ifeq ($(TCMALLOC),1)
