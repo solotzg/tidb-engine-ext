@@ -65,8 +65,8 @@ export CXXFLAGS := $(CXXFLAGS) -fno-omit-frame-pointer -mno-omit-leaf-frame-poin
 ENABLE_FEATURES += pprof-fp
 endif
 
-ENABLE_FEATURES += mem-profiling
-ENABLE_FEATURES += jemalloc
+# ENABLE_FEATURES += mem-profiling
+# ENABLE_FEATURES += jemalloc
 
 # Pick an allocator
 ifeq ($(TCMALLOC),1)
