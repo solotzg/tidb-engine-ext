@@ -272,6 +272,7 @@ impl RaftStoreProxy {
 
         let mut retry = 0;
         #[cfg(any(test, feature = "testexport"))]
+        #[allow(clippy::redundant_closure_call)]
         let retry_count = (|| {
             fail::fail_point!("proxy_fetch_cluster_version_retry", |t| {
                 let t = t.unwrap().parse::<u64>().unwrap();
