@@ -270,10 +270,10 @@ impl RaftStoreProxy {
             })
             .collect();
 
-        let mut retry = 0;
+        let mut status_server_retry = 0;
         #[cfg(any(test, feature = "testexport"))]
         #[allow(clippy::redundant_closure_call)]
-        let retry_count = (|| {
+        let status_server_retry_limit = (|| {
             fail::fail_point!("proxy_fetch_cluster_version_retry", |t| {
                 let t = t.unwrap().parse::<u64>().unwrap();
                 t
@@ -282,18 +282,18 @@ impl RaftStoreProxy {
         })();
 
         #[cfg(not(any(test, feature = "testexport")))]
-        const retry_count: u64 = 5;
+        const status_server_retry_limit: u64 = 5;
         loop {
             match self.request_for_raftstore_version(&to_try_addrs, timeout_ms) {
                 RequestResult::OK => return true,
                 RequestResult::Failed => return false,
                 RequestResult::Retry => {
-                    if retry < retry_count {
-                        retry += 1;
+                    if status_server_retry < status_server_retry_limit {
+                        status_server_retry += 1;
                         tikv_util::info!(
                             "retry due to status server network error from {}/{}",
-                            retry,
-                            retry_count
+                            status_server_retry,
+                            status_server_retry_limit
                         );
                         std::thread::sleep(std::time::Duration::from_millis(1000));
                         continue;
