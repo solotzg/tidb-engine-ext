@@ -3,12 +3,13 @@ use std::{cell::RefCell, sync::Arc};
 
 use encryption::DataKeyManager;
 use engine_rocks::{get_env, RocksCfOptions, RocksDbOptions};
-use engine_traits::{Iterable, Iterator};
+use engine_traits::{Iterable, Iterator, RangePropertiesExt, CF_WRITE};
 
 use crate::{
-    cf_to_name,
+    build_from_vec_string, cf_to_name,
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, SSTFormatKind, SSTReaderPtr,
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RawRustPtr, RustBaseBuffVec,
+        SSTFormatKind, SSTReaderPtr,
     },
 };
 
@@ -120,5 +121,40 @@ impl TabletReader {
                 let _ = iter.seek(&dk);
             }
         };
+    }
+
+    pub fn ffi_approx_size(&self, cf: ColumnFamilyType) -> u64 {
+        let handle =
+            engine_rocks::util::get_cf_handle(self.kv_engine.as_inner(), cf_to_name(cf)).unwrap();
+        let v = self
+            .kv_engine
+            .as_inner()
+            .get_approximate_sizes_cf(handle, &[rocksdb::Range::new(b"", keys::DATA_MAX_KEY)]);
+        assert_eq!(v.len(), 1);
+        v[0]
+    }
+
+    pub fn ffi_get_split_keys(&self, splits_count: u64) -> RustBaseBuffVec {
+        let range = engine_traits::Range {
+            start_key: b"",
+            end_key: keys::DATA_MAX_KEY,
+        };
+        assert!(splits_count >= 2);
+        let keys_count: usize = splits_count as usize - 1;
+        match self
+            .kv_engine
+            .get_range_approximate_split_keys_cf(CF_WRITE, range, keys_count)
+        {
+            Ok(r) => {
+                if r.len() < 1 {
+                    return RustBaseBuffVec::default();
+                }
+                build_from_vec_string(r)
+            }
+            Err(e) => {
+                tikv_util::info!("ffi_get_split_keys failed due to {:?}", e);
+                RustBaseBuffVec::default()
+            }
+        }
     }
 }

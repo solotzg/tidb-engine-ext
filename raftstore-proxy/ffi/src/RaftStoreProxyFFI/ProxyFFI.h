@@ -175,8 +175,12 @@ struct SSTReaderPtr {
 };
 
 struct RustBaseBuffVec {
-  BaseBuffView *buffs;
+  // It is a view of something inside `inner_vec_of_string`.
+  const BaseBuffView *buffs;
+  // It is the length of view.
   uint64_t len;
+  // Call fn_gc_rust_ptr to this after `buffs` is no longer used.
+  RawRustPtr inner;
 };
 
 struct SSTReaderInterfaces {

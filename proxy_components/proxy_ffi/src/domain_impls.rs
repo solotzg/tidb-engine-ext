@@ -7,8 +7,8 @@ use engine_traits::{CF_DEFAULT, CF_LOCK, CF_WRITE};
 use super::{
     interfaces_ffi,
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, SSTView, SSTViewVec,
-        WriteCmdType, WriteCmdsView,
+        BaseBuffView, ColumnFamilyType, RaftCmdHeader, RawRustPtr, RawVoidPtr, RustBaseBuffVec,
+        SSTView, SSTViewVec, WriteCmdType, WriteCmdsView,
     },
     read_index_helper, utils,
 };
@@ -131,6 +131,7 @@ pub enum RawRustPtrType {
     ReadIndexTask = 1,
     ArcFutureWaker = 2,
     TimerTask = 3,
+    VecOfString = 4,
 }
 
 impl From<u32> for RawRustPtrType {
@@ -162,6 +163,9 @@ pub extern "C" fn ffi_gc_rust_ptr(data: RawVoidPtr, type_: interfaces_ffi::RawRu
         RawRustPtrType::TimerTask => unsafe {
             drop(Box::from_raw(data as *mut utils::TimerTask));
         },
+        RawRustPtrType::VecOfString => unsafe {
+            drop(Box::from_raw(data as *mut RustBaseBuffVecInner));
+        },
         _ => unreachable!(),
     }
 }
@@ -178,5 +182,51 @@ impl Default for RawRustPtr {
 impl RawRustPtr {
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
+    }
+}
+
+impl Default for RustBaseBuffVec {
+    fn default() -> Self {
+        RustBaseBuffVec {
+            buffs: std::ptr::null_mut(),
+            len: 0,
+            inner: RawRustPtr::default(),
+        }
+    }
+}
+
+struct RustBaseBuffVecInner {
+    // Hold the Vec of String.
+    _data: Pin<Box<Vec<Vec<u8>>>>,
+    // Hold the BaseBuffView array.
+    buff_view_vec: Pin<Box<Vec<BaseBuffView>>>,
+}
+
+pub fn build_from_vec_string(s: Vec<Vec<u8>>) -> RustBaseBuffVec {
+    let vec_len = s.len();
+    let vec_len_64: u64 = vec_len as u64;
+    let inner_vec_of_string = Box::pin(s);
+    let mut buff_view_vec: Vec<BaseBuffView> = Vec::with_capacity(vec_len);
+    for i in 0..vec_len {
+        buff_view_vec.push(BaseBuffView {
+            data: inner_vec_of_string[i].as_ptr() as *const _,
+            len: inner_vec_of_string[i].len() as u64,
+        });
+    }
+    let inner = RustBaseBuffVecInner {
+        _data: inner_vec_of_string,
+        buff_view_vec: Box::pin(buff_view_vec),
+    };
+    let inner_wrapped = RawRustPtr {
+        ptr: &inner as *const _ as RawVoidPtr,
+        type_: RawRustPtrType::VecOfString.into(),
+    };
+    let buff_view_vec_ptr = inner.buff_view_vec.as_ptr();
+    std::mem::forget(inner);
+
+    RustBaseBuffVec {
+        buffs: buff_view_vec_ptr,
+        len: vec_len_64,
+        inner: inner_wrapped,
     }
 }

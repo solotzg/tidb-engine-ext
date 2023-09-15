@@ -4,8 +4,8 @@
 use super::{sst_file_reader::*, tablet_reader::TabletReader, LockCFFileReader};
 use crate::{
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, SSTFormatKind,
-        SSTReaderInterfaces, SSTReaderPtr, SSTView, RustBaseBuffVec
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, RawRustPtr,
+        RustBaseBuffVec, SSTFormatKind, SSTReaderInterfaces, SSTReaderPtr, SSTView,
     },
     raftstore_proxy_helper_impls::RaftStoreProxyFFI,
 };
@@ -193,16 +193,20 @@ pub unsafe extern "C" fn ffi_sst_reader_seek(
     }
 }
 
-pub unsafe extern "C" fn ffi_approx_size(
-    reader: SSTReaderPtr,
-    type_: ColumnFamilyType,
-) -> u64 {
-    todo!()
+pub unsafe extern "C" fn ffi_approx_size(mut reader: SSTReaderPtr, type_: ColumnFamilyType) -> u64 {
+    match reader.kind {
+        SSTFormatKind::KIND_SST => 0,
+        SSTFormatKind::KIND_TABLET => reader.as_mut_tablet().ffi_approx_size(type_),
+    }
 }
 
+// It will generate `splits_count-1` keys to make `splits_count` parts.
 pub unsafe extern "C" fn ffi_get_split_keys(
-    reader: SSTReaderPtr,
+    mut reader: SSTReaderPtr,
     splits_count: u64,
 ) -> RustBaseBuffVec {
-    todo!()
+    match reader.kind {
+        SSTFormatKind::KIND_SST => RustBaseBuffVec::default(),
+        SSTFormatKind::KIND_TABLET => reader.as_mut_tablet().ffi_get_split_keys(splits_count),
+    }
 }
