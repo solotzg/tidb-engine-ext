@@ -123,14 +123,14 @@ struct RawCppPtrCarr {
 };
 
 // An tuple of pointers, like `void **`,
-// Can be used to represent structures.
+// Can be used to represent structures created from C side.
 struct RawCppPtrTuple {
   RawCppPtr *inner;
   const uint64_t len;
 };
 
 // An array of pointers(same type), like `T **`,
-// Can be used to represent arrays.
+// Can be used to represent arrays created from C side.
 struct RawCppPtrArr {
   RawVoidPtr *inner;
   const uint64_t len;
@@ -174,6 +174,11 @@ struct SSTReaderPtr {
   SSTFormatKind kind;
 };
 
+struct RustBaseBuffVec {
+  BaseBuffView *buffs;
+  uint64_t len;
+};
+
 struct SSTReaderInterfaces {
   SSTReaderPtr (*fn_get_sst_reader)(SSTView, RaftStoreProxyPtr);
   uint8_t (*fn_remained)(SSTReaderPtr, ColumnFamilyType);
@@ -184,6 +189,8 @@ struct SSTReaderInterfaces {
   SSTFormatKind (*fn_kind)(SSTReaderPtr, ColumnFamilyType);
   void (*fn_seek)(SSTReaderPtr, ColumnFamilyType, EngineIteratorSeekType,
                   BaseBuffView);
+  uint64_t (*fn_approx_size)(SSTReaderPtr, ColumnFamilyType);
+  RustBaseBuffVec (*fn_get_split_keys)(SSTReaderPtr, uint64_t splits_count);
 };
 
 enum class MsgPBType : uint32_t {

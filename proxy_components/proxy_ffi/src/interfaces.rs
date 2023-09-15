@@ -234,6 +234,12 @@ pub mod root {
         }
         #[repr(C)]
         #[derive(Debug)]
+        pub struct RustBaseBuffVec {
+            pub buffs: *mut root::DB::BaseBuffView,
+            pub len: u64,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
         pub struct SSTReaderInterfaces {
             pub fn_get_sst_reader: ::std::option::Option<
                 unsafe extern "C" fn(
@@ -284,6 +290,18 @@ pub mod root {
                     arg3: root::DB::EngineIteratorSeekType,
                     arg4: root::DB::BaseBuffView,
                 ),
+            >,
+            pub fn_approx_size: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::SSTReaderPtr,
+                    arg2: root::DB::ColumnFamilyType,
+                ) -> u64,
+            >,
+            pub fn_get_split_keys: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::SSTReaderPtr,
+                    splits_count: u64,
+                ) -> root::DB::RustBaseBuffVec,
             >,
         }
         #[repr(u32)]
@@ -659,7 +677,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 3797917752479181299;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 8718362111406035968;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

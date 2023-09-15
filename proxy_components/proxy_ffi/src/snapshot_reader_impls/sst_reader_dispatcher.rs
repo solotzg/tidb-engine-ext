@@ -5,7 +5,7 @@ use super::{sst_file_reader::*, tablet_reader::TabletReader, LockCFFileReader};
 use crate::{
     interfaces_ffi::{
         BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, SSTFormatKind,
-        SSTReaderInterfaces, SSTReaderPtr, SSTView,
+        SSTReaderInterfaces, SSTReaderPtr, SSTView, RustBaseBuffVec
     },
     raftstore_proxy_helper_impls::RaftStoreProxyFFI,
 };
@@ -22,6 +22,8 @@ impl Clone for SSTReaderInterfaces {
             fn_gc: self.fn_gc.clone(),
             fn_kind: self.fn_kind.clone(),
             fn_seek: self.fn_seek.clone(),
+            fn_approx_size: self.fn_approx_size.clone(),
+            fn_get_split_keys: self.fn_get_split_keys.clone(),
         }
     }
 }
@@ -189,4 +191,18 @@ pub unsafe extern "C" fn ffi_sst_reader_seek(
         },
         SSTFormatKind::KIND_TABLET => reader.as_mut_tablet().ffi_seek(type_, seek_type, key),
     }
+}
+
+pub unsafe extern "C" fn ffi_approx_size(
+    reader: SSTReaderPtr,
+    type_: ColumnFamilyType,
+) -> u64 {
+    todo!()
+}
+
+pub unsafe extern "C" fn ffi_get_split_keys(
+    reader: SSTReaderPtr,
+    splits_count: u64,
+) -> RustBaseBuffVec {
+    todo!()
 }
