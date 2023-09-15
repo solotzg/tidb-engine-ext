@@ -12,6 +12,8 @@ use mock_engine_store::{
     interfaces_ffi::BaseBuffView, mock_cluster::v1::server::new_server_cluster,
 };
 use proxy_ffi::{
+    domain_impls::TEST_GC_OBJ_MONITOR,
+    ffi_gc_rust_ptr,
     interfaces_ffi::{ColumnFamilyType, EngineIteratorSeekType},
     snapshot_reader_impls::{tablet_reader::TabletReader, *},
 };
@@ -141,18 +143,33 @@ fn test_get_snapshot_split_keys() {
             None,
         );
         // If we want to split the range into 2 parts, it should return 1 split key.
-        let res = ffi_get_split_keys(reader.clone(), 4);
-        assert_eq!(res.len, 3);
+        let split_count = 4;
+        let res = ffi_get_split_keys(reader.clone(), split_count);
+        let maximum = format!("zk{:06}", key_count);
+        let minimum = format!("zk{:06}", 0);
+        tikv_util::debug!("minimum split key is {}", minimum);
+        tikv_util::debug!("maximum split key is {}", maximum);
         for i in 0..res.len {
             let buff = res.buffs.add(i as usize);
             let slice = (*buff).to_slice();
-            let maximum = format!("zk{:06}", key_count);
-            let minimum = format!("zk{:06}", 0);
+            // If the snapshot is too small, it will provide worse and less split keys than
+            // we want. For example, given a 10000 key snapshot, it generates:
+            // 4-keys is zk000000,zk004065,zk008130,zk009999
+            // 3-keys is zk004065,zk008130,zk009999
+            // 2-keys is zk004065,zk008130
+            tikv_util::debug!(
+                "the {}-th split key is {}",
+                i,
+                std::str::from_utf8_unchecked(slice)
+            );
             // We don't return the boundary.
             assert!(slice > minimum.as_bytes());
             assert!(slice < maximum.as_bytes());
         }
+        assert_eq!(res.len, split_count - 1);
+        ffi_gc_rust_ptr(res.inner.ptr, res.inner.type_);
     }
+    assert!(TEST_GC_OBJ_MONITOR.valid_clean_rust());
 
     cluster_v1.shutdown();
     cluster_v2.shutdown();

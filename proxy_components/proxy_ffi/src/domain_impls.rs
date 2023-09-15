@@ -202,6 +202,58 @@ struct RustBaseBuffVecInner {
     buff_view_vec: Pin<Box<Vec<BaseBuffView>>>,
 }
 
+#[derive(Default)]
+pub struct TestGcObjectMonitor {
+    rust: std::sync::Mutex<collections::HashMap<interfaces_ffi::RawRustPtrType, isize>>,
+}
+
+impl TestGcObjectMonitor {
+    pub fn add_rust(&self, t: &interfaces_ffi::RawRustPtrType, x: isize) {
+        use std::collections::hash_map::Entry;
+        let data = &mut *self.rust.lock().unwrap();
+        match data.entry(*t) {
+            Entry::Occupied(mut v) => {
+                *v.get_mut() += x;
+            }
+            Entry::Vacant(v) => {
+                v.insert(x);
+            }
+        }
+    }
+    pub fn valid_clean_rust(&self) -> bool {
+        let data = &*self.rust.lock().unwrap();
+        for (k, v) in data {
+            if *v != 0 {
+                tikv_util::error!(
+                    "TestGcObjectMonitor::valid_clean failed at type {} refcount {}",
+                    k,
+                    v
+                );
+                return false;
+            }
+        }
+        return true;
+    }
+    pub fn is_empty_rust(&self) -> bool {
+        let data = &*self.rust.lock().unwrap();
+        data.is_empty()
+    }
+}
+
+#[cfg(any(test, feature = "testexport"))]
+lazy_static::lazy_static! {
+    pub static ref TEST_GC_OBJ_MONITOR: TestGcObjectMonitor = TestGcObjectMonitor::default();
+}
+
+impl Drop for RustBaseBuffVecInner {
+    fn drop(&mut self) {
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            TEST_GC_OBJ_MONITOR.add_rust(&RawRustPtrType::VecOfString.into(), -1);
+        }
+    }
+}
+
 pub fn build_from_vec_string(s: Vec<Vec<u8>>) -> RustBaseBuffVec {
     let vec_len = s.len();
     let vec_len_64: u64 = vec_len as u64;
@@ -213,12 +265,16 @@ pub fn build_from_vec_string(s: Vec<Vec<u8>>) -> RustBaseBuffVec {
             len: inner_vec_of_string[i].len() as u64,
         });
     }
-    let inner = RustBaseBuffVecInner {
+    let inner = Box::new(RustBaseBuffVecInner {
         _data: inner_vec_of_string,
         buff_view_vec: Box::pin(buff_view_vec),
-    };
+    });
+    #[cfg(any(test, feature = "testexport"))]
+    {
+        TEST_GC_OBJ_MONITOR.add_rust(&RawRustPtrType::VecOfString.into(), 1);
+    }
     let inner_wrapped = RawRustPtr {
-        ptr: &inner as *const _ as RawVoidPtr,
+        ptr: inner.as_ref() as *const _ as RawVoidPtr,
         type_: RawRustPtrType::VecOfString.into(),
     };
     let buff_view_vec_ptr = inner.buff_view_vec.as_ptr();

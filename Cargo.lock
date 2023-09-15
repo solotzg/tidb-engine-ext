@@ -4674,6 +4674,7 @@ dependencies = [
 name = "proxy_ffi"
 version = "0.0.1"
 dependencies = [
+ "collections",
  "encryption",
  "engine_rocks",
  "engine_test",

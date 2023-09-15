@@ -4,8 +4,8 @@
 use super::{sst_file_reader::*, tablet_reader::TabletReader, LockCFFileReader};
 use crate::{
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, RawRustPtr,
-        RustBaseBuffVec, SSTFormatKind, SSTReaderInterfaces, SSTReaderPtr, SSTView,
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, RustBaseBuffVec,
+        SSTFormatKind, SSTReaderInterfaces, SSTReaderPtr, SSTView,
     },
     raftstore_proxy_helper_impls::RaftStoreProxyFFI,
 };

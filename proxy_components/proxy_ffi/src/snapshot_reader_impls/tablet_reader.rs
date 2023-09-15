@@ -8,8 +8,8 @@ use engine_traits::{Iterable, Iterator, RangePropertiesExt, CF_WRITE};
 use crate::{
     build_from_vec_string, cf_to_name,
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RawRustPtr, RustBaseBuffVec,
-        SSTFormatKind, SSTReaderPtr,
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RustBaseBuffVec, SSTFormatKind,
+        SSTReaderPtr,
     },
 };
 
