@@ -4836,6 +4836,8 @@ dependencies = [
  "rand_xorshift",
  "resource_metering",
  "security",
+ "serde",
+ "serde_derive",
  "serde_json",
  "slog",
  "slog-global",
