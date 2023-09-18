@@ -146,7 +146,7 @@ impl TabletReader {
             .get_range_approximate_split_keys_cf(CF_WRITE, range, keys_count)
         {
             Ok(r) => {
-                if r.len() < 1 {
+                if r.is_empty() {
                     return RustStrWithViewVec::default();
                 }
                 build_from_vec_string(r)

@@ -219,7 +219,7 @@ impl TestGcObjectMonitor {
                 return false;
             }
         }
-        return true;
+        true
     }
     pub fn is_empty_rust(&self) -> bool {
         let data = &*self.rust.lock().unwrap();
@@ -244,6 +244,7 @@ impl Default for RustStrWithViewVec {
 
 struct RustStrWithViewVecInner {
     // Hold the Vec of String.
+    #[allow(clippy::box_collection)]
     _data: Pin<Box<Vec<Vec<u8>>>>,
     // Hold the BaseBuffView array.
     buff_view_vec: Pin<Box<Vec<BaseBuffView>>>,
@@ -305,6 +306,7 @@ impl Default for RustStrWithView {
 
 struct RustStrWithViewInner {
     // Hold the String.
+    #[allow(clippy::box_collection)]
     _data: Pin<Box<Vec<u8>>>,
 }
 
