@@ -75,15 +75,15 @@ fn test_default_no_config_item() {
     address_proxy_config(&mut config, &proxy_config);
     use serde_derive::{Deserialize, Serialize};
     use serde_json::{Map, Value};
-    #[derive(Serialize, Deserialize)]
-    struct Data {
-        inner: Map<String, Value>,
-    }
     let json_format_proxy = serde_json::to_string(&proxy_config).unwrap();
-    let parsed_json_proxy: Data = serde_json::from_str(json_format_proxy.as_str()).unwrap();
+    let parsed_json_proxy: Value = serde_json::from_str(json_format_proxy.as_str()).unwrap();
     {
-        let raft_store = parsed_json_proxy.inner.get("raft_store").unwrap();
-        let snap_handle_pool_size = raft_store.get("snap_handle_pool_size").unwrap();
+        let raft_store = parsed_json_proxy
+            .as_object()
+            .expect("fail")
+            .get("raftstore")
+            .unwrap();
+        let snap_handle_pool_size = raft_store.get("snap-handle-pool-size").unwrap();
         assert_eq!(
             proxy_config.raft_store.snap_handle_pool_size as u64,
             snap_handle_pool_size.as_u64().unwrap()

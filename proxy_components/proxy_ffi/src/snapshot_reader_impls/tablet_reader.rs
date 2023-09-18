@@ -8,7 +8,7 @@ use engine_traits::{Iterable, Iterator, RangePropertiesExt, CF_WRITE};
 use crate::{
     build_from_vec_string, cf_to_name,
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RustBaseBuffVec, SSTFormatKind,
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RustStrWithViewVec, SSTFormatKind,
         SSTReaderPtr,
     },
 };
@@ -134,7 +134,7 @@ impl TabletReader {
         v[0]
     }
 
-    pub fn ffi_get_split_keys(&self, splits_count: u64) -> RustBaseBuffVec {
+    pub fn ffi_get_split_keys(&self, splits_count: u64) -> RustStrWithViewVec {
         let range = engine_traits::Range {
             start_key: b"",
             end_key: keys::DATA_MAX_KEY,
@@ -147,13 +147,13 @@ impl TabletReader {
         {
             Ok(r) => {
                 if r.len() < 1 {
-                    return RustBaseBuffVec::default();
+                    return RustStrWithViewVec::default();
                 }
                 build_from_vec_string(r)
             }
             Err(e) => {
                 tikv_util::info!("ffi_get_split_keys failed due to {:?}", e);
-                RustBaseBuffVec::default()
+                RustStrWithViewVec::default()
             }
         }
     }

@@ -4,8 +4,8 @@
 use super::{sst_file_reader::*, tablet_reader::TabletReader, LockCFFileReader};
 use crate::{
     interfaces_ffi::{
-        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr, RustBaseBuffVec,
-        SSTFormatKind, SSTReaderInterfaces, SSTReaderPtr, SSTView,
+        BaseBuffView, ColumnFamilyType, EngineIteratorSeekType, RaftStoreProxyPtr,
+        RustStrWithViewVec, SSTFormatKind, SSTReaderInterfaces, SSTReaderPtr, SSTView,
     },
     raftstore_proxy_helper_impls::RaftStoreProxyFFI,
 };
@@ -204,9 +204,9 @@ pub unsafe extern "C" fn ffi_approx_size(mut reader: SSTReaderPtr, type_: Column
 pub unsafe extern "C" fn ffi_get_split_keys(
     mut reader: SSTReaderPtr,
     splits_count: u64,
-) -> RustBaseBuffVec {
+) -> RustStrWithViewVec {
     match reader.kind {
-        SSTFormatKind::KIND_SST => RustBaseBuffVec::default(),
+        SSTFormatKind::KIND_SST => RustStrWithViewVec::default(),
         SSTFormatKind::KIND_TABLET => reader.as_mut_tablet().ffi_get_split_keys(splits_count),
     }
 }

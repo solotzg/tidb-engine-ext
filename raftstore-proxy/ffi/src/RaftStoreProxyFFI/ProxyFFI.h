@@ -174,11 +174,20 @@ struct SSTReaderPtr {
   SSTFormatKind kind;
 };
 
-struct RustBaseBuffVec {
-  // It is a view of something inside `inner_vec_of_string`.
+struct RustStrWithView {
+  // It is a view of something inside `inner`.
+  BaseBuffView buff;
+  // Should never be accessed on C++ side.
+  // Call fn_gc_rust_ptr to this after `buffs` is no longer used.
+  RawRustPtr inner;
+};
+
+struct RustStrWithViewVec {
+  // It is a view of something inside `inner`.
   const BaseBuffView *buffs;
   // It is the length of view.
   uint64_t len;
+  // Should never be accessed on C++ side.
   // Call fn_gc_rust_ptr to this after `buffs` is no longer used.
   RawRustPtr inner;
 };
@@ -194,7 +203,7 @@ struct SSTReaderInterfaces {
   void (*fn_seek)(SSTReaderPtr, ColumnFamilyType, EngineIteratorSeekType,
                   BaseBuffView);
   uint64_t (*fn_approx_size)(SSTReaderPtr, ColumnFamilyType);
-  RustBaseBuffVec (*fn_get_split_keys)(SSTReaderPtr, uint64_t splits_count);
+  RustStrWithViewVec (*fn_get_split_keys)(SSTReaderPtr, uint64_t splits_count);
 };
 
 enum class MsgPBType : uint32_t {
@@ -259,6 +268,7 @@ struct RaftStoreProxyFFIHelper {
   void (*fn_notify_compact_log)(RaftStoreProxyPtr, uint64_t region_id,
                                 uint64_t compact_index, uint64_t compact_term,
                                 uint64_t applied_index);
+  RustStrWithView (*fn_get_config_json)(RaftStoreProxyPtr, uint64_t kind);
 };
 
 struct PageStorageInterfaces {
