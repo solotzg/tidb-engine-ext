@@ -247,6 +247,7 @@ struct RustStrWithViewVecInner {
     #[allow(clippy::box_collection)]
     _data: Pin<Box<Vec<Vec<u8>>>>,
     // Hold the BaseBuffView array.
+    #[allow(clippy::box_collection)]
     buff_view_vec: Pin<Box<Vec<BaseBuffView>>>,
 }
 
