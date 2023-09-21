@@ -161,7 +161,7 @@ impl TabletReader {
                     .into_iter()
                     .map(|s| keys::origin_key(&s).to_owned())
                     .collect();
-                build_from_vec_string(r)
+                build_from_vec_string(truncated_string)
             }
             Err(e) => {
                 tikv_util::info!("ffi_get_split_keys failed due to {:?}", e);
