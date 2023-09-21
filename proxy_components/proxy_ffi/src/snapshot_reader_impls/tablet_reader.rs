@@ -115,10 +115,18 @@ impl TabletReader {
             }
             EngineIteratorSeekType::Last => {
                 let _ = iter.seek_to_last();
+                *self.remained.borrow_mut() = false;
             }
             EngineIteratorSeekType::Key => {
                 let dk = keys::data_key(bf.to_slice());
-                let _ = iter.seek(&dk);
+                match iter.seek(&dk) {
+                    Ok(x) => {
+                        *self.remained.borrow_mut() = x;
+                    }
+                    Err(_e) => {
+                        *self.remained.borrow_mut() = false;
+                    }
+                }
             }
         };
     }

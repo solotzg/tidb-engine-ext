@@ -126,6 +126,63 @@ fn prepare_snapshot(
 }
 
 #[test]
+fn test_get_snapshot_seek() {
+    let mut cluster_v1 = new_server_cluster(1, 1);
+    let mut cluster_v2 = test_raftstore_v2::new_server_cluster(1, 1);
+    cluster_v1.cfg.raft_store.enable_v2_compatible_learner = true;
+    cluster_v1.run();
+    cluster_v2.run();
+
+    let key_count = 100;
+    let path = prepare_snapshot(&mut cluster_v1, &mut cluster_v2, key_count);
+
+    let reader = TabletReader::ffi_get_cf_file_reader(
+        path.as_path().to_str().unwrap(),
+        ColumnFamilyType::Write,
+        None,
+    );
+
+    unsafe {
+        let k = format!("k{:06}", 99);
+        let bf = BaseBuffView {
+            data: k.as_ptr() as *const _,
+            len: k.len() as u64,
+        };
+        let cf = ColumnFamilyType::Write;
+        ffi_sst_reader_seek(reader.clone(), cf, EngineIteratorSeekType::Key, bf);
+        let remained = ffi_sst_reader_remained(reader.clone(), cf);
+        if remained == 1 {
+            ffi_sst_reader_next(reader.clone(), cf);
+            let remained = ffi_sst_reader_remained(reader.clone(), cf);
+            if remained == 1 {
+                ffi_sst_reader_key(reader.clone(), cf);
+            }
+        }
+    }
+
+    unsafe {
+        let k = format!("k{:06}", 100);
+        let bf = BaseBuffView {
+            data: k.as_ptr() as *const _,
+            len: k.len() as u64,
+        };
+        let cf = ColumnFamilyType::Write;
+        ffi_sst_reader_seek(reader.clone(), cf, EngineIteratorSeekType::Key, bf);
+        let remained = ffi_sst_reader_remained(reader.clone(), cf);
+        if remained == 1 {
+            ffi_sst_reader_next(reader.clone(), cf);
+            let remained = ffi_sst_reader_remained(reader.clone(), cf);
+            if remained == 1 {
+                ffi_sst_reader_key(reader.clone(), cf);
+            }
+        }
+    }
+
+    cluster_v1.shutdown();
+    cluster_v2.shutdown();
+}
+
+#[test]
 fn test_get_snapshot_split_keys() {
     let mut cluster_v1 = new_server_cluster(1, 1);
     let mut cluster_v2 = test_raftstore_v2::new_server_cluster(1, 1);

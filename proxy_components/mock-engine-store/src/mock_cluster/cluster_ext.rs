@@ -84,7 +84,7 @@ impl ClusterExt {
     ) -> (FFIHelperSet, TikvConfig) {
         // We must allocate on heap to avoid move.
 
-        let proxy_config_str = serde_json::to_string(proxy_cfg).unwrap_or(String::new());
+        let proxy_config_str = serde_json::to_string(proxy_cfg).unwrap_or_default();
         let proxy = Box::new(engine_store_ffi::ffi::RaftStoreProxy::new(
             AtomicU8::new(RaftProxyStatus::Idle as u8),
             key_mgr.clone(),
