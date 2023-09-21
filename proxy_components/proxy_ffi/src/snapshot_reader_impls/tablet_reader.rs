@@ -157,6 +157,10 @@ impl TabletReader {
                 if r.is_empty() {
                     return RustStrWithViewVec::default();
                 }
+                let truncated_string: Vec<Vec<u8>> = r
+                    .into_iter()
+                    .map(|s| keys::origin_key(&s).to_owned())
+                    .collect();
                 build_from_vec_string(r)
             }
             Err(e) => {
