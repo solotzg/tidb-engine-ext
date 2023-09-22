@@ -202,8 +202,8 @@ fn test_get_snapshot_split_keys() {
         // If we want to split the range into 2 parts, it should return 1 split key.
         let split_count = 4;
         let res = ffi_get_split_keys(reader.clone(), split_count);
-        let maximum = format!("zk{:06}", key_count);
-        let minimum = format!("zk{:06}", 0);
+        let maximum = format!("k{:06}", key_count);
+        let minimum = format!("k{:06}", 0);
         tikv_util::debug!("minimum split key is {}", minimum);
         tikv_util::debug!("maximum split key is {}", maximum);
         for i in 0..res.len {
