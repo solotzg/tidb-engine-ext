@@ -358,7 +358,7 @@ fn test_v1_apply_snap_from_v2() {
     let engine = cluster_v2.get_engine(1);
 
     for i in 0..50 {
-        let k = format!("k{:06}", i);
+        let k = format!("k{:04}", i);
         cluster_v2.must_put(k.as_bytes(), b"val");
     }
     cluster_v2.flush_data();
@@ -386,7 +386,7 @@ fn test_v1_apply_snap_from_v2() {
     let path_str = path.as_path().to_str().unwrap();
 
     for i in 11..50 {
-        let k = format!("k{:06}", i);
+        let k = format!("k{:04}", i);
         check_key(
             &cluster_v1,
             k.as_bytes(),
