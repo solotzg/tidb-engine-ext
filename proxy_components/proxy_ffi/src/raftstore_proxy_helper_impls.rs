@@ -317,6 +317,5 @@ pub unsafe extern "C" fn ffi_get_config_json(
                 build_from_string(s)
             }
         }
-        _ => panic!("unknown ConfigJsonType"),
     }
 }
