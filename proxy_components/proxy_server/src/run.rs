@@ -123,7 +123,6 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
     engine_store_server_helper: &EngineStoreServerHelper,
 ) {
     let (service_event_tx, service_event_rx) = tikv_util::mpsc::unbounded(); // pipe for controling service
-    let proxy_config_str = serde_json::to_string(&proxy_config).unwrap_or_default();
     let engine_store_server_helper_ptr = engine_store_server_helper as *const _ as isize;
     let mut tikv = TiKvServer::<CER, F>::init(
         config,
