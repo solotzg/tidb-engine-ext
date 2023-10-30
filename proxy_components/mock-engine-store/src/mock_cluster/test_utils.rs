@@ -26,8 +26,10 @@ pub struct FlushedIndex {
 /// All in_disk_ state can somehow be fetched through KvEngine or RaftEngine.
 #[derive(Debug)]
 pub struct States {
+    // In proxy's memory, may be smaller than in_disk_apply_state.
     pub in_memory_apply_state: RaftApplyState,
     pub in_memory_applied_term: u64,
+    // In persistence of raft-engine.
     pub in_disk_apply_state: RaftApplyState,
     pub in_disk_region_state: RegionLocalState,
     pub in_disk_raft_state: RaftLocalState,

@@ -147,6 +147,7 @@ pub fn check_key(
 
 pub fn disable_auto_gen_compact_log(cluster: &mut impl MixedCluster) {
     // Disable AUTO generated compact log.
+    // Otherwise may trigger `assert_eq!(apply_state, last_applied_state);`.
     // This will not totally disable, so we use some failpoints later.
     cluster.mut_config().raft_store.raft_log_gc_count_limit = Some(1000);
     cluster.mut_config().raft_store.raft_log_gc_tick_interval = ReadableDuration::millis(100000);

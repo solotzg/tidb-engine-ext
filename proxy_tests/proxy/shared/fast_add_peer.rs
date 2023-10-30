@@ -43,6 +43,138 @@ fn basic_fast_add_peer() {
     // fail::remove("before_tiflash_check_double_write");
 }
 
+fn split_overlap(first_send_old: bool) {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+    pd_client.disable_default_operator();
+    disable_auto_gen_compact_log(&mut cluster);
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("apply_on_handle_snapshot_sync", "return(true)").unwrap();
+    cluster.cfg.raft_store.right_derive_when_split = true;
+
+    let _ = cluster.run_conf_change();
+
+    // Compose split keys
+    cluster.must_put(b"k1", b"v1");
+    cluster.must_put(b"k3", b"v3");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1]));
+    let r1 = cluster.get_region(b"k1");
+    let r3 = cluster.get_region(b"k3");
+    assert_eq!(r1.get_id(), r3.get_id());
+    fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+
+
+    fail::cfg("on_can_apply_snapshot_s3", "return(false)").unwrap();
+
+    if first_send_old {
+        pd_client.must_add_peer(r1.get_id(), new_learner_peer(3, 3003));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    cluster.must_split(&r1, b"k2");
+    let new_one = cluster.get_region(b"k1"); // the new one
+    let old_one = cluster.get_region(b"k3");
+    assert_ne!(new_one.get_id(), old_one.get_id());
+    assert_eq!(1, old_one.get_id());
+    debug!("old_one(with k3) is {}, new_one(with k1) is {}", old_one.get_id(), new_one.get_id());
+    must_wait_until_cond_node(
+        &cluster.cluster_ext,
+        new_one.get_id(),
+        Some(vec![1]),
+        &|states: &States| -> bool {
+            debug!("!!!!! new_one states.in_disk_region_state {:?}", states.in_disk_region_state);
+            debug!("!!!!! new_one states.in_disk_apply_state {:?}", states.in_disk_apply_state);
+            debug!("!!!!! new_one states.in_memory_apply_state {:?}", states.in_memory_apply_state);
+            states.in_disk_region_state.get_region().get_peers().len() == 1
+        },
+    );
+    must_wait_until_cond_node(
+        &cluster.cluster_ext,
+        old_one.get_id(),
+        Some(vec![1]),
+        &|states: &States| -> bool {
+            debug!("!!!!! old_one states.in_disk_region_state {:?}", states.in_disk_region_state);
+            debug!("!!!!! old_one states.in_disk_apply_state {:?}", states.in_disk_apply_state);
+            debug!("!!!!! old_one states.in_memory_apply_state {:?}", states.in_memory_apply_state);
+            true
+        },
+    );
+    // The idea is old_one is derived from new_one, and then replicated to store 2 by normal path.
+    // Store 1 gets old_one from store 2's checkpoint by FAP.
+    // Store 3 gets obsolete new_one(wider range) from store 1 by normal raft snapshot.
+
+    // Not FAP path. This will not success due to failpoint, so the snapshot is obsolete.
+
+    // if !first_send_old {
+    //     cluster.add_send_filter(CloneFilterFactory(
+    //         RegionPacketFilter::new(old_one.get_id(), 3)
+    //             .msg_type(MessageType::MsgSnapshot)
+    //             .direction(Direction::Recv),
+    //     ));
+    // }
+
+    // k1 was in old region, but moved to new region then.
+    cluster.must_put(b"k1", b"v13");
+    pd_client.must_add_peer(new_one.get_id(), new_learner_peer(2, 2003));
+    must_wait_until_cond_node(
+        &cluster.cluster_ext,
+        new_one.get_id(),
+        Some(vec![1, 2]),
+        &|states: &States| -> bool {
+            states.in_disk_region_state.get_region().get_peers().len() == 2
+        },
+    );
+
+    fail::cfg("on_can_apply_snapshot", "return(false)").unwrap();
+    fail::remove("on_can_apply_snapshot_s3");
+
+    // FAP will ingest data, but not finish applying snapshot due to failpoint.
+    pd_client.add_peer(new_one.get_id(), new_learner_peer(3, 1003));
+
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    if !first_send_old {
+        pd_client.must_add_peer(old_one.get_id(), new_learner_peer(3, 3003));
+    }
+
+    // if !first_send_old {
+    //     cluster.clear_send_filters();
+    // }
+
+    // All stuck in region worker. If `first_send_old`, then snapshot for old region is the first.
+
+    fail::remove("on_can_apply_snapshot");
+    debug!("remove on_can_apply_snapshot");
+
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
+    check_key(&cluster, b"k1", b"v13", Some(true), None, Some(vec![3]));
+    
+    fail::remove("fap_mock_add_peer_from_id");
+    fail::remove("on_can_apply_snapshot");
+    fail::remove("apply_on_handle_snapshot_sync");
+    cluster.shutdown();
+}
+
+#[test]
+fn test_overlap_first_send_old() {
+    // Expected result is:
+    // - pre handle old_one
+    // - fap handle new_one
+    // - post apply old_one
+    // - post apply new_one
+    split_overlap(true);
+}
+
+#[test]
+fn test_overlap_first_send_new() {
+    split_overlap(false);
+}
+
 fn simple_fast_add_peer(
     source_type: SourceType,
     block_wait: bool,

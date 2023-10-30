@@ -177,17 +177,20 @@ pub(crate) unsafe fn write_to_db_data_by_engine(
         "store_id" => store_id,
         "reason" => reason
     );
+    let mut batch = kv.rocks.log_batch(1000);
+    let local_state = kvproto::raft_serverpb::RaftLocalState::default();
+    kv.rocks.clean(region.region.get_id(), 0, &local_state, &mut batch).unwrap();
+    kv.rocks.consume(&mut batch, true).unwrap();
     for cf in 0..3 {
         let pending_write = std::mem::take(region.pending_write.as_mut().get_mut(cf).unwrap());
-        let mut pending_remove =
+        let pending_remove =
             std::mem::take(region.pending_delete.as_mut().get_mut(cf).unwrap());
         for (k, v) in pending_write.into_iter() {
             let tikv_key = keys::data_key(k.as_slice());
             let cf_name = cf_to_name(cf.into());
             if !pending_remove.contains(&k) {
+                debug!("!!!!! insertttttt {:?} {:?}", tikv_key.as_slice(), &v);
                 kv.rocks.put_cf(cf_name, tikv_key.as_slice(), &v).unwrap();
-            } else {
-                pending_remove.remove(&k);
             }
         }
         let cf_name = cf_to_name(cf.into());

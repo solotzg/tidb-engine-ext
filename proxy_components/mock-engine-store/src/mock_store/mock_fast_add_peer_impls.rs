@@ -113,7 +113,7 @@ pub(crate) unsafe extern "C" fn ffi_fast_add_peer(
                 store_id,
                 new_peer_id,
             ) {
-                debug!("recover from remote peer: preparing from {} to {}, not applied conf change {}", from_store, store_id, new_peer_id; "region_id" => region_id);
+                debug!("recover from remote peer: preparing from {} to {}, failed for applied conf change {}", from_store, store_id, new_peer_id; "region_id" => region_id);
                 ret = Some(failed_add_peer_res(interfaces_ffi::FastAddPeerStatus::WaitForData));
                 return;
             }
