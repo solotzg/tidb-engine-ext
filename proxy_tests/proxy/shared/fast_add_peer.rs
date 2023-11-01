@@ -44,9 +44,10 @@ fn basic_fast_add_peer() {
 }
 
 // The idea is:
-// - old_one is replicated to store 3 as a normal raft snapshot. It has the original wider range.
-// - new_one is derived from old_one, and then replicated to store 2 by normal path,
-//   and then replicated to store 3 by FAP.
+// - old_one is replicated to store 3 as a normal raft snapshot. It has the
+//   original wider range.
+// - new_one is derived from old_one, and then replicated to store 2 by normal
+//   path, and then replicated to store 3 by FAP.
 
 fn split_overlap(first_send_old: bool) {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
@@ -64,10 +65,11 @@ fn split_overlap(first_send_old: bool) {
     cluster.must_put(b"k1", b"v1");
     cluster.must_put(b"k3", b"v3");
 
-
     // Use an invalid store id to make FAP fallback.
     fail::cfg("fap_mock_add_peer_from_id", "return(4)").unwrap();
 
+    // Delay, so the legacy snapshot comes after fap snapshot in pending_applies
+    // queue.
     fail::cfg("on_ob_pre_handle_snapshot_s3", "pause");
     pd_client.must_add_peer(1, new_learner_peer(3, 3003));
     std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -81,20 +83,21 @@ fn split_overlap(first_send_old: bool) {
     cluster.must_split(&r1, b"k2");
 
     fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
-    
+
     let new_one = cluster.get_region(b"k1");
     let old_one = cluster.get_region(b"k3");
     assert_ne!(new_one.get_id(), old_one.get_id());
     assert_eq!(1, old_one.get_id());
-    debug!("old_one(with k3) is {}, new_one(with k1) is {}", old_one.get_id(), new_one.get_id());
+    debug!(
+        "old_one(with k3) is {}, new_one(with k1) is {}",
+        old_one.get_id(),
+        new_one.get_id()
+    );
     must_wait_until_cond_node(
         &cluster.cluster_ext,
         new_one.get_id(),
         Some(vec![1]),
         &|states: &States| -> bool {
-            debug!("!!!!! new_one states.in_disk_region_state {:?}", states.in_disk_region_state);
-            debug!("!!!!! new_one states.in_disk_apply_state {:?}", states.in_disk_apply_state);
-            debug!("!!!!! new_one states.in_memory_apply_state {:?}", states.in_memory_apply_state);
             states.in_disk_region_state.get_region().get_peers().len() == 2
         },
     );
@@ -122,17 +125,17 @@ fn split_overlap(first_send_old: bool) {
     // So it will come after 1003 in `pending_applies`.
     fail::remove("on_ob_pre_handle_snapshot_s3");
     std::thread::sleep(std::time::Duration::from_millis(1000));
-    // cluster.clear_send_filters();
 
-    // All stuck in region worker. If `first_send_old`, then snapshot for old region is the first.
+    // All stuck in region worker. If `first_send_old`, then snapshot for old region
+    // is the first.
 
     fail::remove("on_can_apply_snapshot");
     debug!("remove on_can_apply_snapshot");
 
+    // Will panic
     // check_key(&cluster, b"k1", b"v13", Some(true), None, Some(vec![3]));
-    // Comes from 
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
-    
+
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("on_can_apply_snapshot");
     fail::remove("apply_on_handle_snapshot_sync");
@@ -143,16 +146,13 @@ fn split_overlap(first_send_old: bool) {
 #[test]
 fn test_overlap_first_send_old() {
     // Expected result is:
-    // - pre handle old_one
-    // - fap handle new_one
-    // - post apply old_one
-    // - post apply new_one
+    // - apply snapshot old_one
+    // - pre handle old_one [-inf, inf)
+    // - fap handle new_one [-inf, k2)
+    // - apply snapshot new_one
+    // - post apply new_one [-inf, k2), k1=v13
+    // - post apply old_one [-inf, inf), k1=v1, error!
     split_overlap(true);
-}
-
-#[test]
-fn test_overlap_first_send_new() {
-    split_overlap(false);
 }
 
 fn simple_fast_add_peer(

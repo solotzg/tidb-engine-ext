@@ -4178,7 +4178,6 @@ where
             false
         };
         if need_sync || force_sync_fp() {
-            debug!("!!!!! force_sync_fp");
             if apply_ctx.timer.is_none() {
                 apply_ctx.timer = Some(Instant::now_coarse());
             }

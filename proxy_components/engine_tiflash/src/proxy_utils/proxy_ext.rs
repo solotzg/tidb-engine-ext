@@ -68,12 +68,10 @@ impl ProxyEngineExt {
             .parse::<bool>()
             .unwrap());
         fail::fail_point!(
-            "on_can_apply_snapshot_s3", 
-            self.engine_store_hub.is_some() && self.engine_store_hub.as_ref().unwrap().get_store_id() == 3,
-            |e| e
-                .unwrap()
-                .parse::<bool>()
-                .unwrap()
+            "on_can_apply_snapshot_s3",
+            self.engine_store_hub.is_some()
+                && self.engine_store_hub.as_ref().unwrap().get_store_id() == 3,
+            |e| e.unwrap().parse::<bool>().unwrap()
         );
         if let Some(s) = self.config_set.as_ref() {
             if s.engine_store.enable_fast_add_peer {

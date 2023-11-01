@@ -128,7 +128,6 @@ pub unsafe extern "C" fn ffi_pre_handle_snapshot(
             let value = sst_reader.value();
 
             let cf_index = (*snapshot).type_ as u8;
-            debug!("!!!!! ffi_pre_handle_snapshot {:?} {:?}", key.to_slice(), value.to_slice());
             write_kv_in_mem(
                 region.as_mut(),
                 cf_index as usize,

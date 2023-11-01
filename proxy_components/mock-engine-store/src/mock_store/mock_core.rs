@@ -139,9 +139,17 @@ pub fn copy_data_from(
     // kv data in memory
     for cf in 0..3 {
         for (k, v) in &source.data[cf] {
-            if k.as_slice() >= source.region.get_start_key() && k.as_slice() < source.region.get_end_key() {
-                debug!("copy_data_from region {} {:?} {:?} S {:?} E {:?}", 
-                    region_id, k, v, source.region.get_start_key(), source.region.get_end_key());
+            if k.as_slice() >= source.region.get_start_key()
+                && k.as_slice() < source.region.get_end_key()
+            {
+                debug!(
+                    "copy_data_from region {} {:?} {:?} S {:?} E {:?}",
+                    region_id,
+                    k,
+                    v,
+                    source.region.get_start_key(),
+                    source.region.get_end_key()
+                );
                 write_kv_in_mem(target, cf, k.as_slice(), v.as_slice());
             }
         }
