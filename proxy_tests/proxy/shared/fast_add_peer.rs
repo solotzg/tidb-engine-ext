@@ -49,7 +49,18 @@ fn basic_fast_add_peer() {
 // - new_one is derived from old_one, and then replicated to store 2 by normal
 //   path, and then replicated to store 3 by FAP.
 
-fn split_overlap(first_send_old: bool) {
+// Expected result is:
+// - apply snapshot old_one [-inf, inf)
+// - pre handle old_one [-inf, inf)
+// - fap handle new_one [-inf, k2)
+//      - ingest data
+//      - send fake and empty snapshot
+// - apply snapshot new_one [-inf, k2)
+// - post apply new_one [-inf, k2), k1=v13
+// - post apply old_one [-inf, inf), k1=v1, error!
+
+#[test]
+fn test_overlap_last_apply_old() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
@@ -80,22 +91,23 @@ fn split_overlap(first_send_old: bool) {
     let r1 = cluster.get_region(b"k1");
     let r3 = cluster.get_region(b"k3");
     assert_eq!(r1.get_id(), r3.get_id());
+    // Generates 2 peers {1001@1, 1002@3} for region 1
     cluster.must_split(&r1, b"k2");
 
     fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
 
-    let new_one = cluster.get_region(b"k1");
-    let old_one = cluster.get_region(b"k3");
-    assert_ne!(new_one.get_id(), old_one.get_id());
-    assert_eq!(1, old_one.get_id());
+    let new_one_1000_k1 = cluster.get_region(b"k1");
+    let old_one_1_k3 = cluster.get_region(b"k3"); // region_id = 1
+    assert_ne!(new_one_1000_k1.get_id(), old_one_1_k3.get_id());
+    assert_eq!(1, old_one_1_k3.get_id());
     debug!(
         "old_one(with k3) is {}, new_one(with k1) is {}",
-        old_one.get_id(),
-        new_one.get_id()
+        old_one_1_k3.get_id(),
+        new_one_1000_k1.get_id()
     );
     must_wait_until_cond_node(
         &cluster.cluster_ext,
-        new_one.get_id(),
+        new_one_1000_k1.get_id(),
         Some(vec![1]),
         &|states: &States| -> bool {
             states.in_disk_region_state.get_region().get_peers().len() == 2
@@ -106,10 +118,10 @@ fn split_overlap(first_send_old: bool) {
     cluster.must_put(b"k1", b"v13");
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    pd_client.must_add_peer(new_one.get_id(), new_learner_peer(2, 2003));
+    pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(2, 2003));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
-        new_one.get_id(),
+        new_one_1000_k1.get_id(),
         Some(vec![1, 2]),
         &|states: &States| -> bool {
             // Already has store_3's peer, due to previous split and add peer.
@@ -118,8 +130,9 @@ fn split_overlap(first_send_old: bool) {
     );
 
     fail::cfg("on_can_apply_snapshot", "return(false)").unwrap();
+
     // FAP will ingest data, but not finish applying snapshot due to failpoint.
-    pd_client.add_peer(new_one.get_id(), new_learner_peer(3, 1003));
+    // pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 3001));
     std::thread::sleep(std::time::Duration::from_millis(1000));
     // Now let store's snapshot of region 1 to prehandle.
     // So it will come after 1003 in `pending_applies`.
@@ -133,7 +146,7 @@ fn split_overlap(first_send_old: bool) {
     debug!("remove on_can_apply_snapshot");
 
     // Will panic
-    // check_key(&cluster, b"k1", b"v13", Some(true), None, Some(vec![3]));
+    check_key(&cluster, b"k1", b"v13", Some(true), None, Some(vec![3]));
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
 
     fail::remove("fap_mock_add_peer_from_id");
@@ -141,18 +154,6 @@ fn split_overlap(first_send_old: bool) {
     fail::remove("apply_on_handle_snapshot_sync");
     fail::remove("on_pre_write_apply_state");
     cluster.shutdown();
-}
-
-#[test]
-fn test_overlap_first_send_old() {
-    // Expected result is:
-    // - apply snapshot old_one
-    // - pre handle old_one [-inf, inf)
-    // - fap handle new_one [-inf, k2)
-    // - apply snapshot new_one
-    // - post apply new_one [-inf, k2), k1=v13
-    // - post apply old_one [-inf, inf), k1=v1, error!
-    split_overlap(true);
 }
 
 fn simple_fast_add_peer(
