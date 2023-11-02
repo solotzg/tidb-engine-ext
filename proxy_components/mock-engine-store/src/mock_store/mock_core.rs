@@ -44,6 +44,7 @@ impl MockRegion {
 pub struct RegionStats {
     pub pre_handle_count: AtomicU64,
     pub fast_add_peer_count: AtomicU64,
+    pub apply_snap_count: AtomicU64,
 }
 
 // In case of newly added cfs.

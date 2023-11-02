@@ -184,6 +184,11 @@ pub unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         "store_id" => node_id,
         "region" => ?region.region,
     );
+
+    (*store.engine_store_server).mutate_region_states(region_id, |e: &mut RegionStats| {
+        e.apply_snap_count.fetch_add(1, Ordering::SeqCst);
+    });
+
     write_to_db_data(
         &mut (*store.engine_store_server),
         region,

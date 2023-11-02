@@ -53,11 +53,12 @@ fn basic_fast_add_peer() {
 // - apply snapshot old_one [-inf, inf)
 // - pre handle old_one [-inf, inf)
 // - fap handle new_one [-inf, k2)
-//      - ingest data
+//      - pre-handle data
+//      - ingest data(the post apply stage on TiFlash)
 //      - send fake and empty snapshot
-// - apply snapshot new_one [-inf, k2)
-// - post apply new_one [-inf, k2), k1=v13
-// - post apply old_one [-inf, inf), k1=v1, error!
+// - apply snapshot new_one [-inf, k2) <- won't happen, due to overlap
+// - post apply new_one [-inf, k2), k1=v13 <- won't happen
+// - post apply old_one [-inf, inf), k1=v1
 
 #[test]
 fn test_overlap_last_apply_old() {
@@ -528,7 +529,7 @@ mod simple_blocked_pause {
     }
 
     // Delay when applying snapshot
-    // This test is origianlly aimed to test multiple MsgSnapshot.
+    // This test is origially aimed to test multiple MsgSnapshot.
     // However, we observed less repeated MsgAppend than in real cluster.
     #[test]
     fn test_simpleb_from_learner_paused_apply() {
@@ -604,9 +605,13 @@ fn test_timeout_fallback() {
     fail::remove("apply_on_handle_snapshot_sync");
 }
 
+// If the peer is initialized, it will not use fap to catch up.
 #[test]
 fn test_existing_peer() {
-    // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
+    // Can always apply snapshot immediately
+    fail::cfg("apply_on_handle_snapshot_sync", "return(true)").unwrap();
+    // Otherwise will panic with `assert_eq!(apply_state, last_applied_state)`.
+    fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
 
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
@@ -624,20 +629,38 @@ fn test_existing_peer() {
     fail::remove("fap_core_no_fallback");
 
     stop_tiflash_node(&mut cluster, 2);
+
+    cluster.must_put(b"k5", b"v5");
+    cluster.must_put(b"k6", b"v6");
+    force_compact_log(&mut cluster, b"k6", Some(vec![1]));
+
     fail::cfg("fap_core_no_fast_path", "panic").unwrap();
+
     restart_tiflash_node(&mut cluster, 2);
-    must_put_and_check_key(&mut cluster, 5, 6, Some(true), None, None);
+
+    iter_ffi_helpers(&cluster, Some(vec![2]), &mut |_, ffi: &mut FFIHelperSet| {
+        (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
+            assert_eq!(e.apply_snap_count.load(Ordering::SeqCst), 0);
+        });
+    });
+
+    check_key(&mut cluster, b"k6", b"v6", Some(true), None, None);
+
+    iter_ffi_helpers(&cluster, Some(vec![2]), &mut |_, ffi: &mut FFIHelperSet| {
+        (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
+            assert_eq!(e.apply_snap_count.load(Ordering::SeqCst), 1);
+        });
+    });
 
     cluster.shutdown();
     fail::remove("fap_core_no_fast_path");
-    // fail::remove("before_tiflash_check_double_write");
+    fail::remove("apply_on_handle_snapshot_sync");
+    fail::remove("on_pre_write_apply_state");
 }
 
 // We will reject remote peer in Applying state.
 #[test]
 fn test_apply_snapshot() {
-    // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
-
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
