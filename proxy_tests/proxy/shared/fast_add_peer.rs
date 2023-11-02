@@ -81,23 +81,25 @@ fn test_overlap_last_apply_old() {
 
     // Delay, so the legacy snapshot comes after fap snapshot in pending_applies
     // queue.
-    fail::cfg("on_ob_pre_handle_snapshot_s3", "pause");
+    fail::cfg("on_ob_pre_handle_snapshot_s3", "pause").unwrap();
     pd_client.must_add_peer(1, new_learner_peer(3, 3003));
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
     // Split
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1]));
-    let r1 = cluster.get_region(b"k1");
-    let r3 = cluster.get_region(b"k3");
-    assert_eq!(r1.get_id(), r3.get_id());
-    // Generates 2 peers {1001@1, 1002@3} for region 1
-    cluster.must_split(&r1, b"k2");
-
-    fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+    // Generates 2 peers {1001@1, 1002@3} for region 1.
+    // However, we use the older snapshot, so the 1002 peer is not inited.
+    cluster.must_split(&cluster.get_region(b"k1"), b"k2");
 
     let new_one_1000_k1 = cluster.get_region(b"k1");
     let old_one_1_k3 = cluster.get_region(b"k3"); // region_id = 1
+    assert_ne!(new_one_1000_k1.get_id(), old_one_1_k3.get_id());
+    pd_client.must_remove_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 1002));
+
+    // Prevent FAP
+    fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+
     assert_ne!(new_one_1000_k1.get_id(), old_one_1_k3.get_id());
     assert_eq!(1, old_one_1_k3.get_id());
     debug!(
@@ -107,7 +109,7 @@ fn test_overlap_last_apply_old() {
     );
     must_wait_until_cond_node(
         &cluster.cluster_ext,
-        new_one_1000_k1.get_id(),
+        old_one_1_k3.get_id(),
         Some(vec![1]),
         &|states: &States| -> bool {
             states.in_disk_region_state.get_region().get_peers().len() == 2
@@ -118,22 +120,24 @@ fn test_overlap_last_apply_old() {
     cluster.must_put(b"k1", b"v13");
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
+    // Prepare a peer for FAP.
     pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(2, 2003));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
         new_one_1000_k1.get_id(),
         Some(vec![1, 2]),
         &|states: &States| -> bool {
-            // Already has store_3's peer, due to previous split and add peer.
-            states.in_disk_region_state.get_region().get_peers().len() == 3
+            states.in_disk_region_state.get_region().get_peers().len() == 2
         },
     );
 
     fail::cfg("on_can_apply_snapshot", "return(false)").unwrap();
 
+    fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
     // FAP will ingest data, but not finish applying snapshot due to failpoint.
-    // pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 3001));
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 3001));
+    // TODO wait FAP finished "build and send"
+    std::thread::sleep(std::time::Duration::from_millis(5000));
     // Now let store's snapshot of region 1 to prehandle.
     // So it will come after 1003 in `pending_applies`.
     fail::remove("on_ob_pre_handle_snapshot_s3");
@@ -142,12 +146,38 @@ fn test_overlap_last_apply_old() {
     // All stuck in region worker. If `first_send_old`, then snapshot for old region
     // is the first.
 
+    cluster.add_send_filter(CloneFilterFactory(
+        RegionPacketFilter::new(1, 3)
+            .msg_type(MessageType::MsgAppend)
+            .direction(Direction::Recv),
+    ));
+
     fail::remove("on_can_apply_snapshot");
     debug!("remove on_can_apply_snapshot");
 
-    // Will panic
-    check_key(&cluster, b"k1", b"v13", Some(true), None, Some(vec![3]));
+    must_not_wait_until_cond_generic_for(
+        &cluster.cluster_ext,
+        new_one_1000_k1.get_id(),
+        Some(vec![3]),
+        &|states: &HashMap<u64, States>| -> bool { states.contains_key(&1000) },
+        3000,
+    );
+
+    // We can't get
+    assert_eq!(cluster.get_region(b"k1").get_id(), new_one_1000_k1.get_id());
+    check_key(&cluster, b"k1", b"v1", None, Some(true), Some(vec![3]));
+    check_key_ex(
+        &cluster,
+        b"k1",
+        b"v1",
+        Some(true),
+        None,
+        Some(vec![3]),
+        old_one_1_k3.get_id(),
+    );
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
+
+    cluster.clear_send_filters();
 
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("on_can_apply_snapshot");

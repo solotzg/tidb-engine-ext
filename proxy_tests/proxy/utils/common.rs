@@ -106,15 +106,15 @@ pub fn must_put_and_check_key(
     );
 }
 
-pub fn check_key(
+pub fn check_key_ex(
     cluster: &impl MixedCluster,
     k: &[u8],
     v: &[u8],
     in_mem: Option<bool>,
     in_disk: Option<bool>,
     engines: Option<Vec<u64>>,
+    region_id: u64,
 ) {
-    let region_id = cluster.get_region(k).get_id();
     let engine_keys = {
         match engines {
             Some(e) => e.to_vec(),
@@ -143,6 +143,18 @@ pub fn check_key(
             None => (),
         };
     }
+}
+
+pub fn check_key(
+    cluster: &impl MixedCluster,
+    k: &[u8],
+    v: &[u8],
+    in_mem: Option<bool>,
+    in_disk: Option<bool>,
+    engines: Option<Vec<u64>>,
+) {
+    let region_id = cluster.get_region(k).get_id();
+    check_key_ex(cluster, k, v, in_mem, in_disk, engines, region_id)
 }
 
 pub fn disable_auto_gen_compact_log(cluster: &mut impl MixedCluster) {
