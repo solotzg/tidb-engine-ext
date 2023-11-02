@@ -128,14 +128,6 @@ pub unsafe extern "C" fn ffi_pre_handle_snapshot(
             let value = sst_reader.value();
 
             let cf_index = (*snapshot).type_ as u8;
-            debug!(
-                "!!!!!! ffi_pre_handle_snapshot region_id {} store_id {} peer_id {} k {:?} v {:?}",
-                region.region.get_id(),
-                node_id,
-                peer_id,
-                key.to_slice(),
-                value.to_slice()
-            );
             write_kv_in_mem(
                 region.as_mut(),
                 cf_index as usize,
@@ -189,7 +181,7 @@ pub unsafe extern "C" fn ffi_apply_pre_handled_snapshot(
         e.apply_snap_count.fetch_add(1, Ordering::SeqCst);
     });
 
-    write_to_db_data(
+    crate::write_snapshot_to_db_data(
         &mut (*store.engine_store_server),
         region,
         String::from("prehandle-snap"),
