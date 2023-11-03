@@ -5,6 +5,7 @@ use crate::utils::v1::*;
 enum SourceType {
     Leader,
     Learner,
+    // The learner coesn't catch up with Leader.
     DelayedLearner,
     InvalidSource,
 }
@@ -328,6 +329,9 @@ fn test_overlap_apply_legacy_in_the_middle() {
     cluster.shutdown();
 }
 
+// `block_wait`: whether we block wait in a MsgAppend handling, or return with
+// WaitForData. `pause`: pause in some core procedures.
+// `check_timeout`: mock and check if FAP timeouts.
 fn simple_fast_add_peer(
     source_type: SourceType,
     block_wait: bool,
@@ -421,7 +425,7 @@ fn simple_fast_add_peer(
         _ => (),
     }
 
-    // Add peer 3
+    // Add peer 3 by FAP
     pd_client.must_add_peer(1, new_learner_peer(3, 3));
     cluster.must_put(b"k2", b"v2");
 
@@ -649,6 +653,7 @@ mod simple_blocked_nopause {}
 mod simple_blocked_pause {
     use super::*;
     // Delay when fetch and build data
+
     #[test]
     fn test_simpleb_from_learner_paused_build() {
         fail::cfg("fap_core_no_fallback", "panic").unwrap();
