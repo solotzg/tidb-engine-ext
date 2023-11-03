@@ -530,14 +530,9 @@ fn simple_fast_add_peer(
                 &mut |_, _ffi: &mut FFIHelperSet| {
                     // Not actually the case, since we allow handling
                     // MsgAppend multiple times.
-                    // So the following fires when:
+                    // So it fires when in
                     // (DelayedLearner, false, ApplySnapshot)
-
-                    // let server = &ffi.engine_store_server;
-                    // (*ffi.engine_store_server).mutate_region_states(1, |e:
-                    // &mut RegionStats| { assert_eq!(1,
-                    // e.fast_add_peer_count.load(Ordering::SeqCst));
-                    // });
+                    // when we want to assert `fast_add_peer_count` == 1.
                 },
             );
         }
