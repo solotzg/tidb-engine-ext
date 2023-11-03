@@ -113,8 +113,10 @@ pub fn check_key_ex(
     in_mem: Option<bool>,
     in_disk: Option<bool>,
     engines: Option<Vec<u64>>,
-    region_id: u64,
+    maybe_region_id: Option<u64>,
+    finally_get: bool,
 ) {
+    let region_id = maybe_region_id.unwrap_or_else(|| cluster.get_region(k).get_id());
     let engine_keys = {
         match engines {
             Some(e) => e.to_vec(),
@@ -125,9 +127,17 @@ pub fn check_key_ex(
         match in_disk {
             Some(b) => {
                 if b {
-                    cluster.must_get(id, k, Some(v));
+                    if finally_get {
+                        cluster.must_get_finally(id, k, Some(v));
+                    } else {
+                        cluster.must_get(id, k, Some(v));
+                    }
                 } else {
-                    cluster.must_get(id, k, None);
+                    if finally_get {
+                        cluster.must_get_finally(id, k, None);
+                    } else {
+                        cluster.must_get(id, k, None);
+                    }
                 }
             }
             None => (),
@@ -153,8 +163,7 @@ pub fn check_key(
     in_disk: Option<bool>,
     engines: Option<Vec<u64>>,
 ) {
-    let region_id = cluster.get_region(k).get_id();
-    check_key_ex(cluster, k, v, in_mem, in_disk, engines, region_id)
+    check_key_ex(cluster, k, v, in_mem, in_disk, engines, None, false)
 }
 
 pub fn disable_auto_gen_compact_log(cluster: &mut impl MixedCluster) {

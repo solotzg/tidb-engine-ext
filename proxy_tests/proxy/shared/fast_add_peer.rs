@@ -170,7 +170,8 @@ fn test_overlap_last_apply_old() {
         Some(true),
         None,
         Some(vec![3]),
-        old_one_1_k3.get_id(),
+        Some(old_one_1_k3.get_id()),
+        true,
     );
     check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![3]));
 
@@ -183,8 +184,9 @@ fn test_overlap_last_apply_old() {
     cluster.shutdown();
 }
 
-// If a legacy snapshot is applied between fn_fast_add_peer and build_and_send_snapshot,
-// it will override the previous snapshot's data, which is actually newer.
+// If a legacy snapshot is applied between fn_fast_add_peer and
+// build_and_send_snapshot, it will override the previous snapshot's data, which
+// is actually newer.
 
 #[test]
 fn test_overlap_apply_legacy_in_the_middle() {
@@ -207,7 +209,6 @@ fn test_overlap_apply_legacy_in_the_middle() {
 
     // Use an invalid store id to make FAP fallback.
     fail::cfg("fap_mock_add_peer_from_id", "return(4)").unwrap();
-
 
     // Don't use send filter to prevent applying snapshot,
     // since it may no longer send snapshot after split.
@@ -276,22 +277,49 @@ fn test_overlap_apply_legacy_in_the_middle() {
     std::thread::sleep(std::time::Duration::from_millis(1000));
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
     fail::remove("fap_ffi_pause");
-    std::thread::sleep(std::time::Duration::from_millis(5000));
 
-    check_key(&cluster, b"k1", b"v13", None, Some(true), Some(vec![3]));
+    // std::thread::sleep(std::time::Duration::from_millis(5000));
+    check_key_ex(
+        &cluster,
+        b"k1",
+        b"v13",
+        None,
+        Some(true),
+        Some(vec![3]),
+        None,
+        true,
+    );
 
     // Now the FAP snapshot will stuck at fap_ffi_pause_after_fap_call,
     // We will make the legacy one apply.
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("fap_on_msg_snapshot_1_3003");
 
-    std::thread::sleep(std::time::Duration::from_millis(5000));
-    check_key(&cluster, b"k1", b"v1", None, Some(true), Some(vec![3]));
+    // std::thread::sleep(std::time::Duration::from_millis(5000));
+    check_key_ex(
+        &cluster,
+        b"k1",
+        b"v1",
+        None,
+        Some(true),
+        Some(vec![3]),
+        None,
+        true,
+    );
     // Make FAP continue after the legacy snapshot is applied.
     fail::remove("fap_ffi_pause_after_fap_call");
     // TODO wait until fap finishes.
-    std::thread::sleep(std::time::Duration::from_millis(5000));
-    check_key(&cluster, b"k1", b"v1", None, Some(true), Some(vec![3]));
+    // std::thread::sleep(std::time::Duration::from_millis(5000));
+    check_key_ex(
+        &cluster,
+        b"k1",
+        b"v1",
+        None,
+        Some(true),
+        Some(vec![3]),
+        None,
+        true,
+    );
 
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("on_can_apply_snapshot");
