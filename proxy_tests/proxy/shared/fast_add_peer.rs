@@ -188,8 +188,8 @@ fn test_overlap_last_apply_old() {
 // If a legacy snapshot is applied between fn_fast_add_peer and
 // build_and_send_snapshot, it will override the previous snapshot's data, which
 // is actually newer.
-
-// #[test]
+// It if origianlly https://github.com/pingcap/tidb-engine-ext/pull/359 before two-stage fap.
+#[test]
 fn test_overlap_apply_legacy_in_the_middle() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
@@ -279,13 +279,13 @@ fn test_overlap_apply_legacy_in_the_middle() {
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
     fail::remove("fap_ffi_pause");
 
-    // std::thread::sleep(std::time::Duration::from_millis(5000));
+    // The snapshot is in `tmp_fap_regions`.
     check_key_ex(
         &cluster,
         b"k1",
-        b"v13",
+        b"v1",
         None,
-        Some(true),
+        Some(false),
         Some(vec![3]),
         None,
         true,
@@ -296,7 +296,6 @@ fn test_overlap_apply_legacy_in_the_middle() {
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("fap_on_msg_snapshot_1_3003");
 
-    // std::thread::sleep(std::time::Duration::from_millis(5000));
     check_key_ex(
         &cluster,
         b"k1",
@@ -309,12 +308,10 @@ fn test_overlap_apply_legacy_in_the_middle() {
     );
     // Make FAP continue after the legacy snapshot is applied.
     fail::remove("fap_ffi_pause_after_fap_call");
-    // TODO wait until fap finishes.
-    // std::thread::sleep(std::time::Duration::from_millis(5000));
     check_key_ex(
         &cluster,
         b"k1",
-        b"v1",
+        b"v13",
         None,
         Some(true),
         Some(vec![3]),
