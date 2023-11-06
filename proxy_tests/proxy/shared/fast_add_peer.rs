@@ -279,7 +279,11 @@ fn test_overlap_apply_legacy_in_the_middle() {
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
     fail::remove("fap_ffi_pause");
 
-    // The snapshot is in `tmp_fap_regions`.
+    iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
+        assert!(!ffi.engine_store_server.kvstore.contains_key(&1000));
+    });
+
+    // The snapshot for new_one_1000_k1 is in `tmp_fap_regions`.
     check_key_ex(
         &cluster,
         b"k1",
@@ -287,7 +291,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
         None,
         Some(false),
         Some(vec![3]),
-        None,
+        Some(new_one_1000_k1.get_id()),
         true,
     );
 
@@ -303,7 +307,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
         None,
         Some(true),
         Some(vec![3]),
-        None,
+        Some(new_one_1000_k1.get_id()),
         true,
     );
     // Make FAP continue after the legacy snapshot is applied.
@@ -315,7 +319,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
         None,
         Some(true),
         Some(vec![3]),
-        None,
+        Some(new_one_1000_k1.get_id()),
         true,
     );
 
