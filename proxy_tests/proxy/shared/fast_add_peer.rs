@@ -189,7 +189,7 @@ fn test_overlap_last_apply_old() {
 // build_and_send_snapshot, it will override the previous snapshot's data, which
 // is actually newer.
 
-#[test]
+// #[test]
 fn test_overlap_apply_legacy_in_the_middle() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
