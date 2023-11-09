@@ -312,6 +312,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
     );
     // Make FAP continue after the legacy snapshot is applied.
     fail::remove("fap_ffi_pause_after_fap_call");
+    std::thread::sleep(std::time::Duration::from_millis(2000));
     check_key_ex(
         &cluster,
         b"k1",
