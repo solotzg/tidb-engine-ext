@@ -577,7 +577,7 @@ fn simple_fast_add_peer(
     // Re-add peer in store.
     pd_client.must_add_peer(1, new_learner_peer(3, 4));
     // Wait until Learner has applied ConfChange
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    std::thread::sleep(std::time::Duration::from_millis(2000));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
         1,
