@@ -275,8 +275,9 @@ fn test_overlap_apply_legacy_in_the_middle() {
             states.in_disk_region_state.get_region().get_peers().len() == 3
         },
     );
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    std::thread::sleep(std::time::Duration::from_millis(500));
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
     fail::remove("fap_ffi_pause");
 
     iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
@@ -284,12 +285,13 @@ fn test_overlap_apply_legacy_in_the_middle() {
     });
 
     // The snapshot for new_one_1000_k1 is in `tmp_fap_regions`.
+    // Raftstore v1 is mono store, so there could be v1 written by old_one_1_k3.
     check_key_ex(
         &cluster,
         b"k1",
         b"v1",
-        None,
         Some(false),
+        None,
         Some(vec![3]),
         Some(new_one_1000_k1.get_id()),
         true,
