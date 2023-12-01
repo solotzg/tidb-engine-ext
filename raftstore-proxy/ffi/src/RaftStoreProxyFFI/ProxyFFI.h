@@ -225,6 +225,7 @@ enum class FastAddPeerStatus : uint32_t {
   NoSuitable,
   BadData,
   FailedInject,
+  Canceled,
 };
 
 enum class PrehandledSnapshotType : uint8_t {

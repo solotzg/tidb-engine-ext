@@ -334,6 +334,7 @@ pub mod root {
             NoSuitable = 3,
             BadData = 4,
             FailedInject = 5,
+            Canceled = 6,
         }
         #[repr(u8)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -709,7 +710,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 8024556142803901851;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 9937508385993776472;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
