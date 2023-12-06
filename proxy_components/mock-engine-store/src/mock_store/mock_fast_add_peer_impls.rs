@@ -13,12 +13,15 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,
     peer_id: u64,
-) {
+) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
-    let new_region = (*store.engine_store_server)
+    let new_region = match (*store.engine_store_server)
         .tmp_fap_regions
         .remove(&(region_id, peer_id))
-        .unwrap();
+    {
+        Some(e) => e,
+        None => return 0,
+    };
     (*store.engine_store_server)
         .kvstore
         .insert(region_id, new_region);
@@ -31,6 +34,7 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
         target_region,
         String::from("fast-add-peer"),
     );
+    1
 }
 
 #[allow(clippy::redundant_closure_call)]
