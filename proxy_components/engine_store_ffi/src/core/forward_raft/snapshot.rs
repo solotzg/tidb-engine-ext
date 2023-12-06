@@ -271,6 +271,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(mut o) => {
                         let is_first_snapshot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                        // After restart, apply snapshot may be replayed, at which time `inited_or_fallback` is false.
+                        // However, the snapshot could also be a legacy snapshot.
                         if is_first_snapshot {
                             let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
                             let total = o.get().fast_add_peer_start.load(Ordering::SeqCst);

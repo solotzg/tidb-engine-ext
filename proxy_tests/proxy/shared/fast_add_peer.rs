@@ -371,7 +371,7 @@ fn simple_fast_add_peer(
     // will cause "fast-forwarded commit to snapshot".
     cluster.must_put(b"k0", b"v0");
 
-    // Add learner 2 from leader 1
+    // Add learner 2 from leader 1, this is FAP.
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
     // std::thread::sleep(std::time::Duration::from_millis(2000));
     cluster.must_put(b"k1", b"v1");

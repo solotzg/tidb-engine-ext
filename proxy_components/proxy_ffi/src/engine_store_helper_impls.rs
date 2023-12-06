@@ -220,9 +220,9 @@ impl EngineStoreServerHelper {
         }
     }
 
-    pub fn apply_fap_snapshot(&self, region_id: u64, peer_id: u64) {
+    pub fn apply_fap_snapshot(&self, region_id: u64, peer_id: u64) -> bool {
         debug_assert!(self.fn_apply_fap_snapshot.is_some());
-        unsafe { (self.fn_apply_fap_snapshot.into_inner())(self.inner, region_id, peer_id) }
+        unsafe { (self.fn_apply_fap_snapshot.into_inner())(self.inner, region_id, peer_id) != 0 }
     }
 
     pub fn handle_ingest_sst(
