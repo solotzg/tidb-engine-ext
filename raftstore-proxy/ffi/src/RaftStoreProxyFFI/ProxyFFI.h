@@ -259,6 +259,8 @@ struct RaftStoreProxyFFIHelper {
                                                  BaseBuffView);
   FileEncryptionInfoRaw (*fn_handle_link_file)(RaftStoreProxyPtr, BaseBuffView,
                                                BaseBuffView);
+  bool (*fn_get_keyspace_encryption)(RaftStoreProxyPtr, uint32_t);
+  RawCppStringPtr (*fn_get_master_key)(RaftStoreProxyPtr);
   void (*fn_handle_batch_read_index)(
       RaftStoreProxyPtr, CppStrVecView, RawVoidPtr, uint64_t,
       void (*fn_insert_batch_read_index_resp)(RawVoidPtr, BaseBuffView,

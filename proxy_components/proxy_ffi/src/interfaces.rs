@@ -404,6 +404,14 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::FileEncryptionInfoRaw,
             >,
+            pub fn_get_keyspace_encryption: ::std::option::Option<
+                unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, arg2: u32) -> bool,
+            >,
+            pub fn_get_master_key: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                ) -> root::DB::RawCppStringPtr,
+            >,
             pub fn_handle_batch_read_index: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,

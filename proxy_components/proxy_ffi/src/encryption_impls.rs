@@ -166,3 +166,16 @@ pub extern "C" fn ffi_handle_link_file(
         )
     }
 }
+
+// always return false
+pub extern "C" fn ffi_get_keyspace_encryption(
+    _proxy_ptr: RaftStoreProxyPtr,
+    _keyspace_id: u32,
+) -> bool {
+    return false;
+}
+
+// always return empty string
+pub extern "C" fn ffi_get_master_key(_proxy_ptr: RaftStoreProxyPtr) -> RawCppStringPtr {
+    get_engine_store_server_helper().gen_cpp_string(b"")
+}
