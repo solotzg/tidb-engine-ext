@@ -167,6 +167,8 @@ pub extern "C" fn ffi_handle_link_file(
     }
 }
 
+//// The following functions will not be called, just for compatibility ////
+
 // always return false
 pub extern "C" fn ffi_get_keyspace_encryption(
     _proxy_ptr: RaftStoreProxyPtr,
