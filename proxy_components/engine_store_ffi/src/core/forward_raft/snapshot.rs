@@ -284,19 +284,21 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                 "region_id" => region_id,
                             );
 
-                            if !self.engine_store_server_helper.apply_fap_snapshot(region_id, peer_id) {
-                                // This is not a fap snapshot.
-                                info!("fast path: this is not fap snapshot {}:{} {}, goto legacy", self.store_id, region_id, peer_id;
-                                    "snap_key" => ?snap_key,
-                                    "region_id" => region_id,
-                                    "cost_snapshot" => current.as_millis() - last,
-                                    "cost_total" => current.as_millis() - total,
-                                );
-                                should_skip = false;
-                                o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
-                                o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
-                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
-                                return;
+                            if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
+                                if !self.engine_store_server_helper.apply_fap_snapshot(region_id, peer_id) {
+                                    // This is not a fap snapshot.
+                                    info!("fast path: this is not fap snapshot {}:{} {}, goto legacy", self.store_id, region_id, peer_id;
+                                        "snap_key" => ?snap_key,
+                                        "region_id" => region_id,
+                                        "cost_snapshot" => current.as_millis() - last,
+                                        "cost_total" => current.as_millis() - total,
+                                    );
+                                    should_skip = false;
+                                    o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
+                                    o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
+                                    o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                                    return;
+                                }
                             }
 
                             info!("fast path: finished applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;

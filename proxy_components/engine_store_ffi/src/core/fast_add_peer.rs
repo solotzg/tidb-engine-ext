@@ -81,7 +81,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         #[cfg(not(any(test, feature = "testexport")))]
                         const TRACE_SLOW_MILLIS: u128 = 1000 * 60 * 3;
                         #[cfg(not(any(test, feature = "testexport")))]
-                        const FALLBACK_MILLIS: u128 = 1000 * 60 * 5;
+                        const FALLBACK_MILLIS: u128 = 0;
 
                         #[allow(clippy::redundant_closure_call)]
                         let fallback_millis = (|| {
@@ -93,7 +93,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         })();
                         #[allow(clippy::absurd_extreme_comparisons)]
                         if elapsed >= TRACE_SLOW_MILLIS {
-                            let need_fallback = elapsed > fallback_millis;
+                            // After 2 phase FAP, canceling FAP also need to delete written
+                            // segments, so we move the canceling mechanism to TiFlash instead of
+                            // introducing another FFO interface.
+                            let need_fallback = if fallback_millis == 0 {
+                                false
+                            } else {
+                                elapsed > fallback_millis
+                            };
                             // TODO If snapshot is sent, we need fallback but can't do fallback?
                             let do_fallback = need_fallback;
                             info!("fast path: ongoing {}:{} {}, MsgAppend duplicated{}",

@@ -225,7 +225,7 @@ enum class FastAddPeerStatus : uint32_t {
   NoSuitable,
   BadData,
   FailedInject,
-  Canceled,
+  Canceled, // Cancel from outside the FAP workers
 };
 
 enum class PrehandledSnapshotType : uint8_t {
