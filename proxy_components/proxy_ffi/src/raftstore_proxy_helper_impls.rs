@@ -65,8 +65,8 @@ impl RaftStoreProxyFFIHelper {
             fn_handle_new_file: Some(ffi_handle_new_file),
             fn_handle_delete_file: Some(ffi_handle_delete_file),
             fn_handle_link_file: Some(ffi_handle_link_file),
-            fn_get_keyspace_encryption: Some(ffi_get_keyspace_encryption),
-            fn_get_master_key: Some(ffi_get_master_key),
+            fn_get_keyspace_encryption: Some(CloudStorageEngineFFI::ffi_get_keyspace_encryption),
+            fn_get_master_key: Some(CloudStorageEngineFFI::ffi_get_master_key),
             fn_handle_batch_read_index: Some(ffi_batch_read_index),
             sst_reader_interfaces: SSTReaderInterfaces {
                 fn_get_sst_reader: Some(ffi_make_sst_reader),
