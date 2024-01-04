@@ -269,6 +269,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         // true.
         let mut should_skip = false;
 
+        // TODO This function may hold slot write lock, must be opted.
         let try_apply_fap_snapshot = |c: &mut Arc<CachedRegionInfo>, restart: bool| {
             info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
