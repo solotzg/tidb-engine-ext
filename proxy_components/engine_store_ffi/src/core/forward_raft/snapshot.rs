@@ -269,8 +269,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         // true.
         let mut should_skip = false;
 
-        // TODO This function may hold slot write lock, must be opted.
-        let try_apply_fap_snapshot = |c: &mut Arc<CachedRegionInfo>, restart: bool| {
+        let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restart: bool| {
             info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
@@ -318,38 +317,45 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
 
         #[allow(clippy::collapsible_if)]
         if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
+            let mut maybe_cached_info : Option<Arc<CachedRegionInfo>> = None;
+            let mut restart = false;
             if self
                 .get_cached_manager()
                 .access_cached_region_info_mut(
                     region_id,
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                        MapEntry::Occupied(mut o) => {
-                            let is_first_snapshot =
-                                !o.get().inited_or_fallback.load(Ordering::SeqCst);
-                            // After restart, apply snapshot may be replayed, at which time
-                            // `inited_or_fallback` is false.
-                            // However, the snapshot could also be a tikv snapshot.
-                            if is_first_snapshot {
-                                should_skip = try_apply_fap_snapshot(o.get_mut(), true);
-                            }
+                        MapEntry::Occupied(o) => {
+                            maybe_cached_info = Some(o.get().clone());
+                            restart = false;
                         }
                         MapEntry::Vacant(v) => {
                             // It could be an fap snapshot after restart.
-                            let mut c = Arc::new(CachedRegionInfo::default());
+                            let c = Arc::new(CachedRegionInfo::default());
                             let has_already_inited = self.is_initialized(region_id);
                             if has_already_inited {
                                 c.inited_or_fallback.store(true, Ordering::SeqCst);
-                            } else {
-                                should_skip = try_apply_fap_snapshot(&mut c, false);
                             }
-                            v.insert(c);
+                            v.insert(c.clone());
+                            maybe_cached_info = Some(c);
+                            restart = true;
                         }
-                    },
-                )
-                .is_err()
-            {
-                fatal!("post_apply_snapshot poisoned")
-            };
+                    }
+                ).is_err() {
+                    fatal!("post_apply_snapshot poisoned");
+                }
+
+            match maybe_cached_info {
+                Some(o) => {
+                    let is_first_snapshot =
+                        !o.inited_or_fallback.load(Ordering::SeqCst);
+                    if is_first_snapshot {
+                        should_skip = try_apply_fap_snapshot(o, restart);
+                    }
+                },
+                None => {
+                    fatal!("can't access CachedRegionInfo region_id={}", region_id);
+                },
+            }
         }
 
         if should_skip {
