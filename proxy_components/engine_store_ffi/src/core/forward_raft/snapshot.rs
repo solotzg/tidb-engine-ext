@@ -295,10 +295,17 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             true
         };
 
+        let mut should_check_fap_snapshot = self.packed_envs.engine_store_cfg.enable_unips;
+        (|| {
+            fail::fail_point!("post_apply_snapshot_allow_no_unips", |_| {
+                // UniPS can't provide a snapshot currently
+                should_check_fap_snapshot = true;
+            });
+        })();
         // We should handle fap snapshot even if enable_fast_add_peer is false.
         // However, if enable_unips, by no means can we handle fap snapshot.
         #[allow(clippy::collapsible_if)]
-        if self.packed_envs.engine_store_cfg.enable_unips {
+        if should_check_fap_snapshot {
             let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
             let mut restart = false;
             if self
