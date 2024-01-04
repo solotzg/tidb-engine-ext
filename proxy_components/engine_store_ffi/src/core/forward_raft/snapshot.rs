@@ -1,6 +1,7 @@
+// Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
+
 use proxy_ffi::interfaces_ffi::SSTReaderPtr;
 
-// Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use crate::{
     core::{common::*, PrehandleTask, ProxyForwarder, PtrWrapper},
     fatal,
@@ -263,62 +264,89 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "region" => ?ob_region,
             "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
         );
+
+        // If the snapshot has been successfuly handled as a fap snapshot, set this to
+        // true.
         let mut should_skip = false;
+
+        let try_apply_fap_snapshot = |c: &mut Arc<CachedRegionInfo>, restart: bool| {
+            info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
+                "snap_key" => ?snap_key,
+                "region_id" => region_id,
+            );
+            // Even if the feature is not enabled, the snapshot could still be a previously
+            // generated fap snapshot. So we have to also handle this snapshot,
+            // to prevent error data.
+            let current_enabled = self.packed_envs.engine_store_cfg.enable_fast_add_peer;
+            let last = c.snapshot_inflight.load(Ordering::SeqCst);
+            let total = c.fast_add_peer_start.load(Ordering::SeqCst);
+            let current = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap();
+            if !self
+                .engine_store_server_helper
+                .apply_fap_snapshot(region_id, peer_id)
+            {
+                // This is not a fap snapshot.
+                info!("fast path: this is not fap snapshot {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
+                    "snap_key" => ?snap_key,
+                    "region_id" => region_id,
+                    "cost_snapshot" => current.as_millis() - last,
+                    "cost_total" => current.as_millis() - total,
+                    "current_enabled" => current_enabled,
+                    "from_restart" => restart,
+                );
+                c.snapshot_inflight.store(0, Ordering::SeqCst);
+                c.fast_add_peer_start.store(0, Ordering::SeqCst);
+                c.inited_or_fallback.store(true, Ordering::SeqCst);
+                return false;
+            }
+            info!("fast path: finished applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
+                "snap_key" => ?snap_key,
+                "region_id" => region_id,
+                "cost_snapshot" => current.as_millis() - last,
+                "cost_total" => current.as_millis() - total,
+                "current_enabled" => current_enabled,
+                "from_restart" => restart,
+            );
+            c.snapshot_inflight.store(0, Ordering::SeqCst);
+            c.fast_add_peer_start.store(0, Ordering::SeqCst);
+            c.inited_or_fallback.store(true, Ordering::SeqCst);
+            true
+        };
+
         #[allow(clippy::collapsible_if)]
         if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
-            if self.get_cached_manager().access_cached_region_info_mut(
-                region_id,
-                |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                    MapEntry::Occupied(mut o) => {
-                        let is_first_snapshot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
-                        // After restart, apply snapshot may be replayed, at which time `inited_or_fallback` is false.
-                        // However, the snapshot could also be a legacy snapshot.
-                        if is_first_snapshot {
-                            let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
-                            let total = o.get().fast_add_peer_start.load(Ordering::SeqCst);
-                            let current = SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap();
-                            info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
-                                "snap_key" => ?snap_key,
-                                "region_id" => region_id,
-                            );
-
-                            if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
-                                if !self.engine_store_server_helper.apply_fap_snapshot(region_id, peer_id) {
-                                    // This is not a fap snapshot.
-                                    info!("fast path: this is not fap snapshot {}:{} {}, goto legacy", self.store_id, region_id, peer_id;
-                                        "snap_key" => ?snap_key,
-                                        "region_id" => region_id,
-                                        "cost_snapshot" => current.as_millis() - last,
-                                        "cost_total" => current.as_millis() - total,
-                                    );
-                                    should_skip = false;
-                                    o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
-                                    o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
-                                    o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
-                                    return;
-                                }
+            if self
+                .get_cached_manager()
+                .access_cached_region_info_mut(
+                    region_id,
+                    |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                        MapEntry::Occupied(mut o) => {
+                            let is_first_snapshot =
+                                !o.get().inited_or_fallback.load(Ordering::SeqCst);
+                            // After restart, apply snapshot may be replayed, at which time
+                            // `inited_or_fallback` is false.
+                            // However, the snapshot could also be a tikv snapshot.
+                            if is_first_snapshot {
+                                should_skip = try_apply_fap_snapshot(o.get_mut(), true);
                             }
-
-                            info!("fast path: finished applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
-                                "snap_key" => ?snap_key,
-                                "region_id" => region_id,
-                                "cost_snapshot" => current.as_millis() - last,
-                                "cost_total" => current.as_millis() - total,
-                            );
-                            should_skip = true;
-                            o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
-                            o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
-                            o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                         }
-                    }
-                    MapEntry::Vacant(_) => {
-                        // Compat no fast add peer logic
-                        // panic!("unknown snapshot!");
-                    }
-                },
-            ).is_err() {
+                        MapEntry::Vacant(v) => {
+                            // It could be an fap snapshot after restart.
+                            let mut c = Arc::new(CachedRegionInfo::default());
+                            let has_already_inited = self.is_initialized(region_id);
+                            if has_already_inited {
+                                c.inited_or_fallback.store(true, Ordering::SeqCst);
+                            } else {
+                                should_skip = try_apply_fap_snapshot(&mut c, false);
+                            }
+                            v.insert(c);
+                        }
+                    },
+                )
+                .is_err()
+            {
                 fatal!("post_apply_snapshot poisoned")
             };
         }

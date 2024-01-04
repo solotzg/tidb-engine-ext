@@ -150,8 +150,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             // So we have data in disk, but not in memory.
                             // In these cases, we need to check everytime.
 
-                            // TODO We can then remove logics in apply snapshot.
-                            // This is because if the next maybe_fast_path_tick after apply snapshot
+                            // The next maybe_fast_path_tick after apply snapshot
                             // will have has_already_inited == true, which leads to normal
                             // MsgAppend.
                             let has_already_inited = self.is_initialized(region_id);
