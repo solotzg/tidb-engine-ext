@@ -25,8 +25,8 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
                 "region_id" => region_id,
                 "peer_id" => peer_id,
             );
-            return 0
-        },
+            return 0;
+        }
     };
     (*store.engine_store_server)
         .kvstore

@@ -299,7 +299,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         // However, if enable_unips, by no means can we handle fap snapshot.
         #[allow(clippy::collapsible_if)]
         if self.packed_envs.engine_store_cfg.enable_unips {
-            let mut maybe_cached_info : Option<Arc<CachedRegionInfo>> = None;
+            let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
             let mut restart = false;
             if self
                 .get_cached_manager()
@@ -321,22 +321,23 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             maybe_cached_info = Some(c);
                             restart = true;
                         }
-                    }
-                ).is_err() {
-                    fatal!("poisoned");
-                }
+                    },
+                )
+                .is_err()
+            {
+                fatal!("poisoned");
+            }
 
             match maybe_cached_info {
                 Some(o) => {
-                    let is_first_snapshot =
-                        !o.inited_or_fallback.load(Ordering::SeqCst);
+                    let is_first_snapshot = !o.inited_or_fallback.load(Ordering::SeqCst);
                     if is_first_snapshot {
                         return try_apply_fap_snapshot(o, restart);
                     }
-                },
+                }
                 None => {
                     fatal!("can't access CachedRegionInfo region_id={}", region_id);
-                },
+                }
             }
         }
         false
@@ -361,11 +362,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
         );
 
-        if self.post_apply_snapshot_for_fap_snapshot(
-            ob_region,
-            peer_id,
-            snap_key,
-        ) {
+        if self.post_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
             // Already handled as an fap snapshot.
             return;
         }
