@@ -101,7 +101,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             } else {
                                 elapsed > fallback_millis
                             };
-                            // TODO If snapshot is sent, we need fallback but can't do fallback?
                             let do_fallback = need_fallback;
                             info!("fast path: ongoing {}:{} {}, MsgAppend duplicated{}",
                                 self.store_id, region_id, new_peer_id, if do_fallback { ", fallback to normal" } else {""};

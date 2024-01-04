@@ -20,10 +20,11 @@ enum PauseType {
 
 // This test is covered in `simple_fast_add_peer`.
 // It is here only as a demo for easy understanding the whole process.
-// #[test]
+#[test]
 fn basic_fast_add_peer() {
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     // fail::cfg("on_pre_write_apply_state", "return").unwrap();
     fail::cfg("fap_mock_fake_snapshot", "return(1)").unwrap();
@@ -66,6 +67,7 @@ fn test_overlap_last_apply_old() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     tikv_util::set_panic_hook(true, "./");
     // Can always apply snapshot immediately
@@ -194,6 +196,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     cluster.cfg.tikv.raft_store.store_batch_system.pool_size = 4;
     cluster.cfg.tikv.raft_store.apply_batch_system.pool_size = 4;
@@ -345,6 +348,7 @@ fn simple_fast_add_peer(
     // The case in TiFlash is (DelayedPeer, false, Build)
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     if !check_timeout {
         fail::cfg("fap_core_fallback_millis", "return(1000000)").unwrap();
@@ -760,6 +764,7 @@ fn test_existing_peer() {
 
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     // fail::cfg("on_pre_write_apply_state", "return").unwrap();
     disable_auto_gen_compact_log(&mut cluster);
@@ -808,6 +813,7 @@ fn test_existing_peer() {
 fn test_apply_snapshot() {
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 3);
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     // fail::cfg("on_pre_write_apply_state", "return").unwrap();
     disable_auto_gen_compact_log(&mut cluster);
@@ -887,6 +893,7 @@ fn test_apply_snapshot() {
 fn test_split_no_fast_add() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
 
     tikv_util::set_panic_hook(true, "./");
@@ -929,6 +936,7 @@ fn test_split_no_fast_add() {
 fn test_split_merge() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
 
     tikv_util::set_panic_hook(true, "./");
@@ -981,6 +989,7 @@ fn test_split_merge() {
 fn test_fall_back_to_slow_path() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
     pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
 
     tikv_util::set_panic_hook(true, "./");
@@ -1019,6 +1028,7 @@ fn test_fall_back_to_slow_path() {
 fn test_single_replica_migrate() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
+    cluster.cfg.proxy_cfg.engine_store.enable_unips = true;
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
 
     tikv_util::set_panic_hook(true, "./");

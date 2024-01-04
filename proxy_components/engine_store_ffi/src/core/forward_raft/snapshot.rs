@@ -72,14 +72,10 @@ fn retrieve_sst_files(peer_id: u64, snap: &store::Snapshot) -> Vec<SSTInfo> {
         }
     }
     if sst_views.is_empty() {
+        // This logic should not happen here.
         info!("meet a empty snapshot, maybe error or no data";
             "peer_id" => peer_id
         );
-        // #[cfg(any(test, feature = "testexport"))]
-        // {
-        //     // TODO make all tests in proxy without an empty snapshot.
-        //     panic!("meet a empty snapshot")
-        // }
     }
     sst_views
 }
@@ -246,29 +242,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         });
     }
 
-    pub fn post_apply_snapshot(
+    pub fn post_apply_snapshot_for_fap_snapshot(
         &self,
         ob_region: &Region,
         peer_id: u64,
         snap_key: &store::SnapKey,
-        snap: Option<&store::Snapshot>,
-    ) {
-        fail::fail_point!("on_ob_post_apply_snapshot", |_| {
-            return;
-        });
+    ) -> bool {
         let region_id = ob_region.get_id();
-        info!("post apply snapshot";
-            "peer_id" => ?peer_id,
-            "snap_key" => ?snap_key,
-            "region_id" => region_id,
-            "region" => ?ob_region,
-            "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
-        );
-
-        // If the snapshot has been successfuly handled as a fap snapshot, set this to
-        // true.
-        let mut should_skip = false;
-
         let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restart: bool| {
             info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
@@ -315,8 +295,10 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             true
         };
 
+        // We should handle fap snapshot even if enable_fast_add_peer is false.
+        // However, if enable_unips, by no means can we handle fap snapshot.
         #[allow(clippy::collapsible_if)]
-        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
+        if self.packed_envs.engine_store_cfg.enable_unips {
             let mut maybe_cached_info : Option<Arc<CachedRegionInfo>> = None;
             let mut restart = false;
             if self
@@ -341,7 +323,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         }
                     }
                 ).is_err() {
-                    fatal!("post_apply_snapshot poisoned");
+                    fatal!("poisoned");
                 }
 
             match maybe_cached_info {
@@ -349,7 +331,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     let is_first_snapshot =
                         !o.inited_or_fallback.load(Ordering::SeqCst);
                     if is_first_snapshot {
-                        should_skip = try_apply_fap_snapshot(o, restart);
+                        return try_apply_fap_snapshot(o, restart);
                     }
                 },
                 None => {
@@ -357,8 +339,34 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 },
             }
         }
+        false
+    }
 
-        if should_skip {
+    pub fn post_apply_snapshot(
+        &self,
+        ob_region: &Region,
+        peer_id: u64,
+        snap_key: &store::SnapKey,
+        snap: Option<&store::Snapshot>,
+    ) {
+        fail::fail_point!("on_ob_post_apply_snapshot", |_| {
+            return;
+        });
+        let region_id = ob_region.get_id();
+        info!("post apply snapshot";
+            "peer_id" => ?peer_id,
+            "snap_key" => ?snap_key,
+            "region_id" => region_id,
+            "region" => ?ob_region,
+            "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
+        );
+
+        if self.post_apply_snapshot_for_fap_snapshot(
+            ob_region,
+            peer_id,
+            snap_key,
+        ) {
+            // Already handled as an fap snapshot.
             return;
         }
 
@@ -396,10 +404,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
                         );
                         // We must fetch snapshot here, as a consumer.
-                        if !should_skip {
-                            self.engine_store_server_helper
-                                .apply_pre_handled_snapshot(snap_ptr.0);
-                        }
+                        self.engine_store_server_helper
+                            .apply_pre_handled_snapshot(snap_ptr.0);
                         false
                     }
                     Err(_) => {
@@ -450,7 +456,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             }
         };
 
-        if need_retry && !should_skip {
+        if need_retry {
             // Blocking pre handle.
             let ssts = retrieve_sst_files(peer_id, snap);
             let ptr = pre_handle_snapshot_impl(
