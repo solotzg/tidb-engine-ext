@@ -175,17 +175,31 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                 }
                 MapEntry::Vacant(v) => {
-                    info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
-                        "to_peer_id" => msg.get_to_peer().get_id(),
-                        "from_peer_id" => msg.get_from_peer().get_id(),
-                        "region_id" => region_id,
-                        "inner_msg" => ?inner_msg,
-                    );
-                    let c = CachedRegionInfo::default();
-                    c.fast_add_peer_start
-                        .store(current.as_millis(), Ordering::SeqCst);
-                    v.insert(Arc::new(c));
-                    is_first = true;
+                    let has_already_inited = self.is_initialized(region_id);
+                    if has_already_inited {
+                        debug!("fast path: ongoing {}:{} {}, first message after restart", self.store_id, region_id, new_peer_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                            "region_id" => region_id,
+                            "inner_msg" => ?inner_msg,
+                        );
+                        let c = CachedRegionInfo::default();
+                        c.inited_or_fallback.store(true, Ordering::SeqCst);
+                        c.replicated_or_created.store(true, Ordering::SeqCst);
+                        is_first = false;
+                    } else {
+                        info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                            "region_id" => region_id,
+                            "inner_msg" => ?inner_msg,
+                        );
+                        let c = CachedRegionInfo::default();
+                        c.fast_add_peer_start
+                            .store(current.as_millis(), Ordering::SeqCst);
+                        v.insert(Arc::new(c));
+                        is_first = true;
+                    }
                 }
             }
         };

@@ -82,6 +82,15 @@ impl EngineStoreServer {
             region.apply_state = Default::default();
             // We don't clear applied_term.
         }
+        self.engines
+            .as_mut()
+            .unwrap()
+            .kv
+            .proxy_ext
+            .cached_region_info_manager
+            .as_ref()
+            .unwrap()
+            .clear();
     }
 
     // False alarm

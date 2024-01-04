@@ -51,6 +51,17 @@ impl CachedRegionInfoManager {
         i ^ (i >> 30) ^ (i >> 60)
     }
 
+    pub fn clear(&self) {
+        for i in 0..CACHED_REGION_INFO_SLOT_COUNT {
+            self.cached_region_info
+                .get(i)
+                .unwrap()
+                .write()
+                .expect("poisoned")
+                .clear();
+        }
+    }
+
     // This is not a trivial default.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
