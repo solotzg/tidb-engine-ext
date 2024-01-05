@@ -232,6 +232,17 @@ impl EngineStoreServerHelper {
         }
     }
 
+    pub fn query_fap_snapshot_state(
+        &self,
+        region_id: u64,
+        new_peer_id: u64,
+    ) -> interfaces_ffi::FapSnapshotState {
+        debug_assert!(self.fn_query_fap_snapshot_state.is_some());
+        unsafe {
+            (self.fn_query_fap_snapshot_state.into_inner())(self.inner, region_id, new_peer_id)
+        }
+    }
+
     pub fn handle_ingest_sst(
         &self,
         snaps: Vec<(&[u8], ColumnFamilyType)>,

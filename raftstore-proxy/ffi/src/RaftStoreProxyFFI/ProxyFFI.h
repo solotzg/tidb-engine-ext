@@ -240,6 +240,12 @@ struct FastAddPeerRes {
   CppStrWithView region;
 };
 
+enum class FapSnapshotState : uint32_t {
+  NotFound,
+  Persisted,
+  Other,
+};
+
 enum class ConfigJsonType : uint64_t { ProxyConfigAddressed = 1 };
 
 struct RaftStoreProxyFFIHelper {
@@ -353,6 +359,9 @@ struct EngineStoreServerHelper {
                                    uint64_t leader_safe_ts);
   FastAddPeerRes (*fn_fast_add_peer)(EngineStoreServerWrap *,
                                      uint64_t region_id, uint64_t new_peer_id);
+  FapSnapshotState (*fn_query_fap_snapshot_state)(EngineStoreServerWrap *,
+                                                  uint64_t region_id,
+                                                  uint64_t new_peer_id);
 };
 
 #ifdef __cplusplus

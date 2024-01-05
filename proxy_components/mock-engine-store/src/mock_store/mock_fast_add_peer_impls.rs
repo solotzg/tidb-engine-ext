@@ -9,6 +9,21 @@ use super::{
 };
 use crate::mock_cluster;
 
+pub(crate) unsafe extern "C" fn ffi_query_fap_snapshot_state(
+    arg1: *mut interfaces_ffi::EngineStoreServerWrap,
+    region_id: u64,
+    peer_id: u64,
+) -> interfaces_ffi::FapSnapshotState {
+    let store = into_engine_store_server_wrap(arg1);
+    if (*store.engine_store_server)
+        .tmp_fap_regions
+        .contains_key(&(region_id, peer_id))
+    {
+        return interfaces_ffi::FapSnapshotState::Persisted;
+    }
+    interfaces_ffi::FapSnapshotState::NotFound
+}
+
 pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,

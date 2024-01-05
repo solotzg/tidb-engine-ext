@@ -153,8 +153,17 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         }
                     }
                     MapEntry::Vacant(_) => {
-                        // Compat no fast add peer logic
-                        // panic!("unknown snapshot!");
+                        if !self.is_initialized(region_id) {
+                            // If there is an fap snapshot, and we'll skip here after restared.
+                            // Otherwise, there could be redunduant prehandling.
+                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
+                                info!("fast path: prehandle first snapshot after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                    "snap_key" => ?snap_key,
+                                    "region_id" => region_id,
+                                );
+                                should_skip = true;
+                            }
+                        }
                     }
                 },
             ).is_err() {

@@ -365,6 +365,7 @@ pub fn gen_engine_store_server_helper(
         fn_handle_safe_ts_update: Some(ffi_handle_safe_ts_update),
         fn_fast_add_peer: Some(ffi_fast_add_peer),
         fn_apply_fap_snapshot: Some(ffi_apply_fap_snapshot),
+        fn_query_fap_snapshot_state: Some(ffi_query_fap_snapshot_state),
         ps: PageStorageInterfaces {
             fn_create_write_batch: Some(ffi_mockps_create_write_batch),
             fn_wb_put_page: Some(ffi_mockps_wb_put_page),

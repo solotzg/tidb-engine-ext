@@ -350,6 +350,13 @@ pub mod root {
             pub apply_state: root::DB::CppStrWithView,
             pub region: root::DB::CppStrWithView,
         }
+        #[repr(u32)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum FapSnapshotState {
+            NotFound = 0,
+            Persisted = 1,
+            Other = 2,
+        }
         #[repr(u64)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum ConfigJsonType {
@@ -703,6 +710,13 @@ pub mod root {
                     new_peer_id: u64,
                 ) -> root::DB::FastAddPeerRes,
             >,
+            pub fn_query_fap_snapshot_state: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    region_id: u64,
+                    new_peer_id: u64,
+                ) -> root::DB::FapSnapshotState,
+            >,
         }
         extern "C" {
             pub fn ffi_get_server_info_from_proxy(
@@ -711,7 +725,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 12212357911599932158;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 17148513290160444417;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
