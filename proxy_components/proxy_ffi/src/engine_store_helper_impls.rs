@@ -227,7 +227,7 @@ impl EngineStoreServerHelper {
                 self.inner,
                 region_id,
                 peer_id,
-                if assert_exist { 1 } else { 0 },
+                assert_exist as u8,
             ) != 0
         }
     }

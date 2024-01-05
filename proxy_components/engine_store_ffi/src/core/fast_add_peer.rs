@@ -463,6 +463,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         let mut pb_snapshot: eraftpb::Snapshot = Default::default();
         let pb_snapshot_metadata: &mut eraftpb::SnapshotMetadata = pb_snapshot.mut_metadata();
         let mut pb_snapshot_data = kvproto::raft_serverpb::RaftSnapshotData::default();
+        // Set `pb_snapshot_data`
         {
             // eraftpb::SnapshotMetadata
             for (_, cf) in raftstore::store::snap::SNAPSHOT_CFS_ENUM_PAIR {
@@ -498,14 +499,15 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 snapshot.save_meta_file()?;
             }
             pb_snapshot_data.set_meta(snapshot_meta);
+            pb_snapshot.set_data(pb_snapshot_data.write_to_bytes().unwrap().into());
         }
-
-        pb_snapshot_metadata
+        // Set `pb_snapshot_metadata`
+        {
+            pb_snapshot_metadata
             .set_conf_state(raftstore::store::util::conf_state_from_region(&new_region));
-        pb_snapshot_metadata.set_index(key.idx);
-        pb_snapshot_metadata.set_term(key.term);
-
-        pb_snapshot.set_data(pb_snapshot_data.write_to_bytes().unwrap().into());
+            pb_snapshot_metadata.set_index(key.idx);
+            pb_snapshot_metadata.set_term(key.term);
+        }
 
         // Send reponse
         let mut response = RaftMessage::default();
