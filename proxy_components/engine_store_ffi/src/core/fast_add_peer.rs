@@ -509,7 +509,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         }
 
         pb_snapshot.set_data(pb_snapshot_data.write_to_bytes().unwrap().into());
-        
+
         // Send reponse
         let mut response = RaftMessage::default();
         let epoch = new_region.get_region_epoch();
