@@ -296,6 +296,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         };
 
         let mut should_check_fap_snapshot = self.packed_envs.engine_store_cfg.enable_unips;
+        #[allow(clippy::redundant_closure_call)]
         (|| {
             fail::fail_point!("post_apply_snapshot_allow_no_unips", |_| {
                 // UniPS can't provide a snapshot currently
