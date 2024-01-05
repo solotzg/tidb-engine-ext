@@ -41,6 +41,9 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
                 "region_id" => region_id,
                 "peer_id" => peer_id,
             );
+            if assert_exist {
+                panic!("should exist region_id={} peed_id={}", region_id, peer_id);
+            }
             return 0;
         }
     };
