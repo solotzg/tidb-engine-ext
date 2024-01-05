@@ -504,7 +504,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         // Set `pb_snapshot_metadata`
         {
             pb_snapshot_metadata
-            .set_conf_state(raftstore::store::util::conf_state_from_region(&new_region));
+                .set_conf_state(raftstore::store::util::conf_state_from_region(&new_region));
             pb_snapshot_metadata.set_index(key.idx);
             pb_snapshot_metadata.set_term(key.term);
         }
