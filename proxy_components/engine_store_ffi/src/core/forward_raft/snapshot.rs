@@ -295,6 +295,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             true
         };
 
+        #[allow(unused_mut)]
         let mut should_check_fap_snapshot = self.packed_envs.engine_store_cfg.enable_unips;
         #[allow(clippy::redundant_closure_call)]
         (|| {
