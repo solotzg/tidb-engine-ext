@@ -639,6 +639,7 @@ pub mod root {
                     arg1: *mut root::DB::EngineStoreServerWrap,
                     arg2: u64,
                     arg3: u64,
+                    arg4: u8,
                 ) -> u8,
             >,
             pub fn_handle_http_request: ::std::option::Option<
@@ -710,7 +711,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 4223156335522605016;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 12212357911599932158;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

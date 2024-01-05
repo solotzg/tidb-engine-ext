@@ -334,7 +334,8 @@ struct EngineStoreServerHelper {
                                        uint64_t);
   void (*fn_release_pre_handled_snapshot)(EngineStoreServerWrap *, RawVoidPtr,
                                           RawCppPtrType);
-  uint8_t (*fn_apply_fap_snapshot)(EngineStoreServerWrap *, uint64_t, uint64_t);
+  uint8_t (*fn_apply_fap_snapshot)(EngineStoreServerWrap *, uint64_t, uint64_t,
+                                   uint8_t);
   HttpRequestRes (*fn_handle_http_request)(EngineStoreServerWrap *,
                                            BaseBuffView path,
                                            BaseBuffView query,

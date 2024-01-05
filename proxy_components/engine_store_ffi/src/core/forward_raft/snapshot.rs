@@ -265,7 +265,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 .unwrap();
             if !self
                 .engine_store_server_helper
-                .apply_fap_snapshot(region_id, peer_id)
+                .apply_fap_snapshot(region_id, peer_id, false)
             {
                 // This is not a fap snapshot.
                 info!("fast path: this is not fap snapshot {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;

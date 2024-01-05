@@ -13,6 +13,7 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,
     peer_id: u64,
+    assert_exist: u8,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let new_region = match (*store.engine_store_server)
