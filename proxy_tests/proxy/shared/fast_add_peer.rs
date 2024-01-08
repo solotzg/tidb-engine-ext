@@ -70,12 +70,10 @@ fn test_prehandle_snapshot_after_restart() {
 
     pd_client.must_add_peer(1, new_learner_peer(3, 3003));
 
-    // Reject all raft log, to test snapshot result.
-    cluster.add_send_filter(CloneFilterFactory(
-        RegionPacketFilter::new(1, 3)
-            .msg_type(MessageType::MsgSnapshot)
-            .direction(Direction::Both),
-    ));
+    // Delay, so the tikv snapshot comes after fap snapshot in pending_applies
+    // queue.
+    fail::cfg("on_ob_pre_handle_snapshot_s3", "pause").unwrap();
+
     // Wait fap phase1 finished.
     let mut iter = 0;
     loop {
@@ -93,10 +91,33 @@ fn test_prehandle_snapshot_after_restart() {
         assert!(iter <= 5);
         iter += 1;
     }
-    stop_tiflash_node(&mut cluster, 3);
-    cluster.clear_send_filters();
-    restart_tiflash_node(&mut cluster, 3);
+    // Mock restart.
+    iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
+        ffi.engine_store_server
+            .engines
+            .as_ref()
+            .unwrap()
+            .kv
+            .proxy_ext
+            .cached_region_info_manager
+            .as_ref()
+            .unwrap()
+            .clear();
+        assert!(
+            !ffi.engine_store_server
+                .engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref()
+                .unwrap()
+                .contains(1)
+        );
+    });
 
+    fail::remove("on_ob_pre_handle_snapshot_s3");
     fail::cfg("fap_core_no_prehandle", "panic").unwrap();
     iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
         assert_eq!(
@@ -153,7 +174,7 @@ fn test_overlap_last_apply_old() {
     // Use an invalid store id to make FAP fallback.
     fail::cfg("fap_mock_add_peer_from_id", "return(4)").unwrap();
 
-    // Delay, so the legacy snapshot comes after fap snapshot in pending_applies
+    // Delay, so the tikv snapshot comes after fap snapshot in pending_applies
     // queue.
     fail::cfg("on_ob_pre_handle_snapshot_s3", "pause").unwrap();
     pd_client.must_add_peer(1, new_learner_peer(3, 3003));
@@ -259,12 +280,12 @@ fn test_overlap_last_apply_old() {
     cluster.shutdown();
 }
 
-// If a legacy snapshot is applied between fn_fast_add_peer and
+// If a tikv snapshot is applied between fn_fast_add_peer and
 // build_and_send_snapshot, it will override the previous snapshot's data, which
 // is actually newer.
 // It if origianlly https://github.com/pingcap/tidb-engine-ext/pull/359 before two-stage fap.
 #[test]
-fn test_overlap_apply_legacy_in_the_middle() {
+fn test_overlap_apply_tikv_snap_in_the_middle() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
@@ -373,7 +394,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
     );
 
     // Now the FAP snapshot will stuck at fap_ffi_pause_after_fap_call,
-    // We will make the legacy one apply.
+    // We will make the tikv snapshot apply.
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("fap_on_msg_snapshot_1_3003");
 
@@ -387,7 +408,7 @@ fn test_overlap_apply_legacy_in_the_middle() {
         Some(new_one_1000_k1.get_id()),
         true,
     );
-    // Make FAP continue after the legacy snapshot is applied.
+    // Make FAP continue after the tikv snapshot is applied.
     fail::remove("fap_ffi_pause_after_fap_call");
     std::thread::sleep(std::time::Duration::from_millis(2000));
     check_key_ex(

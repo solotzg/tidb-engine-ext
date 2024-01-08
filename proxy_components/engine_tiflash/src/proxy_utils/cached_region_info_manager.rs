@@ -80,6 +80,18 @@ impl CachedRegionInfoManager {
         Self::hash_u64(id) as usize & (CACHED_REGION_INFO_SLOT_COUNT - 1)
     }
 
+    pub fn contains(&self, region_id: u64) -> bool {
+        let slot_id = Self::slot_index(region_id);
+        let guard = match self.cached_region_info.get(slot_id).unwrap().read() {
+            Ok(g) => g,
+            Err(_) => panic!("contains poisoned!"),
+        };
+        if let Some(_) = guard.get(&region_id) {
+            return true;
+        }
+        false
+    }
+
     pub fn access_cached_region_info_mut<F: FnMut(MapEntry<u64, Arc<CachedRegionInfo>>)>(
         &self,
         region_id: u64,

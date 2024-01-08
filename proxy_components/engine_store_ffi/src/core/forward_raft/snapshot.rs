@@ -153,16 +153,22 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         }
                     }
                     MapEntry::Vacant(_) => {
-                        if !self.is_initialized(region_id) {
-                            // If there is an fap snapshot, and we'll skip here after restared.
-                            // Otherwise, there could be redunduant prehandling.
-                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
-                                info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
-                                    "snap_key" => ?snap_key,
-                                    "region_id" => region_id,
-                                );
-                                should_skip = true;
-                            }
+                        // If there is an fap snapshot, and we'll skip here after restared.
+                        // Otherwise, there could be redunduant prehandling.
+                        let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
+                        if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
+                            info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                            );
+                            should_skip = true;
+                        } else {
+                            debug!("fast path: prehandle first snapshot no skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                                "state" => ?pstate,
+                                "inited" => false,
+                            );
                         }
                     }
                 },
@@ -322,7 +328,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         #[allow(clippy::collapsible_if)]
         if should_check_fap_snapshot {
             let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
-            let mut restarted = false;
             if self
                 .get_cached_manager()
                 .access_cached_region_info_mut(
@@ -330,20 +335,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                         MapEntry::Occupied(o) => {
                             maybe_cached_info = Some(o.get().clone());
-                            restarted = false;
                         }
-                        MapEntry::Vacant(v) => {
+                        MapEntry::Vacant(_) => {
                             // It could be an fap snapshot after restart.
-                            let c = Arc::new(CachedRegionInfo::default());
-                            let has_already_inited = self.is_initialized(region_id);
-                            if has_already_inited {
-                                // Must not be a fap snapshot then.
-                                c.inited_or_fallback.store(true, Ordering::SeqCst);
-                            }
-                            // Could be either fap or tikv snapshot.
-                            v.insert(c.clone());
-                            maybe_cached_info = Some(c);
-                            restarted = true;
+                            // However, the region state is initialized.
+                            assert!(self.is_initialized(region_id));
                         }
                     },
                 )
@@ -356,11 +352,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 Some(o) => {
                     let is_first_snapshot = !o.inited_or_fallback.load(Ordering::SeqCst);
                     if is_first_snapshot {
-                        return try_apply_fap_snapshot(o, restarted);
+                        return try_apply_fap_snapshot(o, false);
                     }
                 }
                 None => {
-                    fatal!("can't access CachedRegionInfo region_id={}", region_id);
+                    let o = Arc::new(CachedRegionInfo::default());
+                    return try_apply_fap_snapshot(o, true);
                 }
             }
         }
