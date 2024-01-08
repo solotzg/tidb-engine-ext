@@ -45,6 +45,76 @@ fn basic_fast_add_peer() {
     // fail::remove("before_tiflash_check_double_write");
 }
 
+#[test]
+fn test_prehandle_snapshot_after_restart() {
+    let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
+    pd_client.disable_default_operator();
+    disable_auto_gen_compact_log(&mut cluster);
+    fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+    tikv_util::set_panic_hook(true, "./");
+    // Can always apply snapshot immediately
+    fail::cfg("apply_on_handle_snapshot_sync", "return(true)").unwrap();
+    // Otherwise will panic with `assert_eq!(apply_state, last_applied_state)`.
+    fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
+
+    let _ = cluster.run_conf_change();
+    cluster.must_put(b"k1", b"v1");
+
+    fail::cfg("fap_mock_add_peer_from_id", "return(4)").unwrap();
+    pd_client.must_add_peer(1, new_learner_peer(2, 2002));
+    cluster.must_put(b"k3", b"v3");
+    check_key(&cluster, b"k1", b"v1", None, Some(true), Some(vec![2]));
+
+    fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+
+    pd_client.must_add_peer(1, new_learner_peer(3, 3003));
+
+    // Reject all raft log, to test snapshot result.
+    cluster.add_send_filter(CloneFilterFactory(
+        RegionPacketFilter::new(1, 3)
+            .msg_type(MessageType::MsgSnapshot)
+            .direction(Direction::Both),
+    ));
+    // Wait fap phase1 finished.
+    let mut iter = 0;
+    loop {
+        let mut res = false;
+        iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
+            res = ffi
+                .engine_store_server_helper
+                .query_fap_snapshot_state(1, 3003)
+                == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted;
+        });
+        if res {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        assert!(iter <= 5);
+        iter += 1;
+    }
+    stop_tiflash_node(&mut cluster, 3);
+    cluster.clear_send_filters();
+    restart_tiflash_node(&mut cluster, 3);
+
+    fail::cfg("fap_core_no_prehandle", "panic").unwrap();
+    iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
+        assert_eq!(
+            ffi.engine_store_server_helper
+                .query_fap_snapshot_state(1, 3003),
+            proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted
+        );
+    });
+
+    check_key(&cluster, b"k3", b"v3", None, Some(true), Some(vec![3]));
+
+    fail::remove("post_apply_snapshot_allow_no_unips");
+    fail::remove("apply_on_handle_snapshot_sync");
+    fail::remove("on_pre_write_apply_state");
+    fail::remove("fap_mock_add_peer_from_id");
+    fail::remove("fap_core_no_prehandle");
+}
+
 // The idea is:
 // - old_one is replicated to store 3 as a normal raft snapshot. It has the
 //   original wider range.

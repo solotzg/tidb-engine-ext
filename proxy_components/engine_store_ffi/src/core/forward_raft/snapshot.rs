@@ -175,6 +175,9 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return;
         }
 
+        fail::fail_point!("fap_core_no_prehandle", |_| {
+            return;
+        });
         match self.apply_snap_pool.as_ref() {
             Some(p) => {
                 let (sender, receiver) = mpsc::channel();
