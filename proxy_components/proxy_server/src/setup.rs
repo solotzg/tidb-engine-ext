@@ -89,8 +89,10 @@ pub fn overwrite_config_with_cmd_args(
     }
 
     // About `flash.proxy.advertise-engine-addr` (on TiFlash's side):
-    // 1. If `flash.proxy.server.engine-addr` is not set, use `flash.service_addr` as `engine-addr`.
-    // 2. If `flash.proxy.server.engine-addr` is set, use `flash.proxy.server.engine-addr` as `advertise-engine-addr`.
+    // 1. If `flash.proxy.server.engine-addr` is not set, use `flash.service_addr`
+    // as `engine-addr`. 
+    // 2. If `flash.proxy.server.engine-addr` is set, use
+    // `flash.proxy.server.engine-addr` as `advertise-engine-addr`.
     if let Some(engine_addr) = matches.value_of("advertise-engine-addr") {
         proxy_config.server.engine_addr = engine_addr.to_owned();
     }
