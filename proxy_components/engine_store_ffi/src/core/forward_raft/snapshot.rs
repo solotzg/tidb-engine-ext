@@ -157,7 +157,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             // If there is an fap snapshot, and we'll skip here after restared.
                             // Otherwise, there could be redunduant prehandling.
                             if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
-                                info!("fast path: prehandle first snapshot after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
                                     "snap_key" => ?snap_key,
                                     "region_id" => region_id,
                                 );
@@ -258,8 +258,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         snap_key: &store::SnapKey,
     ) -> bool {
         let region_id = ob_region.get_id();
-        let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restart: bool| {
-            info!("fast path: start applied first snapshot {}:{} {}", self.store_id, region_id, peer_id;
+        let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restarted: bool| {
+            info!("fast path: start applying first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
             );
@@ -274,7 +274,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 .unwrap();
             if !self
                 .engine_store_server_helper
-                .apply_fap_snapshot(region_id, peer_id, false)
+                .apply_fap_snapshot(region_id, peer_id, !restarted)
             {
                 // This is not a fap snapshot.
                 info!("fast path: this is not fap snapshot {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
@@ -283,7 +283,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     "cost_snapshot" => current.as_millis() - last,
                     "cost_total" => current.as_millis() - total,
                     "current_enabled" => current_enabled,
-                    "from_restart" => restart,
+                    "from_restart" => restarted,
                 );
                 c.snapshot_inflight.store(0, Ordering::SeqCst);
                 c.fast_add_peer_start.store(0, Ordering::SeqCst);
@@ -296,7 +296,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "cost_snapshot" => current.as_millis() - last,
                 "cost_total" => current.as_millis() - total,
                 "current_enabled" => current_enabled,
-                "from_restart" => restart,
+                "from_restart" => restarted,
             );
             c.snapshot_inflight.store(0, Ordering::SeqCst);
             c.fast_add_peer_start.store(0, Ordering::SeqCst);
@@ -304,6 +304,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             true
         };
 
+        // We should handle fap snapshot even if enable_fast_add_peer is false.
+        // However, if enable_unips, by no means can we handle fap snapshot.
         #[allow(unused_mut)]
         let mut should_check_fap_snapshot = self.packed_envs.engine_store_cfg.enable_unips;
         #[allow(clippy::redundant_closure_call)]
@@ -313,12 +315,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 should_check_fap_snapshot = true;
             });
         })();
-        // We should handle fap snapshot even if enable_fast_add_peer is false.
-        // However, if enable_unips, by no means can we handle fap snapshot.
+
         #[allow(clippy::collapsible_if)]
         if should_check_fap_snapshot {
             let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
-            let mut restart = false;
+            let mut restarted = false;
             if self
                 .get_cached_manager()
                 .access_cached_region_info_mut(
@@ -326,18 +327,20 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                         MapEntry::Occupied(o) => {
                             maybe_cached_info = Some(o.get().clone());
-                            restart = false;
+                            restarted = false;
                         }
                         MapEntry::Vacant(v) => {
                             // It could be an fap snapshot after restart.
                             let c = Arc::new(CachedRegionInfo::default());
                             let has_already_inited = self.is_initialized(region_id);
                             if has_already_inited {
+                                // Must not be a fap snapshot then.
                                 c.inited_or_fallback.store(true, Ordering::SeqCst);
                             }
+                            // Could be either fap or tikv snapshot.
                             v.insert(c.clone());
                             maybe_cached_info = Some(c);
-                            restart = true;
+                            restarted = true;
                         }
                     },
                 )
@@ -350,7 +353,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 Some(o) => {
                     let is_first_snapshot = !o.inited_or_fallback.load(Ordering::SeqCst);
                     if is_first_snapshot {
-                        return try_apply_fap_snapshot(o, restart);
+                        return try_apply_fap_snapshot(o, restarted);
                     }
                 }
                 None => {
@@ -372,6 +375,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return;
         });
         let region_id = ob_region.get_id();
+        if self.post_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
+            // Already handled as an fap snapshot.
+            return;
+        }
+
         info!("post apply snapshot";
             "peer_id" => ?peer_id,
             "snap_key" => ?snap_key,
@@ -379,11 +387,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "region" => ?ob_region,
             "pending" => self.engine.proxy_ext.pending_applies_count.load(Ordering::SeqCst),
         );
-
-        if self.post_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
-            // Already handled as an fap snapshot.
-            return;
-        }
 
         let snap = match snap {
             None => return,

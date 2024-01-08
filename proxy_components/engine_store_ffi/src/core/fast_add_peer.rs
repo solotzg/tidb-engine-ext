@@ -95,7 +95,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         if elapsed >= TRACE_SLOW_MILLIS {
                             // After 2 phase FAP, canceling FAP also need to delete written
                             // segments, so we move the canceling mechanism to TiFlash instead of
-                            // introducing another FFO interface.
+                            // introducing another FFI interface.
                             let need_fallback = if fallback_millis == 0 {
                                 false
                             } else {
