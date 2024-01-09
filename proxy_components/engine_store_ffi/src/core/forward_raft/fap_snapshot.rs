@@ -49,10 +49,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         }
                     }
                     MapEntry::Vacant(_) => {
-                        // If there is an fap snapshot, and we'll skip here after restared.
-                        // Otherwise, there could be redunduant prehandling.
+                        // It won't go here because cached region info is inited after restart and on the first fap message.
+                        // However, there are some corner cases like an fap snapshot after a tikv snapshot.
                         let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
                         if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
+                            // We have a fap snapshot now. skip
                             info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
@@ -168,12 +169,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             }
                         }
                         MapEntry::Vacant(_) => {
+                            // It won't go here because cached region info is inited after restart and on the first fap message.
+                            // However, there are some corner cases like an fap snapshot after a tikv snapshot.
                             debug!("fast path: check should apply fap snapshot noexist {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
                             );
-                            // It could be an fap snapshot after restart.
-                            // However, the region state is initialized.
                             assert!(self.is_initialized(region_id));
                             let o = Arc::new(CachedRegionInfo::default());
                             applied_fap = try_apply_fap_snapshot(o, true);

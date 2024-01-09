@@ -197,7 +197,7 @@ fn simple_fast_add_peer(
         }
         PauseType::SendFakeSnapshot => {
             // Wait FALLBACK_MILLIS
-            std::thread::sleep(std::time::Duration::from_millis(3000));
+            std::thread::sleep(std::time::Duration::from_millis(2000));
             fail::remove("fap_core_fake_send");
             std::thread::sleep(std::time::Duration::from_millis(2000));
         }
@@ -239,6 +239,7 @@ fn simple_fast_add_peer(
             find_peer_by_id(states.in_disk_region_state.get_region(), 3).is_some()
         },
     );
+
     iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
         assert_eq!(
             ffi.engine_store_server_helper
