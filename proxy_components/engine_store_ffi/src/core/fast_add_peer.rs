@@ -40,22 +40,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
     pub fn fap_fallback_to_slow(&self, region_id: u64) {
         self.engine_store_server_helper
             .clear_fap_snapshot(region_id);
-        let mut wb = self.raft_engine.log_batch(2);
-        let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
-        let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
-        let _ = self.raft_engine.consume(&mut wb, true);
         let cached_manager = self.get_cached_manager();
         cached_manager.fallback_to_slow_path(region_id);
-    }
-
-    pub fn fap_fallback_to_slow_with_lock(&self, region_id: u64, o: Arc<CachedRegionInfo>) {
-        self.engine_store_server_helper
-            .clear_fap_snapshot(region_id);
-        let mut wb = self.raft_engine.log_batch(2);
-        let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
-        let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
-        let _ = self.raft_engine.consume(&mut wb, true);
-        o.inited_or_fallback.store(true, Ordering::SeqCst);
     }
 
     // Returns whether we need to ignore this message and run fast path instead.
@@ -98,7 +84,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         #[cfg(any(test, feature = "testexport"))]
                         const TRACE_SLOW_MILLIS: u128 = 0;
                         #[cfg(any(test, feature = "testexport"))]
-                        const FALLBACK_MILLIS: u128 = 0;
+                        const FALLBACK_MILLIS: u128 = 1000 * 2;
                         #[cfg(not(any(test, feature = "testexport")))]
                         const TRACE_SLOW_MILLIS: u128 = 1000 * 60 * 3;
                         #[cfg(not(any(test, feature = "testexport")))]
@@ -142,13 +128,25 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                 // MsgAppend can be handled only when we set
                                 // inited_or_fallback to true,
                                 // so deleting raft logs here brings no race.
-                                self.fap_fallback_to_slow_with_lock(region_id, o.get().clone());
+                                let mut wb = self.raft_engine.log_batch(2);
+                                let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
+                                let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
+                                let _ = self.raft_engine.consume(&mut wb, true);
+                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
                                 is_first = false;
                                 early_skip = false;
                                 return;
                             }
                             // If not timeout, do following checking.
                         }
+                    }
+                    // If a snapshot is sent, we must skip further handling.
+                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                    if last != 0 {
+                        early_skip = true;
+                        // We must return here to avoid changing `inited_or_fallback`.
+                        // Otherwise will cause different value in pre/post_apply_snapshot.
+                        return;
                     }
                     (is_first, has_already_inited) =
                         if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
@@ -170,15 +168,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             // If `inited_or_fallback` is true, we must not do fap.
                             (false, None)
                         };
-                    // If a snapshot is sent, we must skip further handling.
-                    // We have to set value to `is_first` in first.
-                    let snapshot_inflight = o.get().snapshot_inflight.load(Ordering::SeqCst);
-                    if snapshot_inflight != 0 {
-                        early_skip = true;
-                        // We must return here to avoid changing `inited_or_fallback`.
-                        // Otherwise will cause different value in pre/post_apply_snapshot.
-                        return;
-                    }
                     if is_first {
                         // Don't care if the exchange succeeds.
                         let _ = o.get_mut().fast_add_peer_start.compare_exchange(
@@ -192,22 +181,31 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                 }
                 MapEntry::Vacant(v) => {
-                    // Must have handled one `apply_snapshot`, either fap or tikv snapshot.
-                    // Meanwhile, there could be a fap snapshot after restarted.
-                    // Either way, we consider if
                     let has_already_inited = self.is_initialized(region_id);
-                    info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
-                        "to_peer_id" => msg.get_to_peer().get_id(),
-                        "from_peer_id" => msg.get_from_peer().get_id(),
-                        "region_id" => region_id,
-                        "has_already_inited" => has_already_inited,
-                        "inner_msg" => ?inner_msg,
-                    );
-                    let c = CachedRegionInfo::default();
-                    c.fast_add_peer_start
-                        .store(current.as_millis(), Ordering::SeqCst);
-                    v.insert(Arc::new(c));
-                    is_first = true;
+                    if has_already_inited {
+                        debug!("fast path: ongoing {}:{} {}, first message after restart", self.store_id, region_id, new_peer_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                            "region_id" => region_id,
+                            "inner_msg" => ?inner_msg,
+                        );
+                        let c = CachedRegionInfo::default();
+                        c.inited_or_fallback.store(true, Ordering::SeqCst);
+                        c.replicated_or_created.store(true, Ordering::SeqCst);
+                        is_first = false;
+                    } else {
+                        info!("fast path: ongoing {}:{} {}, first message", self.store_id, region_id, new_peer_id;
+                            "to_peer_id" => msg.get_to_peer().get_id(),
+                            "from_peer_id" => msg.get_from_peer().get_id(),
+                            "region_id" => region_id,
+                            "inner_msg" => ?inner_msg,
+                        );
+                        let c = CachedRegionInfo::default();
+                        c.fast_add_peer_start
+                            .store(current.as_millis(), Ordering::SeqCst);
+                        v.insert(Arc::new(c));
+                        is_first = true;
+                    }
                 }
             }
         };
@@ -236,7 +234,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         "is_replicated" => is_replicated,
                         "has_already_inited" => has_already_inited,
                         "is_first" => is_first,
-                        "early_skip" => early_skip,
                 );
             } else {
                 info!("fast path: ongoing {}:{} {}, MsgAppend accepted",
@@ -540,7 +537,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         match self.trans.lock() {
             Ok(mut trans) => match trans.send(response) {
                 Ok(_) => {
-                    debug!("!!!!!!! XXXX");
                     cached_manager
                         .set_snapshot_inflight(region_id, current.as_millis())
                         .unwrap();

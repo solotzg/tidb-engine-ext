@@ -90,9 +90,6 @@ impl ProxyEngineExt {
                         // Do nothing.
                         tikv_util::debug!("can_apply_snapshot no fast path. do normal checking";
                             "region_id" => region_id,
-                            "is_timeout" => is_timeout,
-                            "queue_size" => queue_size,
-                            "pool_cap" => self.pool_capacity,
                         );
                     }
                     None | Some(false) => {

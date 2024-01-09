@@ -85,7 +85,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
             MapEntry::Occupied(mut o) => {
                 // Note the region info may be registered by maybe_fast_path_tick
-                info!("{}{}:{} {}, peer role changed",
+                info!("{}{}:{} {}, peer created again",
                     if is_fap_enabled {"fast path: ongoing "} else {" "},
                     self.store_id, region_id, 0;
                     "region_id" => region_id,
@@ -108,10 +108,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     "role" => ?r.state,
                     "is_replicated" => is_replicated,
                 );
-                let c = CachedRegionInfo::default();
-                c.replicated_or_created.store(true, Ordering::SeqCst);
-                c.inited_or_fallback.store(r.initialized, Ordering::SeqCst);
-                v.insert(Arc::new(c));
+                if is_replicated {
+                    let c = CachedRegionInfo::default();
+                    c.replicated_or_created.store(true, Ordering::SeqCst);
+                    v.insert(Arc::new(c));
+                }
             }
         };
         // TODO remove unwrap
