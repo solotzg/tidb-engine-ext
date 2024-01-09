@@ -2,6 +2,73 @@
 use crate::utils::v1::*;
 
 #[test]
+fn test_restart_meta_info() {
+    tikv_util::set_panic_hook(true, "./");
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable auto generate peer.
+    pd_client.disable_default_operator();
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k0", b"v0");
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
+
+    stop_tiflash_node(&mut cluster, 1);
+    restart_tiflash_node(&mut cluster, 1);
+
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![1, 2]),
+        &mut |_, ffi: &mut FFIHelperSet| {
+            let r = ffi
+                .engine_store_server
+                .engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref();
+            assert!(r.is_some());
+            assert!(r.unwrap().contains(1));
+        },
+    );
+
+    cluster.must_put(b"k3", b"v3");
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1, 2]));
+
+    cluster.must_split(&cluster.get_region(b"k1"), b"k2");
+    let r1_id = cluster.get_region_id(b"k1");
+    let r3_id = cluster.get_region_id(b"k3");
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![1, 2]),
+        &mut |_, ffi: &mut FFIHelperSet| {
+            let r = ffi
+                .engine_store_server
+                .engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref();
+            assert!(r.is_some());
+            assert!(r.unwrap().contains(r1_id));
+            assert!(r.unwrap().contains(r3_id));
+        },
+    );
+
+    cluster.shutdown();
+    fail::remove("fap_core_no_fallback");
+    fail::remove("fap_mock_fake_snapshot");
+}
+
+#[test]
 fn test_prehandle_snapshot_after_restart() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();

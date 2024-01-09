@@ -26,6 +26,55 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             .kvstore_region_exist(region_id)
     }
 
+    pub fn pre_apply_snapshot_for_fap_snapshot(
+        &self,
+        ob_region: &Region,
+        peer_id: u64,
+        snap_key: &store::SnapKey,
+    ) -> bool {
+        let region_id = ob_region.get_id();
+        let mut should_skip = false;
+        #[allow(clippy::collapsible_if)]
+        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
+            if self.get_cached_manager().access_cached_region_info_mut(
+                region_id,
+                |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                    MapEntry::Occupied(o) => {
+                        if self.is_first_snapshot(region_id, Some(o.get().clone())) {
+                            info!("fast path: prehandle first snapshot {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                            );
+                            should_skip = true;
+                        }
+                    }
+                    MapEntry::Vacant(_) => {
+                        // If there is an fap snapshot, and we'll skip here after restared.
+                        // Otherwise, there could be redunduant prehandling.
+                        let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
+                        if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
+                            info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                            );
+                            should_skip = true;
+                        } else {
+                            info!("fast path: prehandle first snapshot no skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                                "state" => ?pstate,
+                                "inited" => false,
+                            );
+                        }
+                    }
+                },
+            ).is_err() {
+                fatal!("post_apply_snapshot poisoned")
+            };
+        }
+        should_skip
+    }
+
     pub fn post_apply_snapshot_for_fap_snapshot(
         &self,
         ob_region: &Region,
@@ -97,6 +146,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             });
         })();
 
+        let mut applied_fap = false;
         #[allow(clippy::collapsible_if)]
         if should_check_fap_snapshot {
             let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
@@ -107,11 +157,16 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                         MapEntry::Occupied(o) => {
                             maybe_cached_info = Some(o.get().clone());
+                            if self.is_first_snapshot(region_id, Some(o.get().clone())) {
+                                applied_fap = try_apply_fap_snapshot(o.get().clone(), false);
+                            }
                         }
                         MapEntry::Vacant(_) => {
                             // It could be an fap snapshot after restart.
                             // However, the region state is initialized.
                             assert!(self.is_initialized(region_id));
+                            let o = Arc::new(CachedRegionInfo::default());
+                            applied_fap = try_apply_fap_snapshot(o, true);
                         }
                     },
                 )
@@ -119,19 +174,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             {
                 fatal!("poisoned");
             }
-
-            match maybe_cached_info {
-                Some(o) => {
-                    if self.is_first_snapshot(region_id, Some(o.clone())) {
-                        return try_apply_fap_snapshot(o, false);
-                    }
-                }
-                None => {
-                    let o = Arc::new(CachedRegionInfo::default());
-                    return try_apply_fap_snapshot(o, true);
-                }
-            }
         }
-        false
+        applied_fap
     }
 }

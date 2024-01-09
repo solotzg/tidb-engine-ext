@@ -108,11 +108,10 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     "role" => ?r.state,
                     "is_replicated" => is_replicated,
                 );
-                if is_replicated {
-                    let c = CachedRegionInfo::default();
-                    c.replicated_or_created.store(true, Ordering::SeqCst);
-                    v.insert(Arc::new(c));
-                }
+                let c = CachedRegionInfo::default();
+                c.replicated_or_created.store(true, Ordering::SeqCst);
+                c.inited_or_fallback.store(r.initialized, Ordering::SeqCst);
+                v.insert(Arc::new(c));
             }
         };
         // TODO remove unwrap

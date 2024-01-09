@@ -88,7 +88,7 @@ impl CachedRegionInfoManager {
             Ok(g) => g,
             Err(_) => panic!("contains poisoned!"),
         };
-        if let Some(_) = guard.get(&region_id) {
+        if guard.get(&region_id).is_some() {
             return true;
         }
         false

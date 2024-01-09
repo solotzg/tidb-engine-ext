@@ -40,8 +40,29 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
     pub fn fap_fallback_to_slow(&self, region_id: u64) {
         self.engine_store_server_helper
             .clear_fap_snapshot(region_id);
+        let mut wb = self.raft_engine.log_batch(2);
+        let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
+        let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
+        let _ = self.raft_engine.consume(&mut wb, true);
         let cached_manager = self.get_cached_manager();
         cached_manager.fallback_to_slow_path(region_id);
+    }
+
+    pub fn fap_fallback_to_slow_with_lock(
+        &self,
+        region_id: u64,
+        o: Arc<CachedRegionInfo>,
+        clean_fap_snapshot: bool,
+    ) {
+        if clean_fap_snapshot {
+            self.engine_store_server_helper
+                .clear_fap_snapshot(region_id);
+        }
+        let mut wb = self.raft_engine.log_batch(2);
+        let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
+        let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
+        let _ = self.raft_engine.consume(&mut wb, true);
+        o.inited_or_fallback.store(true, Ordering::SeqCst);
     }
 
     // Returns whether we need to ignore this message and run fast path instead.
@@ -124,15 +145,16 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                     "do_fallback" => do_fallback,
                             );
                             if do_fallback {
-                                // Safety
+                                // # Safety
                                 // MsgAppend can be handled only when we set
                                 // inited_or_fallback to true,
                                 // so deleting raft logs here brings no race.
-                                let mut wb = self.raft_engine.log_batch(2);
-                                let raft_state = kvproto::raft_serverpb::RaftLocalState::default();
-                                let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
-                                let _ = self.raft_engine.consume(&mut wb, true);
-                                o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                                // We don't clean fap snapshot, since it may being handled.
+                                self.fap_fallback_to_slow_with_lock(
+                                    region_id,
+                                    o.get_mut().clone(),
+                                    false,
+                                );
                                 is_first = false;
                                 early_skip = false;
                                 return;
