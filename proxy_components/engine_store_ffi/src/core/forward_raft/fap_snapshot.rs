@@ -157,11 +157,21 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                         MapEntry::Occupied(o) => {
                             maybe_cached_info = Some(o.get().clone());
+                            debug!("fast path: check should apply fap snapshot {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                                "inited_or_fallback" => o.get().inited_or_fallback.load(Ordering::SeqCst),
+                                "snapshot_inflight" => o.get().snapshot_inflight.load(Ordering::SeqCst)
+                            );
                             if self.is_first_snapshot(region_id, Some(o.get().clone())) {
                                 applied_fap = try_apply_fap_snapshot(o.get().clone(), false);
                             }
                         }
                         MapEntry::Vacant(_) => {
+                            debug!("fast path: check should apply fap snapshot noexist {}:{} {}", self.store_id, region_id, peer_id;
+                                "snap_key" => ?snap_key,
+                                "region_id" => region_id,
+                            );
                             // It could be an fap snapshot after restart.
                             // However, the region state is initialized.
                             assert!(self.is_initialized(region_id));

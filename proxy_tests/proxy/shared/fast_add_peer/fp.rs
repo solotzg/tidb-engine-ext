@@ -3,6 +3,7 @@ use crate::utils::v1::*;
 
 #[test]
 fn test_restart_meta_info() {
+    fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
     tikv_util::set_panic_hook(true, "./");
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
@@ -64,6 +65,7 @@ fn test_restart_meta_info() {
     );
 
     cluster.shutdown();
+    fail::remove("post_apply_snapshot_allow_no_unips");
     fail::remove("fap_core_no_fallback");
     fail::remove("fap_mock_fake_snapshot");
 }
