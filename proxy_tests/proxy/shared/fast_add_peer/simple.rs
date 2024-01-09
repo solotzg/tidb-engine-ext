@@ -135,8 +135,9 @@ fn simple_fast_add_peer(
             fail::cfg("on_can_apply_snapshot", "return(false)").unwrap()
         }
         PauseType::SendFakeSnapshot => {
+            // Don't actually send snapshot in `build_and_send_snapshot`.
             fail::cfg("fap_core_fake_send", "return(1)").unwrap();
-            // If we fake send snapshot, then fast path will certainly fail.
+            // If we fake send snapshot, the fast path will certainly fail.
             // Then we will timeout in FALLBACK_MILLIS and go to slow path.
         }
         _ => (),

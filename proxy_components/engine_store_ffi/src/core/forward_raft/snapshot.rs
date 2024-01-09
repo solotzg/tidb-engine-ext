@@ -136,47 +136,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return;
         });
 
-        let mut should_skip = false;
-        #[allow(clippy::collapsible_if)]
-        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
-            if self.get_cached_manager().access_cached_region_info_mut(
-                region_id,
-                |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                    MapEntry::Occupied(o) => {
-                        if self.is_first_snapshot(region_id, Some(o.get().clone())) {
-                            info!("fast path: prehandle first snapshot {}:{} {}", self.store_id, region_id, peer_id;
-                                "snap_key" => ?snap_key,
-                                "region_id" => region_id,
-                            );
-                            should_skip = true;
-                        }
-                    }
-                    MapEntry::Vacant(_) => {
-                        // If there is an fap snapshot, and we'll skip here after restared.
-                        // Otherwise, there could be redunduant prehandling.
-                        let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
-                        if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
-                            info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
-                                "snap_key" => ?snap_key,
-                                "region_id" => region_id,
-                            );
-                            should_skip = true;
-                        } else {
-                            debug!("fast path: prehandle first snapshot no skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
-                                "snap_key" => ?snap_key,
-                                "region_id" => region_id,
-                                "state" => ?pstate,
-                                "inited" => false,
-                            );
-                        }
-                    }
-                },
-            ).is_err() {
-                fatal!("post_apply_snapshot poisoned")
-            };
-        }
-
-        if should_skip {
+        if self.pre_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
             return;
         }
 

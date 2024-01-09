@@ -300,10 +300,12 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     );
 
     // k1 was in old region, but reassigned to new region then.
+    // Change k1's value to v13.
     cluster.must_put(b"k1", b"v13");
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
     // Prepare a peer for FAP.
+    debug!("=== add peer 2003 ===");
     pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(2, 2003));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
@@ -317,7 +319,9 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     // Wait for conf change.
     fail::cfg("fap_ffi_pause", "pause").unwrap();
     fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+    debug!("=== add peer 3001 ===");
     // FAP will ingest data, but not finish applying snapshot due to failpoint.
+    // 3001 will be created from 2003, with k1=v13.
     pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 3001));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
@@ -329,6 +333,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
+    debug!("=== peer 3001 pause send snap ===");
     std::thread::sleep(std::time::Duration::from_millis(500));
     fail::remove("fap_ffi_pause");
 
@@ -365,7 +370,9 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
         true,
     );
     // Make FAP continue after the tikv snapshot is applied.
+    // It will send a empty snapshot to init 3001.
     fail::remove("fap_ffi_pause_after_fap_call");
+    debug!("=== peer 3001 allow send snap ===");
     std::thread::sleep(std::time::Duration::from_millis(2000));
     check_key_ex(
         &cluster,
@@ -383,6 +390,73 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     fail::remove("apply_on_handle_snapshot_sync");
     fail::remove("on_pre_write_apply_state");
     cluster.shutdown();
+}
+
+#[test]
+fn test_restart_meta_info() {
+    tikv_util::set_panic_hook(true, "./");
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable auto generate peer.
+    pd_client.disable_default_operator();
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k0", b"v0");
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    cluster.must_put(b"k1", b"v1");
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
+
+    stop_tiflash_node(&mut cluster, 1);
+    restart_tiflash_node(&mut cluster, 1);
+
+    check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1, 2]));
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![1, 2]),
+        &mut |_, ffi: &mut FFIHelperSet| {
+            let r = ffi
+                .engine_store_server
+                .engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref();
+            assert!(r.is_some());
+            assert!(r.unwrap().contains(1));
+        },
+    );
+
+    cluster.must_put(b"k3", b"v3");
+    check_key(&cluster, b"k3", b"v3", Some(true), None, Some(vec![1, 2]));
+
+    cluster.must_split(&cluster.get_region(b"k1"), b"k2");
+    let r1_id = cluster.get_region_id(b"k1");
+    let r3_id = cluster.get_region_id(b"k3");
+    iter_ffi_helpers(
+        &cluster,
+        Some(vec![1, 2]),
+        &mut |_, ffi: &mut FFIHelperSet| {
+            let r = ffi
+                .engine_store_server
+                .engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref();
+            assert!(r.is_some());
+            assert!(r.unwrap().contains(r1_id));
+            assert!(r.unwrap().contains(r3_id));
+        },
+    );
+
+    cluster.shutdown();
+    fail::remove("fap_core_no_fallback");
+    fail::remove("fap_mock_fake_snapshot");
 }
 
 // If the peer is initialized, it will not use fap to catch up.
