@@ -448,7 +448,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
         Some(new_one_1000_k1.get_id()),
         true,
     );
-    
+
     fail::remove("fap_core_fallback_millis");
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("on_can_apply_snapshot");

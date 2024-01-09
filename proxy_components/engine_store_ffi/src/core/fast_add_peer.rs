@@ -65,6 +65,15 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         o.inited_or_fallback.store(true, Ordering::SeqCst);
     }
 
+    pub fn format_msg(inner_msg: &eraftpb::Message) -> String {
+        format!(
+            "(type:{:?} term:{} index:{})",
+            inner_msg.get_msg_type(),
+            inner_msg.get_term(),
+            inner_msg.get_index()
+        )
+    }
+
     // Returns whether we need to ignore this message and run fast path instead.
     pub fn maybe_fast_path_tick(&self, msg: &RaftMessage) -> bool {
         if !self.packed_envs.engine_store_cfg.enable_fast_add_peer {
@@ -135,7 +144,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                     "to_peer_id" => msg.get_to_peer().get_id(),
                                     "from_peer_id" => msg.get_from_peer().get_id(),
                                     "region_id" => region_id,
-                                    "inner_msg" => ?inner_msg,
+                                    "inner_msg" => Self::format_msg(inner_msg),
                                     "is_replicated" => is_replicated,
                                     "has_already_inited" => has_already_inited,
                                     "inited_or_fallback" => o.get().inited_or_fallback.load(Ordering::SeqCst),
@@ -209,7 +218,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
                             "region_id" => region_id,
-                            "inner_msg" => ?inner_msg,
+                            "inner_msg" => Self::format_msg(inner_msg),
                         );
                         let c = CachedRegionInfo::default();
                         c.inited_or_fallback.store(true, Ordering::SeqCst);
@@ -220,7 +229,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             "to_peer_id" => msg.get_to_peer().get_id(),
                             "from_peer_id" => msg.get_from_peer().get_id(),
                             "region_id" => region_id,
-                            "inner_msg" => ?inner_msg,
+                            "inner_msg" => Self::format_msg(inner_msg),
                         );
                         let c = CachedRegionInfo::default();
                         c.fast_add_peer_start
@@ -252,7 +261,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         "to_peer_id" => msg.get_to_peer().get_id(),
                         "from_peer_id" => msg.get_from_peer().get_id(),
                         "region_id" => region_id,
-                        "inner_msg" => ?inner_msg,
+                        "inner_msg" => Self::format_msg(inner_msg),
                         "is_replicated" => is_replicated,
                         "has_already_inited" => has_already_inited,
                         "is_first" => is_first,
@@ -263,7 +272,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         "to_peer_id" => msg.get_to_peer().get_id(),
                         "from_peer_id" => msg.get_from_peer().get_id(),
                         "region_id" => region_id,
-                        "inner_msg" => ?inner_msg,
+                        "inner_msg" => Self::format_msg(inner_msg),
                         "is_replicated" => is_replicated,
                         "has_already_inited" => has_already_inited,
                         "is_first" => is_first,
@@ -289,7 +298,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "to_peer_id" => msg.get_to_peer().get_id(),
                 "from_peer_id" => msg.get_from_peer().get_id(),
                 "region_id" => region_id,
-                "inner_msg" => ?inner_msg,
+                "inner_msg" => Self::format_msg(inner_msg),
             );
             return true;
         }
@@ -507,7 +516,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 // Create fake cf file.
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
-                path.set_extension("sst");
+                path.set_extension("empty.sst");
                 // Something like `${prefix}/gen_1_6_15_write.sst`
                 let mut f = std::fs::File::create(path.as_path())?;
                 f.flush()?;
@@ -537,6 +546,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             pb_snapshot_metadata.set_index(key.idx);
             pb_snapshot_metadata.set_term(key.term);
         }
+
+        debug!(
+            "pb_snapshot_data {:?} pb_snapshot_metadata {:?}",
+            pb_snapshot_data, pb_snapshot_metadata
+        );
 
         pb_snapshot.set_data(pb_snapshot_data.write_to_bytes().unwrap().into());
 
