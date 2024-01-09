@@ -1,5 +1,10 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use crate::utils::v1::*;
+use engine_tiflash::CachedRegionInfo;
+
+use std::{
+    collections::hash_map::Entry as MapEntry
+};
 
 #[test]
 fn test_restart_meta_info() {
@@ -70,8 +75,7 @@ fn test_restart_meta_info() {
     fail::remove("fap_mock_fake_snapshot");
 }
 
-#[test]
-fn test_prehandle_snapshot_after_restart() {
+fn prehandle_snapshot_after_restart(kind: u64) {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
@@ -116,20 +120,10 @@ fn test_prehandle_snapshot_after_restart() {
         assert!(iter <= 5);
         iter += 1;
     }
-    // Mock restart.
+    // Mock cached region info manager is cleared.
     iter_ffi_helpers(&cluster, Some(vec![3]), &mut |_, ffi: &mut FFIHelperSet| {
-        ffi.engine_store_server
-            .engines
-            .as_ref()
-            .unwrap()
-            .kv
-            .proxy_ext
-            .cached_region_info_manager
-            .as_ref()
-            .unwrap()
-            .clear();
-        assert!(
-            !ffi.engine_store_server
+        if kind == 1 {
+            ffi.engine_store_server
                 .engines
                 .as_ref()
                 .unwrap()
@@ -138,8 +132,42 @@ fn test_prehandle_snapshot_after_restart() {
                 .cached_region_info_manager
                 .as_ref()
                 .unwrap()
-                .contains(1)
-        );
+                .clear();
+            assert!(
+                !ffi.engine_store_server
+                    .engines
+                    .as_ref()
+                    .unwrap()
+                    .kv
+                    .proxy_ext
+                    .cached_region_info_manager
+                    .as_ref()
+                    .unwrap()
+                    .contains(1)
+            );
+        } else {
+            ffi.engine_store_server.engines
+                .as_ref()
+                .unwrap()
+                .kv
+                .proxy_ext
+                .cached_region_info_manager
+                .as_ref()
+                .unwrap()
+                .access_cached_region_info_mut(
+                    1,
+                    |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                        MapEntry::Occupied(o) => {
+                            o.get().inited_or_fallback.store(false, Ordering::SeqCst);
+                            o.get().snapshot_inflight.store(0, Ordering::SeqCst);
+                        }
+                        MapEntry::Vacant(_) => {
+                            tikv_util::safe_panic!("panicked");
+                        }
+                    },
+                ).unwrap();
+        }
+
     });
 
     fail::remove("on_ob_pre_handle_snapshot_s3");
@@ -159,6 +187,16 @@ fn test_prehandle_snapshot_after_restart() {
     fail::remove("on_pre_write_apply_state");
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("fap_core_no_prehandle");
+}
+
+#[test]
+fn test_prehandle_snapshot_after_restart_cleaned() {
+    prehandle_snapshot_after_restart(1);
+}
+
+#[test]
+fn test_prehandle_snapshot_after_restart_reset() {
+    prehandle_snapshot_after_restart(2);
 }
 
 // The idea is:

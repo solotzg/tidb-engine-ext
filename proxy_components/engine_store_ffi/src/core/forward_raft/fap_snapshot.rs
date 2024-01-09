@@ -13,16 +13,18 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         cached_info: Option<Arc<CachedRegionInfo>>,
     ) -> bool {
         if let Some(c) = cached_info {
-            // After restarted, inited_or_fallback and snapshot_inflight could both be
-            // cleaned. We must ask TiFlash to check if there is already inited
-            // region peer.
+            // THe fap snapshot inflight must be the first snapshot.
             if (!c.inited_or_fallback.load(Ordering::SeqCst))
                 && c.snapshot_inflight.load(Ordering::SeqCst) != 0
             {
                 return true;
             }
         }
-        self.engine_store_server_helper
+        // After restarted, inited_or_fallback and snapshot_inflight could both be
+        // cleaned. We must ask TiFlash to check if there is already inited
+        // region peer.
+        // It's faster to query kvstore's memory rather than read rocksdb.
+        !self.engine_store_server_helper
             .kvstore_region_exist(region_id)
     }
 
@@ -50,7 +52,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     }
                     MapEntry::Vacant(_) => {
                         // It won't go here because cached region info is inited after restart and on the first fap message.
-                        // However, there are some corner cases like an fap snapshot after a tikv snapshot.
                         let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
                         if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
                             // We have a fap snapshot now. skip
@@ -158,20 +159,22 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                         MapEntry::Occupied(o) => {
                             maybe_cached_info = Some(o.get().clone());
+                            let is_first_snapshot = self.is_first_snapshot(region_id, Some(o.get().clone()));
                             debug!("fast path: check should apply fap snapshot {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
                                 "inited_or_fallback" => o.get().inited_or_fallback.load(Ordering::SeqCst),
-                                "snapshot_inflight" => o.get().snapshot_inflight.load(Ordering::SeqCst)
+                                "snapshot_inflight" => o.get().snapshot_inflight.load(Ordering::SeqCst),
+                                "is_first_snapshot" => is_first_snapshot,
                             );
-                            if self.is_first_snapshot(region_id, Some(o.get().clone())) {
+                            if is_first_snapshot {
                                 applied_fap = try_apply_fap_snapshot(o.get().clone(), false);
                             }
+                            // Otherwise, it could not be an fap snapshot.
                         }
                         MapEntry::Vacant(_) => {
                             // It won't go here because cached region info is inited after restart and on the first fap message.
-                            // However, there are some corner cases like an fap snapshot after a tikv snapshot.
-                            debug!("fast path: check should apply fap snapshot noexist {}:{} {}", self.store_id, region_id, peer_id;
+                            info!("fast path: check should apply fap snapshot noexist {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
                             );
