@@ -105,7 +105,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                         #[cfg(any(test, feature = "testexport"))]
                         const TRACE_SLOW_MILLIS: u128 = 0;
                         #[cfg(any(test, feature = "testexport"))]
-                        const FALLBACK_MILLIS: u128 = 1000 * 2;
+                        const FALLBACK_MILLIS: u128 = 0;
                         #[cfg(not(any(test, feature = "testexport")))]
                         const TRACE_SLOW_MILLIS: u128 = 1000 * 60 * 3;
                         #[cfg(not(any(test, feature = "testexport")))]

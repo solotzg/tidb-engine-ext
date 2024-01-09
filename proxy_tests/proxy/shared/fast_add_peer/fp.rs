@@ -312,6 +312,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 3);
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
+    fail::cfg("fap_core_fallback_millis", "return(2000)").unwrap();
     fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
     cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
     cluster.cfg.tikv.raft_store.store_batch_system.pool_size = 4;
@@ -384,6 +385,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     // Wait for conf change.
     fail::cfg("fap_ffi_pause", "pause").unwrap();
     fail::cfg("fap_mock_add_peer_from_id", "return(2)").unwrap();
+    debug!("=== add peer 3001 ===");
     // FAP will ingest data, but not finish applying snapshot due to failpoint.
     pd_client.must_add_peer(new_one_1000_k1.get_id(), new_learner_peer(3, 3001));
     must_wait_until_cond_node(
@@ -396,6 +398,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
     fail::cfg("fap_ffi_pause_after_fap_call", "pause").unwrap();
+    debug!("=== peer 3001 pause send snap ===");
     std::thread::sleep(std::time::Duration::from_millis(500));
     fail::remove("fap_ffi_pause");
 
@@ -433,6 +436,7 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
     );
     // Make FAP continue after the tikv snapshot is applied.
     fail::remove("fap_ffi_pause_after_fap_call");
+    debug!("=== peer 3001 allow send snap ===");
     std::thread::sleep(std::time::Duration::from_millis(2000));
     check_key_ex(
         &cluster,
@@ -444,7 +448,8 @@ fn test_overlap_apply_tikv_snap_in_the_middle() {
         Some(new_one_1000_k1.get_id()),
         true,
     );
-
+    
+    fail::remove("fap_core_fallback_millis");
     fail::remove("fap_mock_add_peer_from_id");
     fail::remove("on_can_apply_snapshot");
     fail::remove("apply_on_handle_snapshot_sync");
