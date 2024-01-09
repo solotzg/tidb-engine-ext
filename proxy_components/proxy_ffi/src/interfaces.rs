@@ -717,6 +717,15 @@ pub mod root {
                     new_peer_id: u64,
                 ) -> root::DB::FapSnapshotState,
             >,
+            pub fn_clear_fap_snapshot: ::std::option::Option<
+                unsafe extern "C" fn(arg1: *mut root::DB::EngineStoreServerWrap, region_id: u64),
+            >,
+            pub fn_kvstore_region_exists: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    region_id: u64,
+                ) -> bool,
+            >,
         }
         extern "C" {
             pub fn ffi_get_server_info_from_proxy(
@@ -725,7 +734,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 17148513290160444417;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 14498963167462351742;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

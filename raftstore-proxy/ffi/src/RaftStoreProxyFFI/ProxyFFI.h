@@ -362,6 +362,8 @@ struct EngineStoreServerHelper {
   FapSnapshotState (*fn_query_fap_snapshot_state)(EngineStoreServerWrap *,
                                                   uint64_t region_id,
                                                   uint64_t new_peer_id);
+  void (*fn_clear_fap_snapshot)(EngineStoreServerWrap *, uint64_t region_id);
+  bool (*fn_kvstore_region_exists)(EngineStoreServerWrap *, uint64_t region_id);
 };
 
 #ifdef __cplusplus

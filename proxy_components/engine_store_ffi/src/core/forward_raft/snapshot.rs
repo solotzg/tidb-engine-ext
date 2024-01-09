@@ -143,8 +143,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 region_id,
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(o) => {
-                        let is_first_snapshot = !o.get().inited_or_fallback.load(Ordering::SeqCst);
-                        if is_first_snapshot {
+                        if self.is_first_snapshot(region_id, Some(o.get().clone())) {
                             info!("fast path: prehandle first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                                 "snap_key" => ?snap_key,
                                 "region_id" => region_id,
@@ -258,110 +257,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         fail::fail_point!("on_ob_cancel_after_pre_handle_snapshot", |_| {
             self.cancel_apply_snapshot(region_id, peer_id)
         });
-    }
-
-    pub fn post_apply_snapshot_for_fap_snapshot(
-        &self,
-        ob_region: &Region,
-        peer_id: u64,
-        snap_key: &store::SnapKey,
-    ) -> bool {
-        let region_id = ob_region.get_id();
-        let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restarted: bool| {
-            info!("fast path: start applying first snapshot {}:{} {}", self.store_id, region_id, peer_id;
-                "snap_key" => ?snap_key,
-                "region_id" => region_id,
-            );
-            // Even if the feature is not enabled, the snapshot could still be a previously
-            // generated fap snapshot. So we have to also handle this snapshot,
-            // to prevent error data.
-            let current_enabled = self.packed_envs.engine_store_cfg.enable_fast_add_peer;
-            let last = c.snapshot_inflight.load(Ordering::SeqCst);
-            let total = c.fast_add_peer_start.load(Ordering::SeqCst);
-            let current = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap();
-            if !self
-                .engine_store_server_helper
-                .apply_fap_snapshot(region_id, peer_id, !restarted)
-            {
-                // This is not a fap snapshot.
-                info!("fast path: this is not fap snapshot {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
-                    "snap_key" => ?snap_key,
-                    "region_id" => region_id,
-                    "cost_snapshot" => current.as_millis() - last,
-                    "cost_total" => current.as_millis() - total,
-                    "current_enabled" => current_enabled,
-                    "from_restart" => restarted,
-                );
-                c.snapshot_inflight.store(0, Ordering::SeqCst);
-                c.fast_add_peer_start.store(0, Ordering::SeqCst);
-                c.inited_or_fallback.store(true, Ordering::SeqCst);
-                return false;
-            }
-            info!("fast path: finished applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
-                "snap_key" => ?snap_key,
-                "region_id" => region_id,
-                "cost_snapshot" => current.as_millis() - last,
-                "cost_total" => current.as_millis() - total,
-                "current_enabled" => current_enabled,
-                "from_restart" => restarted,
-            );
-            c.snapshot_inflight.store(0, Ordering::SeqCst);
-            c.fast_add_peer_start.store(0, Ordering::SeqCst);
-            c.inited_or_fallback.store(true, Ordering::SeqCst);
-            true
-        };
-
-        // We should handle fap snapshot even if enable_fast_add_peer is false.
-        // However, if enable_unips, by no means can we handle fap snapshot.
-        #[allow(unused_mut)]
-        let mut should_check_fap_snapshot = self.packed_envs.engine_store_cfg.enable_unips;
-        #[allow(clippy::redundant_closure_call)]
-        (|| {
-            fail::fail_point!("post_apply_snapshot_allow_no_unips", |_| {
-                // UniPS can't provide a snapshot currently
-                should_check_fap_snapshot = true;
-            });
-        })();
-
-        #[allow(clippy::collapsible_if)]
-        if should_check_fap_snapshot {
-            let mut maybe_cached_info: Option<Arc<CachedRegionInfo>> = None;
-            if self
-                .get_cached_manager()
-                .access_cached_region_info_mut(
-                    region_id,
-                    |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                        MapEntry::Occupied(o) => {
-                            maybe_cached_info = Some(o.get().clone());
-                        }
-                        MapEntry::Vacant(_) => {
-                            // It could be an fap snapshot after restart.
-                            // However, the region state is initialized.
-                            assert!(self.is_initialized(region_id));
-                        }
-                    },
-                )
-                .is_err()
-            {
-                fatal!("poisoned");
-            }
-
-            match maybe_cached_info {
-                Some(o) => {
-                    let is_first_snapshot = !o.inited_or_fallback.load(Ordering::SeqCst);
-                    if is_first_snapshot {
-                        return try_apply_fap_snapshot(o, false);
-                    }
-                }
-                None => {
-                    let o = Arc::new(CachedRegionInfo::default());
-                    return try_apply_fap_snapshot(o, true);
-                }
-            }
-        }
-        false
     }
 
     pub fn post_apply_snapshot(

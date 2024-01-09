@@ -12,16 +12,39 @@ use crate::mock_cluster;
 pub(crate) unsafe extern "C" fn ffi_query_fap_snapshot_state(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,
-    peer_id: u64,
+    _peer_id: u64,
 ) -> interfaces_ffi::FapSnapshotState {
     let store = into_engine_store_server_wrap(arg1);
     if (*store.engine_store_server)
         .tmp_fap_regions
-        .contains_key(&(region_id, peer_id))
+        .contains_key(&region_id)
     {
         return interfaces_ffi::FapSnapshotState::Persisted;
     }
     interfaces_ffi::FapSnapshotState::NotFound
+}
+
+pub(crate) unsafe extern "C" fn ffi_kvstore_region_exists(
+    arg1: *mut interfaces_ffi::EngineStoreServerWrap,
+    region_id: u64,
+) -> bool {
+    let store = into_engine_store_server_wrap(arg1);
+    (*store.engine_store_server)
+        .kvstore
+        .contains_key(&region_id)
+}
+
+pub(crate) unsafe extern "C" fn ffi_clear_fap_snapshot(
+    arg1: *mut interfaces_ffi::EngineStoreServerWrap,
+    region_id: u64,
+) {
+    let store = into_engine_store_server_wrap(arg1);
+    debug!("ffi_clear_fap_snapshot clean";
+        "region_id" => region_id
+    );
+    (*store.engine_store_server)
+        .tmp_fap_regions
+        .remove(&region_id);
 }
 
 pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
@@ -33,13 +56,14 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     let store = into_engine_store_server_wrap(arg1);
     let new_region = match (*store.engine_store_server)
         .tmp_fap_regions
-        .remove(&(region_id, peer_id))
+        .remove(&region_id)
     {
         Some(e) => e,
         None => {
             info!("not a fap snapshot";
                 "region_id" => region_id,
                 "peer_id" => peer_id,
+                "assert_exist" => assert_exist,
             );
             if assert_exist != 0 {
                 panic!("should exist region_id={} peed_id={}", region_id, peer_id);
@@ -240,7 +264,7 @@ pub(crate) unsafe extern "C" fn ffi_fast_add_peer(
             let apply_state_ptr = create_cpp_str(Some(apply_state_bytes));
             let region_ptr = create_cpp_str(Some(region_bytes));
 
-            (*store.engine_store_server).tmp_fap_regions.insert((new_region_meta.get_id(), new_peer_id), Box::new(new_region));
+            (*store.engine_store_server).tmp_fap_regions.insert(new_region_meta.get_id(), Box::new(new_region));
             // Check if we have commit_index.
             debug!("recover from remote peer: ok from {} to {}", from_store, store_id; "region_id" => region_id);
 
