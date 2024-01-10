@@ -1,10 +1,9 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
-use crate::utils::v1::*;
+use std::collections::hash_map::Entry as MapEntry;
+
 use engine_tiflash::CachedRegionInfo;
 
-use std::{
-    collections::hash_map::Entry as MapEntry
-};
+use crate::utils::v1::*;
 
 #[test]
 fn test_restart_meta_info() {
@@ -146,7 +145,8 @@ fn prehandle_snapshot_after_restart(kind: u64) {
                     .contains(1)
             );
         } else {
-            ffi.engine_store_server.engines
+            ffi.engine_store_server
+                .engines
                 .as_ref()
                 .unwrap()
                 .kv
@@ -154,9 +154,8 @@ fn prehandle_snapshot_after_restart(kind: u64) {
                 .cached_region_info_manager
                 .as_ref()
                 .unwrap()
-                .access_cached_region_info_mut(
-                    1,
-                    |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
+                .access_cached_region_info_mut(1, |info: MapEntry<u64, Arc<CachedRegionInfo>>| {
+                    match info {
                         MapEntry::Occupied(o) => {
                             o.get().inited_or_fallback.store(false, Ordering::SeqCst);
                             o.get().snapshot_inflight.store(0, Ordering::SeqCst);
@@ -164,10 +163,10 @@ fn prehandle_snapshot_after_restart(kind: u64) {
                         MapEntry::Vacant(_) => {
                             tikv_util::safe_panic!("panicked");
                         }
-                    },
-                ).unwrap();
+                    }
+                })
+                .unwrap();
         }
-
     });
 
     fail::remove("on_ob_pre_handle_snapshot_s3");

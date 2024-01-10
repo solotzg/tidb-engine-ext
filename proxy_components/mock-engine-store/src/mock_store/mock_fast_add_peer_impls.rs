@@ -29,8 +29,7 @@ pub(crate) unsafe extern "C" fn ffi_kvstore_region_exists(
     region_id: u64,
 ) -> bool {
     let store = into_engine_store_server_wrap(arg1);
-    let res = 
-    (*store.engine_store_server)
+    let res = (*store.engine_store_server)
         .kvstore
         .contains_key(&region_id);
     debug!("ffi_kvstore_region_exists {} {}", region_id, res);

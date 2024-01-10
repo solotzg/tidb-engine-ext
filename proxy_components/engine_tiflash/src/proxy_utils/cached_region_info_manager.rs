@@ -167,6 +167,8 @@ impl CachedRegionInfoManager {
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(mut o) => {
                         o.get_mut().inited_or_fallback.store(true, Ordering::SeqCst);
+                        o.get_mut().snapshot_inflight.store(0, Ordering::SeqCst);
+                        o.get_mut().fast_add_peer_start.store(0, Ordering::SeqCst);
                     }
                     MapEntry::Vacant(_) => {
                         tikv_util::safe_panic!("not inited!");

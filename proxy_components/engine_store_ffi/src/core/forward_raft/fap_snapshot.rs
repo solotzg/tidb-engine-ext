@@ -24,7 +24,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         // cleaned. We must ask TiFlash to check if there is already inited
         // region peer.
         // It's faster to query kvstore's memory rather than read rocksdb.
-        !self.engine_store_server_helper
+        !self
+            .engine_store_server_helper
             .kvstore_region_exist(region_id)
     }
 
