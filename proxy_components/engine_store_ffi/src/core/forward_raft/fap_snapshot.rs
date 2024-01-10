@@ -21,7 +21,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(o) => {
                         if !self.engine_store_server_helper.kvstore_region_exist(region_id) {
-                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interface_ffi::FapSnapshotState::Persisted {
+                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
                                 info!("fast path: prehandle first snapshot skipped {}:{} {}", self.store_id, region_id, peer_id;
                                     "snap_key" => ?snap_key,
                                     "region_id" => region_id,
