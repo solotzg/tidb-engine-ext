@@ -6,6 +6,50 @@ use engine_tiflash::CachedRegionInfo;
 use crate::utils::v1::*;
 
 #[test]
+fn test_cancel_after_fap_phase1() {
+    tikv_util::set_panic_hook(true, "./");
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
+    cluster.cfg.proxy_cfg.engine_store.enable_fast_add_peer = true;
+    // fail::cfg("on_pre_write_apply_state", "return").unwrap();
+    fail::cfg("fap_mock_fake_snapshot", "return(1)").unwrap();
+    // fail::cfg("before_tiflash_check_double_write", "return").unwrap();
+    disable_auto_gen_compact_log(&mut cluster);
+    // Disable auto generate peer.
+    pd_client.disable_default_operator();
+    let _ = cluster.run_conf_change();
+
+    cluster.must_put(b"k0", b"v0");
+    fail::cfg("on_ob_cancel_after_pre_handle_snapshot", "return").unwrap();
+    fail::cfg("on_ob_post_apply_snapshot", "pause").unwrap();
+
+    pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    std::thread::sleep(std::time::Duration::from_millis(2000));
+
+    // We don't clear fap snapshot(if any) when canceled.
+    iter_ffi_helpers(&cluster, Some(vec![2]), &mut |_, ffi: &mut FFIHelperSet| {
+        let r = ffi
+            .engine_store_server
+            .engines
+            .as_ref()
+            .unwrap()
+            .kv
+            .proxy_ext
+            .cached_region_info_manager
+            .as_ref();
+        assert!(r.is_some());
+        assert!(r.unwrap().contains(1));
+    });
+
+    fail::remove("on_ob_post_apply_snapshot");
+
+    cluster.shutdown();
+    fail::remove("on_ob_cancel_after_pre_handle_snapshot");
+    fail::remove("fap_core_no_fallback");
+    fail::remove("fap_mock_fake_snapshot");
+}
+
+#[test]
 fn test_restart_meta_info() {
     fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
     tikv_util::set_panic_hook(true, "./");

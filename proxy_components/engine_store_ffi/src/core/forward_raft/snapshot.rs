@@ -136,6 +136,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return;
         });
 
+        defer!({
+            fail::fail_point!("on_ob_cancel_after_pre_handle_snapshot", |_| {
+                self.cancel_apply_snapshot(region_id, peer_id)
+            });
+        });
+
         if self.pre_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
             return;
         }
@@ -213,10 +219,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 );
             }
         }
-
-        fail::fail_point!("on_ob_cancel_after_pre_handle_snapshot", |_| {
-            self.cancel_apply_snapshot(region_id, peer_id)
-        });
     }
 
     pub fn post_apply_snapshot(
