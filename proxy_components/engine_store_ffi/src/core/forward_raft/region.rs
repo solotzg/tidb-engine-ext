@@ -29,7 +29,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 MapEntry::Occupied(mut o) => {}
                 MapEntry::Vacant(v) => {
                     info!("{}{}:{}, peer created(region event)",
-                        self.store_id, region_id, r.peer_id;
+                        self.store_id, region_id, 0;
                         "region_id" => region_id,
                         "role" => ?r,
                     );
