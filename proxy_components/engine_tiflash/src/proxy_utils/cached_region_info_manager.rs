@@ -21,7 +21,8 @@ pub struct CachedRegionInfo {
     // TiKV assumes a region's learner peer is added through snapshot.
     // If `inited_or_fallback=false`, will try fast path when meet MsgAppend.
     // If `inited_or_fallback=true`, it fap is finished or fallback.
-    // If fap fallbacks, we must set inited_or_fallback to true,
+    // NOTE After `apply_snapshot`, `is_initialized` will return true, but `inited_or_fallback` is
+    // false. If fap fallbacks, we must set inited_or_fallback to true,
     // Otherwise, a tikv snapshot will be neglect in `post_apply_snapshot` and cause data loss.
     pub inited_or_fallback: AtomicBool,
     // If set to non-zero, a fap is sent and not handled.

@@ -375,10 +375,9 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             let ctx = lock.deref_mut();
             ctx.tracer.remove(&region_id)
         };
-        if self.packed_envs.engine_store_cfg.enable_fast_add_peer {
-            self.engine_store_server_helper
-                .clear_fap_snapshot(region_id);
-        }
+
+        // We don't clear fap snapshot, because applying could be resumed after restart.
+        // Once resumed, the fap snapshot could be reused.
         if let Some(t) = maybe_prehandle_task {
             // If `cancel_applying_snap` is called, applying snapshot is cancelled.
             // It will happen only if the peer is scheduled away.
