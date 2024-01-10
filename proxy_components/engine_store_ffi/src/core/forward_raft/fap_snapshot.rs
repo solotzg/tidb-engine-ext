@@ -67,12 +67,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                 "region_id" => region_id,
                                 "state" => ?pstate,
                                 "inited" => false,
+                                "should_skip" => should_skip,
                             );
                         }
                     }
                 },
             ).is_err() {
-                fatal!("post_apply_snapshot poisoned")
+                fatal!("pre_apply_snapshot_for_fap_snapshot poisoned")
             };
         }
         should_skip

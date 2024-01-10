@@ -26,7 +26,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         } else if e == RegionChangeEvent::Create {
             // This could happen when restore.
             let f = |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
-                MapEntry::Occupied(mut o) => {}
+                MapEntry::Occupied(_) => {}
                 MapEntry::Vacant(v) => {
                     info!("{}{}:{}, peer created(region event)",
                         self.store_id, region_id, 0;
