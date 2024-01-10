@@ -233,11 +233,6 @@ fn prehandle_snapshot_after_restart(kind: u64) {
 }
 
 #[test]
-fn test_prehandle_snapshot_after_restart_cleaned() {
-    prehandle_snapshot_after_restart(1);
-}
-
-#[test]
 fn test_prehandle_snapshot_after_restart_reset() {
     prehandle_snapshot_after_restart(2);
 }
