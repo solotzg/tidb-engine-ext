@@ -37,6 +37,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         }
     }
 
+    // Only use after phase 1 is finished.
     pub fn fap_fallback_to_slow(&self, region_id: u64) {
         self.engine_store_server_helper
             .clear_fap_snapshot(region_id);
@@ -48,6 +49,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         cached_manager.fallback_to_slow_path(region_id);
     }
 
+    // Only use after phase 1 is finished.
     pub fn fap_fallback_to_slow_with_lock(
         &self,
         region_id: u64,
@@ -63,6 +65,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         let _ = self.raft_engine.clean(region_id, 0, &raft_state, &mut wb);
         let _ = self.raft_engine.consume(&mut wb, true);
         o.inited_or_fallback.store(true, Ordering::SeqCst);
+        o.snapshot_inflight.store(0, Ordering::SeqCst);
+        o.fast_add_peer_start.store(0, Ordering::SeqCst);
     }
 
     pub fn format_msg(inner_msg: &eraftpb::Message) -> String {
@@ -158,11 +162,13 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                                 // MsgAppend can be handled only when we set
                                 // inited_or_fallback to true,
                                 // so deleting raft logs here brings no race.
-                                // We don't clean fap snapshot, since it may being handled.
+
+                                // When fallback here, even if we have fap snapshot already, we
+                                // won't use it.
                                 self.fap_fallback_to_slow_with_lock(
                                     region_id,
                                     o.get_mut().clone(),
-                                    false,
+                                    true,
                                 );
                                 is_first = false;
                                 early_skip = false;
@@ -170,14 +176,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             }
                             // If not timeout, do following checking.
                         }
-                    }
-                    // If a snapshot is sent, we must skip further handling.
-                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
-                    if last != 0 {
-                        early_skip = true;
-                        // We must return here to avoid changing `inited_or_fallback`.
-                        // Otherwise will cause different value in pre/post_apply_snapshot.
-                        return;
                     }
                     (is_first, has_already_inited) =
                         if !o.get().inited_or_fallback.load(Ordering::SeqCst) {
@@ -199,6 +197,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             // If `inited_or_fallback` is true, we must not do fap.
                             (false, None)
                         };
+                    // If a snapshot is sent, we must skip further handling.
+                    let last = o.get().snapshot_inflight.load(Ordering::SeqCst);
+                    if last != 0 {
+                        early_skip = true;
+                        // We must return here to avoid changing `inited_or_fallback`.
+                        // Otherwise will cause different value in pre/post_apply_snapshot.
+                        return;
+                    }
                     if is_first {
                         // Don't care if the exchange succeeds.
                         let _ = o.get_mut().fast_add_peer_start.compare_exchange(
@@ -467,7 +473,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             if fake_send {
                 // A handling snapshot may block handling later MsgAppend.
                 // So we fake send.
-                debug!("fast path: send fake snapshot");
+                debug!("fast path: send fake snapshot"; "region_id" => region_id);
                 cached_manager
                     .set_snapshot_inflight(region_id, current.as_millis())
                     .unwrap();
