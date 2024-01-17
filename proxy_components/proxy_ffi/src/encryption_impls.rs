@@ -177,7 +177,7 @@ impl CloudStorageEngineFFI {
         _proxy_ptr: RaftStoreProxyPtr,
         _keyspace_id: u32,
     ) -> bool {
-        return false;
+        false;
     }
 
     // always return empty string
