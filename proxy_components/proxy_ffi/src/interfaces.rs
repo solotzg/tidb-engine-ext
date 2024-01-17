@@ -315,13 +315,13 @@ pub mod root {
         #[derive(Debug)]
         pub struct CloudStorageEngineInterfaces {
             pub fn_get_keyspace_encryption: ::std::option::Option<
-                 unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, arg2: u32) -> bool,
-             >,
-             pub fn_get_master_key: ::std::option::Option<
-                 unsafe extern "C" fn(
-                     arg1: root::DB::RaftStoreProxyPtr,
-                 ) -> root::DB::RawCppStringPtr,
-             >,
+                unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, arg2: u32) -> bool,
+            >,
+            pub fn_get_master_key: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: root::DB::RaftStoreProxyPtr,
+                ) -> root::DB::RawCppStringPtr,
+            >,
         }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
