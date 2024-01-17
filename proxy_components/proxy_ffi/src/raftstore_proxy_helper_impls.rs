@@ -22,7 +22,7 @@ use super::{
     interfaces_ffi::{
         BaseBuffView, ConfigJsonType, CppStrVecView, KVGetStatus, RaftProxyStatus,
         RaftStoreProxyFFIHelper, RaftStoreProxyPtr, RaftstoreVer, RawCppPtr, RawCppStringPtr,
-        RawRustPtr, RawVoidPtr, RustStrWithView, SSTReaderInterfaces,
+        RawRustPtr, RawVoidPtr, RustStrWithView, SSTReaderInterfaces, CloudStorageEngineInterfaces,
     },
     read_index_helper,
     snapshot_reader_impls::*,
@@ -65,8 +65,6 @@ impl RaftStoreProxyFFIHelper {
             fn_handle_new_file: Some(ffi_handle_new_file),
             fn_handle_delete_file: Some(ffi_handle_delete_file),
             fn_handle_link_file: Some(ffi_handle_link_file),
-            fn_get_keyspace_encryption: Some(CloudStorageEngineFFI::ffi_get_keyspace_encryption),
-            fn_get_master_key: Some(CloudStorageEngineFFI::ffi_get_master_key),
             fn_handle_batch_read_index: Some(ffi_batch_read_index),
             sst_reader_interfaces: SSTReaderInterfaces {
                 fn_get_sst_reader: Some(ffi_make_sst_reader),
@@ -79,6 +77,10 @@ impl RaftStoreProxyFFIHelper {
                 fn_seek: Some(ffi_sst_reader_seek),
                 fn_approx_size: Some(ffi_approx_size),
                 fn_get_split_keys: Some(ffi_get_split_keys),
+            },
+            cloud_storage_engine_interfaces: CloudStorageEngineInterfaces {
+                fn_get_keyspace_encryption: Some(CloudStorageEngineFFI::ffi_get_keyspace_encryption),
+                fn_get_master_key: Some(CloudStorageEngineFFI::ffi_get_master_key),
             },
             fn_server_info: None,
             fn_make_read_index_task: Some(ffi_make_read_index_task),

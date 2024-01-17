@@ -311,6 +311,18 @@ pub mod root {
                 ) -> root::DB::RustStrWithViewVec,
             >,
         }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct CloudStorageEngineInterfaces {
+            pub fn_get_keyspace_encryption: ::std::option::Option<
+                 unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, arg2: u32) -> bool,
+             >,
+             pub fn_get_master_key: ::std::option::Option<
+                 unsafe extern "C" fn(
+                     arg1: root::DB::RaftStoreProxyPtr,
+                 ) -> root::DB::RawCppStringPtr,
+             >,
+        }
         #[repr(u32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum MsgPBType {
@@ -404,14 +416,6 @@ pub mod root {
                     arg3: root::DB::BaseBuffView,
                 ) -> root::DB::FileEncryptionInfoRaw,
             >,
-            pub fn_get_keyspace_encryption: ::std::option::Option<
-                unsafe extern "C" fn(arg1: root::DB::RaftStoreProxyPtr, arg2: u32) -> bool,
-            >,
-            pub fn_get_master_key: ::std::option::Option<
-                unsafe extern "C" fn(
-                    arg1: root::DB::RaftStoreProxyPtr,
-                ) -> root::DB::RawCppStringPtr,
-            >,
             pub fn_handle_batch_read_index: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
@@ -428,6 +432,7 @@ pub mod root {
                 ),
             >,
             pub sst_reader_interfaces: root::DB::SSTReaderInterfaces,
+            pub cloud_storage_engine_interfaces: root::DB::CloudStorageEngineInterfaces,
             pub fn_server_info: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: root::DB::RaftStoreProxyPtr,
