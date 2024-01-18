@@ -723,6 +723,13 @@ pub mod root {
                     new_peer_id: u64,
                 ) -> root::DB::FastAddPeerRes,
             >,
+            pub fn_get_lock_by_key: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *const root::DB::EngineStoreServerWrap,
+                    arg2: u64,
+                    arg3: root::DB::BaseBuffView,
+                ) -> root::DB::BaseBuffView,
+            >,
             pub fn_query_fap_snapshot_state: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
