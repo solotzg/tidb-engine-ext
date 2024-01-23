@@ -78,8 +78,8 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     region_id: u64,
     peer_id: u64,
     assert_exist: u8,
-    index: u64,
-    term: u64,
+    _index: u64,
+    _term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let new_region = match (*store.engine_store_server)

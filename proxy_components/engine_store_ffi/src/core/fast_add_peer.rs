@@ -521,7 +521,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 // Create fake cf file.
                 let mut path = cf_file.path.clone();
                 path.push(cf_file.file_prefix.clone());
-                path.set_extension("empty.sst");
+                path.set_extension(".sst");
                 // Something like `${prefix}/gen_1_6_15_write.sst`
                 let mut f = std::fs::File::create(path.as_path())?;
                 f.flush()?;

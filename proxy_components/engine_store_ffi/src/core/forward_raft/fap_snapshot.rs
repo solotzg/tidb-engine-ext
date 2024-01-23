@@ -5,7 +5,19 @@ use crate::{
     fatal,
 };
 
+#[derive(PartialEq)]
+pub enum SnapshotDeducedType {
+    Uncertain,
+    Regular,
+    Fap,
+}
+
 impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
+    pub fn deduce_snapshot_type(_peer_id: u64, _snap: &store::Snapshot) -> SnapshotDeducedType {
+        // TODO(fap) implement in seperated modes(serverless or op).
+        SnapshotDeducedType::Uncertain
+    }
+
     pub fn pre_apply_snapshot_for_fap_snapshot(
         &self,
         ob_region: &Region,
@@ -63,7 +75,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         ob_region: &Region,
         peer_id: u64,
         snap_key: &store::SnapKey,
-        _snap: Option<&store::Snapshot>,
+        maybe_snap: Option<&store::Snapshot>,
     ) -> bool {
         let region_id = ob_region.get_id();
         let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restarted: bool| {
@@ -71,6 +83,15 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
             );
+            let snap = match maybe_snap {
+                Some(s) => s,
+                None => {
+                    c.snapshot_inflight.store(0, Ordering::SeqCst);
+                    c.fast_add_peer_start.store(0, Ordering::SeqCst);
+                    c.inited_or_fallback.store(true, Ordering::SeqCst);
+                    return false;
+                }
+            };
             // Even if the feature is not enabled, the snapshot could still be a previously
             // generated fap snapshot. So we have to also handle this snapshot,
             // to prevent error data.
@@ -101,11 +122,18 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 c.inited_or_fallback.store(true, Ordering::SeqCst);
                 return false;
             }
-            // TODO(fap) assert existence if we can deduce from snap.
-            let assert_exist = if !restarted {
-                snapshot_sent_time != 0
-            } else {
-                false
+
+            let expected_snapshot_type = Self::deduce_snapshot_type(peer_id, snap);
+            let assert_exist = match expected_snapshot_type {
+                SnapshotDeducedType::Uncertain => {
+                    if !restarted {
+                        snapshot_sent_time != 0
+                    } else {
+                        false
+                    }
+                }
+                SnapshotDeducedType::Fap => true,
+                SnapshotDeducedType::Regular => false,
             };
             if !self.engine_store_server_helper.apply_fap_snapshot(
                 region_id,
@@ -123,12 +151,15 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     "current_enabled" => current_enabled,
                     "from_restart" => restarted,
                 );
+                if expected_snapshot_type == SnapshotDeducedType::Fap {
+                    fatal!("fast path: fap snapshot apply failed {}:{} {}, which is assert to be fap snapshot", self.store_id, region_id, peer_id);
+                }
                 c.snapshot_inflight.store(0, Ordering::SeqCst);
                 c.fast_add_peer_start.store(0, Ordering::SeqCst);
                 c.inited_or_fallback.store(true, Ordering::SeqCst);
                 return false;
             }
-            info!("fast path: finished applied first snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
+            info!("fast path: finished applied first fap snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
                 "cost_snapshot" => current.as_millis() - snapshot_sent_time,
@@ -136,6 +167,9 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "current_enabled" => current_enabled,
                 "from_restart" => restarted,
             );
+            if expected_snapshot_type == SnapshotDeducedType::Regular {
+                fatal!("fast path: finished applied first fap snapshot {}:{} {}, which is assert to be regular snapshot", self.store_id, region_id, peer_id);
+            }
             c.snapshot_inflight.store(0, Ordering::SeqCst);
             c.fast_add_peer_start.store(0, Ordering::SeqCst);
             c.inited_or_fallback.store(true, Ordering::SeqCst);

@@ -9,7 +9,7 @@ use crate::{
 
 type SSTInfo = (String, ColumnFamilyType);
 
-fn retrieve_sst_files(peer_id: u64, snap: &store::Snapshot) -> Vec<SSTInfo> {
+pub fn retrieve_sst_files(peer_id: u64, snap: &store::Snapshot) -> Vec<SSTInfo> {
     let mut sst_views: Vec<SSTInfo> = vec![];
     let mut ssts = vec![];
     let v2_db_path = snap.snapshot_meta().as_ref().and_then(|m| {
@@ -40,7 +40,7 @@ fn retrieve_sst_files(peer_id: u64, snap: &store::Snapshot) -> Vec<SSTInfo> {
             assert!(!full_paths.is_empty());
             if full_paths.len() != 1 {
                 // Multi sst files for one cf.
-                tikv_util::info!("observe multi-file snapshot";
+                tikv_util::debug!("observe multi-file snapshot";
                     "snap" => ?snap,
                     "cf" => ?cf_file.cf,
                     "total" => full_paths.len(),
