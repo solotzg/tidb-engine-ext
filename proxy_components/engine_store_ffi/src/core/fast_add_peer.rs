@@ -214,7 +214,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             Ordering::SeqCst,
                         );
                     }
-                    // TODO include create
                     is_replicated = o.get().replicated_or_created.load(Ordering::SeqCst);
                 }
                 MapEntry::Vacant(v) => {

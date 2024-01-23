@@ -21,7 +21,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 |info: MapEntry<u64, Arc<CachedRegionInfo>>| match info {
                     MapEntry::Occupied(_) => {
                         if !self.engine_store_server_helper.kvstore_region_exist(region_id) {
-                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
+                            if self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id, snap_key.idx, snap_key.term) == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
                                 info!("fast path: prehandle first snapshot skipped {}:{} {}", self.store_id, region_id, peer_id;
                                     "snap_key" => ?snap_key,
                                     "region_id" => region_id,
@@ -32,7 +32,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     }
                     MapEntry::Vacant(_) => {
                         // It won't go here because cached region info is inited after restart and on the first fap message.
-                        let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id);
+                        let pstate = self.engine_store_server_helper.query_fap_snapshot_state(region_id, peer_id, snap_key.idx, snap_key.term);
                         if pstate == proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted {
                             // We have a fap snapshot now. skip
                             info!("fast path: prehandle first snapshot skipped after restart {}:{} {}", self.store_id, region_id, peer_id;
@@ -63,10 +63,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         ob_region: &Region,
         peer_id: u64,
         snap_key: &store::SnapKey,
+        _snap: Option<&store::Snapshot>,
     ) -> bool {
         let region_id = ob_region.get_id();
         let try_apply_fap_snapshot = |c: Arc<CachedRegionInfo>, restarted: bool| {
-            info!("fast path: start applying first snapshot {}:{} {}", self.store_id, region_id, peer_id;
+            debug!("fast path: start applying first snapshot {}:{} {}", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
             );
@@ -80,17 +81,41 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap();
 
+            if self.engine_store_server_helper.query_fap_snapshot_state(
+                region_id,
+                peer_id,
+                snap_key.idx,
+                snap_key.term,
+            ) != proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted
+            {
+                info!("fast path: fap snapshot mismatch {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
+                    "snap_key" => ?snap_key,
+                    "region_id" => region_id,
+                    "cost_snapshot" => current.as_millis() - snapshot_sent_time,
+                    "cost_total" => current.as_millis() - fap_start_time,
+                    "current_enabled" => current_enabled,
+                    "from_restart" => restarted,
+                );
+                c.snapshot_inflight.store(0, Ordering::SeqCst);
+                c.fast_add_peer_start.store(0, Ordering::SeqCst);
+                c.inited_or_fallback.store(true, Ordering::SeqCst);
+                return false;
+            }
+            // TODO(fap) assert existence if we can deduce from snap.
             let assert_exist = if !restarted {
                 snapshot_sent_time != 0
             } else {
                 false
             };
-            if !self
-                .engine_store_server_helper
-                .apply_fap_snapshot(region_id, peer_id, assert_exist)
-            {
+            if !self.engine_store_server_helper.apply_fap_snapshot(
+                region_id,
+                peer_id,
+                assert_exist,
+                snap_key.idx,
+                snap_key.term,
+            ) {
                 // This is not a fap snapshot.
-                info!("fast path: this is not fap snapshot {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
+                info!("fast path: fap snapshot apply failed {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
                     "snap_key" => ?snap_key,
                     "region_id" => region_id,
                     "cost_snapshot" => current.as_millis() - snapshot_sent_time,

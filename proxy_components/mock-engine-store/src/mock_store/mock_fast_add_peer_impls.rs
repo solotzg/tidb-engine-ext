@@ -13,15 +13,39 @@ pub(crate) unsafe extern "C" fn ffi_query_fap_snapshot_state(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     region_id: u64,
     _peer_id: u64,
+    index: u64,
+    term: u64,
 ) -> interfaces_ffi::FapSnapshotState {
     let store = into_engine_store_server_wrap(arg1);
-    if (*store.engine_store_server)
-        .tmp_fap_regions
-        .contains_key(&region_id)
-    {
-        return interfaces_ffi::FapSnapshotState::Persisted;
+    match (*store.engine_store_server).tmp_fap_regions.get(&region_id) {
+        Some(e) => {
+            if index == 0 && term == 0 {
+                debug!("ffi_query_fap_snapshot_state: found unchecked snapshot";
+                    "region_id" => region_id,
+                    "index" => index,
+                    "term" => term,
+                );
+                interfaces_ffi::FapSnapshotState::Persisted
+            } else {
+                if e.apply_state.get_applied_index() == index && e.applied_term == term {
+                    debug!("ffi_query_fap_snapshot_state: found matched snapshot";
+                        "region_id" => region_id,
+                        "index" => index,
+                        "term" => term,
+                    );
+                    interfaces_ffi::FapSnapshotState::Persisted
+                } else {
+                    debug!("ffi_query_fap_snapshot_state: mismatch snapshot";
+                        "region_id" => region_id,
+                        "index" => index,
+                        "term" => term,
+                    );
+                    interfaces_ffi::FapSnapshotState::NotFound
+                }
+            }
+        }
+        None => interfaces_ffi::FapSnapshotState::NotFound,
     }
-    interfaces_ffi::FapSnapshotState::NotFound
 }
 
 pub(crate) unsafe extern "C" fn ffi_kvstore_region_exists(
@@ -54,6 +78,8 @@ pub(crate) unsafe extern "C" fn ffi_apply_fap_snapshot(
     region_id: u64,
     peer_id: u64,
     assert_exist: u8,
+    index: u64,
+    term: u64,
 ) -> u8 {
     let store = into_engine_store_server_wrap(arg1);
     let new_region = match (*store.engine_store_server)

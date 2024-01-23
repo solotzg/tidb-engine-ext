@@ -232,7 +232,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return;
         });
         let region_id = ob_region.get_id();
-        if self.post_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key) {
+        if self.post_apply_snapshot_for_fap_snapshot(ob_region, peer_id, snap_key, snap) {
             // Already handled as an fap snapshot.
             return;
         }
