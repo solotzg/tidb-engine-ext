@@ -308,7 +308,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             return true;
         }
 
-        info!("fast path: ongoing {}:{} {}, fetch data from remote peer", self.store_id, region_id, new_peer_id;
+        debug!("fast path: ongoing {}:{} {}, fetch data from remote peer", self.store_id, region_id, new_peer_id;
             "to_peer_id" => msg.get_to_peer().get_id(),
             "from_peer_id" => msg.get_from_peer().get_id(),
             "region_id" => region_id,
@@ -406,7 +406,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                             self.store_id, region_id, new_peer_id, s;
                             "region_id" => region_id,
                         );
-                        self.fap_fallback_to_slow(region_id);
+                        // We don't fallback if the fap snapshot is persisted,
+                        // Because it has been sent, or has not been sent.
+                        // So we can't decide whether to use fallback to clean the previous
+                        // snapshot. Any later error will cause fap snapshot
+                        // mismatch.
                         return false;
                     }
                 };
@@ -417,7 +421,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     self.store_id, region_id, new_peer_id, e;
                     "region_id" => region_id,
                 );
-                self.fap_fallback_to_slow(region_id);
                 return false;
             }
         };
@@ -498,10 +501,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
 
             let key = SnapKey::new(region_id, applied_term, applied_index);
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
-            defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
+            // TODO(fap) could be "save meta file without metadata for" error, if generated
+            // twice. See `do_build`.
             let snapshot = self.snap_mgr.get_snapshot_for_building(&key)?;
             (snapshot, key.clone())
         };
+        defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
 
         // Build snapshot by do_snapshot
         let mut pb_snapshot: eraftpb::Snapshot = Default::default();

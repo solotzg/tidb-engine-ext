@@ -109,7 +109,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 snap_key.term,
             ) != proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted
             {
-                info!("fast path: fap snapshot mismatch {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
+                info!("fast path: fap snapshot mismatch/nonexist {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
                     "snap_key" => ?snap_key,
                     "region_id" => region_id,
                     "cost_snapshot" => current.as_millis() - snapshot_sent_time,
@@ -152,7 +152,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                     "from_restart" => restarted,
                 );
                 if expected_snapshot_type == SnapshotDeducedType::Fap {
-                    fatal!("fast path: fap snapshot apply failed {}:{} {}, which is assert to be fap snapshot", self.store_id, region_id, peer_id);
+                    fatal!(
+                        "fast path: fap snapshot apply failed {}:{} {}, which is assert to be fap snapshot",
+                        self.store_id,
+                        region_id,
+                        peer_id
+                    );
                 }
                 c.snapshot_inflight.store(0, Ordering::SeqCst);
                 c.fast_add_peer_start.store(0, Ordering::SeqCst);
@@ -168,7 +173,12 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "from_restart" => restarted,
             );
             if expected_snapshot_type == SnapshotDeducedType::Regular {
-                fatal!("fast path: finished applied first fap snapshot {}:{} {}, which is assert to be regular snapshot", self.store_id, region_id, peer_id);
+                fatal!(
+                    "fast path: finished applied first fap snapshot {}:{} {}, which is assert to be regular snapshot",
+                    self.store_id,
+                    region_id,
+                    peer_id
+                );
             }
             c.snapshot_inflight.store(0, Ordering::SeqCst);
             c.fast_add_peer_start.store(0, Ordering::SeqCst);

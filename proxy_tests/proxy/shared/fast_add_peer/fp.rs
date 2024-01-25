@@ -111,6 +111,7 @@ fn test_cancel_after_fap_phase1() {
     fail::remove("fap_core_no_fallback");
 }
 
+// Test is the cached mem info is well managed in all cases.
 #[test]
 fn test_restart_meta_info() {
     fail::cfg("post_apply_snapshot_allow_no_unips", "return").unwrap();
@@ -827,6 +828,7 @@ fn test_split_merge() {
     cluster.shutdown();
 }
 
+// Fallback to slow path in if fast_add_peer call fails.
 #[test]
 fn test_fall_back_to_slow_path() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
