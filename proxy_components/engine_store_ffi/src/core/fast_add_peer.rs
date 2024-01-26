@@ -504,7 +504,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             // TODO(fap) could be "save meta file without metadata for" error, if generated
             // twice. See `do_build`.
             let snapshot = self.snap_mgr.get_snapshot_for_building(&key)?;
-            (snapshot, key.clone())
+            (snapshot, key)
         };
         defer!(self.snap_mgr.deregister(&key, &SnapEntry::Generating));
 
