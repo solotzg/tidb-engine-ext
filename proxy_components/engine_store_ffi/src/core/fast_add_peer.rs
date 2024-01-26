@@ -483,22 +483,22 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             }
         }
 
+        // Find term of entry at applied_index.
+        let applied_index = apply_state.get_applied_index();
+        let applied_term =
+            self.check_entry_at_index(region_id, applied_index, new_peer_id, "applied_index")?;
+        // Will otherwise cause "got message with lower index than committed" loop.
+        // Maybe this can be removed, since fb0917bfa44ec1fc55967 can pass if we remove
+        // this constraint.
+        self.check_entry_at_index(
+            region_id,
+            apply_state.get_commit_index(),
+            new_peer_id,
+            "commit_index",
+        )?;
+
         // Get a snapshot object.
         let (mut snapshot, key) = {
-            // Find term of entry at applied_index.
-            let applied_index = apply_state.get_applied_index();
-            let applied_term =
-                self.check_entry_at_index(region_id, applied_index, new_peer_id, "applied_index")?;
-            // Will otherwise cause "got message with lower index than committed" loop.
-            // Maybe this can be removed, since fb0917bfa44ec1fc55967 can pass if we remove
-            // this constraint.
-            self.check_entry_at_index(
-                region_id,
-                apply_state.get_commit_index(),
-                new_peer_id,
-                "commit_index",
-            )?;
-
             let key = SnapKey::new(region_id, applied_term, applied_index);
             self.snap_mgr.register(key.clone(), SnapEntry::Generating);
             // TODO(fap) could be "save meta file without metadata for" error, if generated

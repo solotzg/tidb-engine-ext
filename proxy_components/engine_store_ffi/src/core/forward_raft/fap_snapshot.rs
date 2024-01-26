@@ -102,27 +102,6 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap();
 
-            if self.engine_store_server_helper.query_fap_snapshot_state(
-                region_id,
-                peer_id,
-                snap_key.idx,
-                snap_key.term,
-            ) != proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted
-            {
-                info!("fast path: fap snapshot mismatch/nonexist {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
-                    "snap_key" => ?snap_key,
-                    "region_id" => region_id,
-                    "cost_snapshot" => current.as_millis() - snapshot_sent_time,
-                    "cost_total" => current.as_millis() - fap_start_time,
-                    "current_enabled" => current_enabled,
-                    "from_restart" => restarted,
-                );
-                c.snapshot_inflight.store(0, Ordering::SeqCst);
-                c.fast_add_peer_start.store(0, Ordering::SeqCst);
-                c.inited_or_fallback.store(true, Ordering::SeqCst);
-                return false;
-            }
-
             let expected_snapshot_type = Self::deduce_snapshot_type(peer_id, snap);
             let assert_exist = match expected_snapshot_type {
                 SnapshotDeducedType::Uncertain => {
@@ -135,23 +114,20 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 SnapshotDeducedType::Fap => true,
                 SnapshotDeducedType::Regular => false,
             };
-            if !self.engine_store_server_helper.apply_fap_snapshot(
-                region_id,
-                peer_id,
-                assert_exist,
-                snap_key.idx,
-                snap_key.term,
-            ) {
-                // This is not a fap snapshot.
-                info!("fast path: fap snapshot apply failed {}:{} {}, goto tikv snapshot", self.store_id, region_id, peer_id;
+
+            let quit_apply_fap = |tag: &str| {
+                info!("fast path: fap snapshot mismatch/nonexist {}:{} {}", self.store_id, region_id, peer_id;
                     "snap_key" => ?snap_key,
                     "region_id" => region_id,
                     "cost_snapshot" => current.as_millis() - snapshot_sent_time,
                     "cost_total" => current.as_millis() - fap_start_time,
                     "current_enabled" => current_enabled,
                     "from_restart" => restarted,
+                    "tag" => tag
                 );
                 if expected_snapshot_type == SnapshotDeducedType::Fap {
+                    // It won't actually happen because TiFlash will panic since `assert_exist` is
+                    // true in this case.
                     fatal!(
                         "fast path: fap snapshot apply failed {}:{} {}, which is assert to be fap snapshot",
                         self.store_id,
@@ -163,7 +139,37 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 c.fast_add_peer_start.store(0, Ordering::SeqCst);
                 c.inited_or_fallback.store(true, Ordering::SeqCst);
                 return false;
+            };
+
+            // If there is no fap snapshot with given (index, term) we shall quit.
+            if self.engine_store_server_helper.query_fap_snapshot_state(
+                region_id,
+                peer_id,
+                snap_key.idx,
+                snap_key.term,
+            ) != proxy_ffi::interfaces_ffi::FapSnapshotState::Persisted
+            {
+                return quit_apply_fap("pre check");
             }
+
+            // Only succeeds if (index, term) matches.
+            // Returns false if `assert_exist` is false,
+            // Panics if `assert_exist` is true.
+            // The logic is kind of redundant, but we want to make it complete on both
+            // sides.
+            if !self.engine_store_server_helper.apply_fap_snapshot(
+                region_id,
+                peer_id,
+                assert_exist,
+                snap_key.idx,
+                snap_key.term,
+            ) {
+                return quit_apply_fap("apply");
+            }
+            // If it's a reguar snapshot have the same (index, term) as the fap snapshot,
+            // it make no difference which snapshot we actually applied.
+            // So we always choose to apply a fap snapshot, since it saves as from
+            // prehandling work.
             info!("fast path: finished applied first fap snapshot {}:{} {}, recover MsgAppend", self.store_id, region_id, peer_id;
                 "snap_key" => ?snap_key,
                 "region_id" => region_id,
@@ -171,15 +177,8 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 "cost_total" => current.as_millis() - fap_start_time,
                 "current_enabled" => current_enabled,
                 "from_restart" => restarted,
+                "replacement_of_regular" => expected_snapshot_type == SnapshotDeducedType::Regular
             );
-            if expected_snapshot_type == SnapshotDeducedType::Regular {
-                fatal!(
-                    "fast path: finished applied first fap snapshot {}:{} {}, which is assert to be regular snapshot",
-                    self.store_id,
-                    region_id,
-                    peer_id
-                );
-            }
             c.snapshot_inflight.store(0, Ordering::SeqCst);
             c.fast_add_peer_start.store(0, Ordering::SeqCst);
             c.inited_or_fallback.store(true, Ordering::SeqCst);
