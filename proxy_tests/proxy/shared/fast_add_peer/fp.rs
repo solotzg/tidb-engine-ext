@@ -632,6 +632,7 @@ fn test_existing_peer() {
 
     restart_tiflash_node(&mut cluster, 2);
 
+    // No tikv snapshot before.
     iter_ffi_helpers(&cluster, Some(vec![2]), &mut |_, ffi: &mut FFIHelperSet| {
         (*ffi.engine_store_server).mutate_region_states(1, |e: &mut RegionStats| {
             assert_eq!(e.apply_snap_count.load(Ordering::SeqCst), 0);

@@ -38,6 +38,8 @@ pub(crate) unsafe extern "C" fn ffi_query_fap_snapshot_state(
                     "region_id" => region_id,
                     "index" => index,
                     "term" => term,
+                    "actual_index" => e.apply_state.get_applied_index(),
+                    "actual_term" => e.applied_term
                 );
                 interfaces_ffi::FapSnapshotState::NotFound
             }
@@ -248,6 +250,7 @@ pub(crate) unsafe extern "C" fn ffi_fast_add_peer(
                     return;
                 }
             };
+            new_region.set_applied(apply_state.get_applied_index(), source_region.applied_term);
             debug!("recover from remote peer: begin data from {} to {}", from_store, store_id; 
                 "region_id" => region_id,
                 "apply_state" => ?apply_state,
