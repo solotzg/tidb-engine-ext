@@ -160,7 +160,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             if !self.engine_store_server_helper.apply_fap_snapshot(
                 region_id,
                 peer_id,
-                assert_exist,
+                true,
                 snap_key.idx,
                 snap_key.term,
             ) {
