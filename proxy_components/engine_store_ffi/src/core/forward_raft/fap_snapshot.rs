@@ -136,7 +136,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 c.snapshot_inflight.store(0, Ordering::SeqCst);
                 c.fast_add_peer_start.store(0, Ordering::SeqCst);
                 c.inited_or_fallback.store(true, Ordering::SeqCst);
-                return false;
+                false
             };
 
             // If there is no fap snapshot with given (index, term) we shall quit.
