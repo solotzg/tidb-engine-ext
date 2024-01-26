@@ -61,6 +61,7 @@ fn test_disable_fap() {
 
     restart_tiflash_node(&mut cluster, 2);
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    // The original fap snapshot not match
     check_key(&cluster, b"k0", b"v0", Some(true), None, Some(vec![2]));
     check_key(&cluster, b"k10", b"v10", Some(true), None, Some(vec![2]));
 
