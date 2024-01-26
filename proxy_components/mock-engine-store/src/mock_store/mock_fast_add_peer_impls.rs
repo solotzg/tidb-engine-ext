@@ -26,22 +26,20 @@ pub(crate) unsafe extern "C" fn ffi_query_fap_snapshot_state(
                     "term" => term,
                 );
                 interfaces_ffi::FapSnapshotState::Persisted
+            } else if e.apply_state.get_applied_index() == index && e.applied_term == term {
+                debug!("ffi_query_fap_snapshot_state: found matched snapshot";
+                    "region_id" => region_id,
+                    "index" => index,
+                    "term" => term,
+                );
+                interfaces_ffi::FapSnapshotState::Persisted
             } else {
-                if e.apply_state.get_applied_index() == index && e.applied_term == term {
-                    debug!("ffi_query_fap_snapshot_state: found matched snapshot";
-                        "region_id" => region_id,
-                        "index" => index,
-                        "term" => term,
-                    );
-                    interfaces_ffi::FapSnapshotState::Persisted
-                } else {
-                    debug!("ffi_query_fap_snapshot_state: mismatch snapshot";
-                        "region_id" => region_id,
-                        "index" => index,
-                        "term" => term,
-                    );
-                    interfaces_ffi::FapSnapshotState::NotFound
-                }
+                debug!("ffi_query_fap_snapshot_state: mismatch snapshot";
+                    "region_id" => region_id,
+                    "index" => index,
+                    "term" => term,
+                );
+                interfaces_ffi::FapSnapshotState::NotFound
             }
         }
         None => interfaces_ffi::FapSnapshotState::NotFound,
