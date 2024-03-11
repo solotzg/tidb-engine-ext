@@ -86,7 +86,6 @@
 #![cfg_attr(test, test_runner(runner::run_env_conditional_tests))]
 #![feature(core_intrinsics)]
 
-#[cfg(feature = "jemalloc")]
 #[macro_use]
 extern crate lazy_static;
 

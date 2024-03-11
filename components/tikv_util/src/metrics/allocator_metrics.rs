@@ -18,6 +18,7 @@ struct AllocStatsCollector {
 
 impl AllocStatsCollector {
     fn new<S: Into<String>>(namespace: S) -> Result<AllocStatsCollector> {
+        info!("new AllocStatsCollector");
         let ns = namespace.into();
         let stats = IntGaugeVec::new(
             Opts::new("allocator_stats", "Allocator stats").namespace(ns.clone()),
@@ -44,10 +45,12 @@ impl AllocStatsCollector {
 
 impl Collector for AllocStatsCollector {
     fn desc(&self) -> Vec<&Desc> {
+        info!("desc AllocStatsCollector");
         self.descs.iter().collect()
     }
 
     fn collect(&self) -> Vec<MetricFamily> {
+        info!("collect AllocStatsCollector");
         if let Ok(Some(stats)) = tikv_alloc::fetch_stats() {
             for stat in stats {
                 self.memory_stats
