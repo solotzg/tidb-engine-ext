@@ -20,6 +20,9 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 
+#[allow(unused_variables)]
+#[allow(unused_mut)]
+#[allow(unused_unsafe)]
 fn issue_mallctl(command: &str) -> u64{
     type PtrUnderlying = u64;
     let mut ptr: PtrUnderlying = 0;
