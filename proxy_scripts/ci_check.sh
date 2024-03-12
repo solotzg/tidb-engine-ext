@@ -1,4 +1,6 @@
 set -uxeo pipefail
+cat /etc/issue
+cat /proc/version
 if [[ $M == "fmt" ]]; then
     pwd
     git rev-parse --show-toplevel
@@ -39,6 +41,7 @@ elif [[ $M == "testnew" ]]; then
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
     cargo check --package proxy_server --features="$ENABLE_FEATURES"
     # tests based on mock-engine-store, with compat for new proxy
+    cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::snapshot
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::store
@@ -61,7 +64,6 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::replica_read -- --test-threads 1
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::ffi -- --test-threads 1
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write --features="proxy_tests/enable-pagestorage"
-    cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
     # We don't support snapshot test for PS, since it don't support trait Snapshot.
 elif [[ $M == "debug" ]]; then
     # export RUSTC_WRAPPER=~/.cargo/bin/sccache
