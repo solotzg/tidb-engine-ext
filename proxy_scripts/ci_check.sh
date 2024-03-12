@@ -41,7 +41,7 @@ elif [[ $M == "testold" ]]; then
 elif [[ $M == "testnew" ]]; then
     chmod +x ./proxy_scripts/make_env.sh
     ./proxy_scripts/make_env.sh
-    export /usr/local/lib/
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
