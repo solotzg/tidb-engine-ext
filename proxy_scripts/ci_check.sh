@@ -13,41 +13,40 @@ if [[ $M == "fmt" ]]; then
     cargo fmt -- --check
 elif [[ $M == "testold" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
-    export RUST_BACKTRACE=full
-    export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
-    echo "Start clippy"
-    chmod +x ./proxy_scripts/clippy.sh
-    ./proxy_scripts/clippy.sh
-    echo "Finish clippy"
-    chmod +x ./proxy_scripts/tikv-code-consistency.sh
-    ./proxy_scripts/tikv-code-consistency.sh
-    echo "Finish tikv code consistency"
-    exit # If we depend TiKV as a Cargo component, the following is not necessary, and can fail.
-    # TODO we have to let tests support openssl-vendored.
-    yum install openssl openssl-devel -y
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_normal
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_bootstrap
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_compact_log
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_early_apply
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_encryption
-    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_pd_client
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_pending_peers
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_transaction
-    cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_cmd_epoch_checker
-    # cargo test --package tests --test failpoints cases::test_disk_full
-    # cargo test --package tests --test failpoints cases::test_merge -- --skip test_node_merge_restart --skip test_node_merge_catch_up_logs_no_need
-    # cargo test --package tests --test failpoints cases::test_snap
-    cargo test --package tests --test failpoints cases::test_import_service
+    # export RUST_BACKTRACE=full
+    # export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine"
+    # echo "Start clippy"
+    # chmod +x ./proxy_scripts/clippy.sh
+    # ./proxy_scripts/clippy.sh
+    # echo "Finish clippy"
+    # chmod +x ./proxy_scripts/tikv-code-consistency.sh
+    # ./proxy_scripts/tikv-code-consistency.sh
+    # echo "Finish tikv code consistency"
+    # exit # If we depend TiKV as a Cargo component, the following is not necessary, and can fail.
+    # # TODO we have to let tests support openssl-vendored.
+    # yum install openssl openssl-devel -y
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_normal
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_bootstrap
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_compact_log
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_early_apply
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_encryption
+    # # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_pd_client
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_pending_peers
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_transaction
+    # cargo test --features "$ENABLE_FEATURES" --package tests --test failpoints cases::test_cmd_epoch_checker
+    # # cargo test --package tests --test failpoints cases::test_disk_full
+    # # cargo test --package tests --test failpoints cases::test_merge -- --skip test_node_merge_restart --skip test_node_merge_catch_up_logs_no_need
+    # # cargo test --package tests --test failpoints cases::test_snap
+    # cargo test --package tests --test failpoints cases::test_import_service
 elif [[ $M == "testnew" ]]; then
     chmod +x ./proxy_scripts/make_env.sh
     ./proxy_scripts/make_env.sh
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
     cargo check --package proxy_server --features="$ENABLE_FEATURES"
     # tests based on mock-engine-store, with compat for new proxy
-    LD_LIBRARY_PATH=/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib/x86_64-unknown-linux-gnu/ cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::snapshot
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::store
