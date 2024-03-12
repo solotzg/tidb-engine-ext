@@ -1,6 +1,7 @@
 set -uxeo pipefail
 cat /etc/issue
 cat /proc/version
+
 if [[ $M == "fmt" ]]; then
     pwd
     git rev-parse --show-toplevel
@@ -36,6 +37,8 @@ elif [[ $M == "testold" ]]; then
     # cargo test --package tests --test failpoints cases::test_snap
     cargo test --package tests --test failpoints cases::test_import_service
 elif [[ $M == "testnew" ]]; then
+    chmod +x ./proxy_scripts/make_env.sh
+    ./proxy_scripts/make_env.sh
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
