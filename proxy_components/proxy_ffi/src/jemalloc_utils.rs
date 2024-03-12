@@ -23,7 +23,7 @@ extern "C" {
 #[allow(unused_variables)]
 #[allow(unused_mut)]
 #[allow(unused_unsafe)]
-fn issue_mallctl(command: &str) -> u64{
+fn issue_mallctl(command: &str) -> u64 {
     type PtrUnderlying = u64;
     let mut ptr: PtrUnderlying = 0;
     let mut size = std::mem::size_of::<PtrUnderlying>() as u64;
