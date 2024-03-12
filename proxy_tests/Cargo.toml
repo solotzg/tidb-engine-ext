@@ -38,7 +38,7 @@ test-engine-raft-rocksdb = [
   "engine_test/test-engine-raft-rocksdb"
 ]
 
-jemalloc = ["tikv/jemalloc"]
+jemalloc = ["tikv/jemalloc", "proxy_server/jemalloc"]
 mimalloc = ["tikv/mimalloc"]
 snmalloc = ["tikv/snmalloc"]
 mem-profiling = ["tikv/mem-profiling"]

@@ -30,17 +30,31 @@ fn issue_mallctl(command: &str) -> u64 {
     let c_str = std::ffi::CString::new(command).unwrap();
     let c_ptr: *const ::std::os::raw::c_char = c_str.as_ptr() as *const ::std::os::raw::c_char;
     unsafe {
+        // See unprefixed_malloc_on_supported_platforms in tikv-jemalloc-sys.
         #[cfg(any(test, feature = "testexport"))]
-        _rjem_mallctl(
-            c_ptr,
-            &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
-            &mut size as *mut u64,
-            std::ptr::null_mut(),
-            0,
-        );
+        {
+            // See NO_UNPREFIXED_MALLOC
+            #[cfg(any(target_os = "android", target_os = "dragonfly", target_os = "macos"))]
+            _rjem_mallctl(
+                c_ptr,
+                &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
+                &mut size as *mut u64,
+                std::ptr::null_mut(),
+                0,
+            );
+            #[cfg(not(any(target_os = "android", target_os = "dragonfly", target_os = "macos")))]
+            mallctl(
+                c_ptr,
+                &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
+                &mut size as *mut u64,
+                std::ptr::null_mut(),
+                0,
+            );
+        }
 
         #[cfg(not(any(test, feature = "testexport")))]
         {
+            // Must linked to tiflash.
             #[cfg(feature = "external-jemalloc")]
             mallctl(
                 c_ptr,
