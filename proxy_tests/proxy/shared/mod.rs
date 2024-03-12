@@ -14,3 +14,4 @@ mod server_cluster_test;
 mod snapshot;
 mod store;
 mod write;
+mod jemalloc;

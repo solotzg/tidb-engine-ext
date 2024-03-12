@@ -750,6 +750,14 @@ pub mod root {
                     region_id: u64,
                 ) -> bool,
             >,
+            pub fn_report_thread_allocate_info: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    name: root::DB::BaseBuffView,
+                    type_: u64,
+                    value: u64,
+                ),
+            >,
         }
         extern "C" {
             pub fn ffi_get_server_info_from_proxy(
@@ -758,7 +766,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 8589640407431546086;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 10285342393410618515;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

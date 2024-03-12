@@ -23,6 +23,7 @@ pub mod read_index_helper;
 // FFI releated with reading from SST/RocksDB files.
 pub mod snapshot_reader_impls;
 pub mod utils;
+pub mod jemalloc_utils;
 
 pub use self::{
     basic_ffi_impls::*, domain_impls::*, encryption_impls::*, engine_store_helper_impls::*,

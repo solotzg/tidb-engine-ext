@@ -1,5 +1,6 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 use std::pin::Pin;
+use std::cell::RefCell;
 
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 
@@ -34,6 +35,10 @@ pub fn gen_engine_store_server_helper(
     unsafe { &(*(engine_store_server_helper as *const EngineStoreServerHelper)) }
 }
 
+thread_local! {
+    pub static JEMALLOC_REGISTERED: RefCell<bool> = RefCell::new(false);
+}
+
 /// # Safety
 /// The lifetime of `engine_store_server_helper` is definitely longer than
 /// `ENGINE_STORE_SERVER_HELPER_PTR`.
@@ -49,6 +54,31 @@ pub fn set_server_info_resp(res: &kvproto::diagnosticspb::ServerInfoResponse, pt
 }
 
 impl EngineStoreServerHelper {
+    pub fn maybe_jemalloc_register_alloc(&self) {
+        JEMALLOC_REGISTERED.with(|b| {
+            if !*b.borrow() {
+                unsafe {
+                    let ptr_alloc: u64 = crate::jemalloc_utils::get_allocatep_on_thread_start();
+                    let ptr_dealloc: u64 = crate::jemalloc_utils::get_deallocatep_on_thread_start();
+                    let thread_name = std::thread::current().name().unwrap_or("<proxy-unknown>").to_string();
+                    (self.fn_report_thread_allocate_info.into_inner())(
+                        self.inner,
+                        BaseBuffView::from(thread_name.as_bytes()),
+                        0,
+                        ptr_alloc
+                    );
+                    (self.fn_report_thread_allocate_info.into_inner())(
+                        self.inner,
+                        BaseBuffView::from(thread_name.as_bytes()),
+                        1,
+                        ptr_dealloc
+                    );
+                }
+                *(b.borrow_mut()) = true;
+            }
+        });
+    }
+
     pub fn gc_raw_cpp_ptr(&self, ptr: *mut ::std::os::raw::c_void, tp: RawCppPtrType) {
         debug_assert!(self.fn_gc_raw_cpp_ptr.is_some());
         unsafe {
@@ -82,6 +112,7 @@ impl EngineStoreServerHelper {
 
     pub fn handle_compute_store_stats(&self) -> StoreStats {
         debug_assert!(self.fn_handle_compute_store_stats.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe { (self.fn_handle_compute_store_stats.into_inner())(self.inner) }
     }
 
@@ -91,16 +122,19 @@ impl EngineStoreServerHelper {
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_write_raft_cmd.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
         debug_assert!(self.fn_handle_get_engine_store_server_status.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
     pub fn handle_set_proxy(&self, proxy: *const RaftStoreProxyFFIHelper) {
         debug_assert!(self.fn_atomic_update_proxy.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe { (self.fn_atomic_update_proxy.into_inner())(self.inner, proxy as *mut _) }
     }
 
@@ -129,7 +163,7 @@ impl EngineStoreServerHelper {
         header: RaftCmdHeader,
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_admin_raft_cmd.is_some());
-
+        self.maybe_jemalloc_register_alloc();
         unsafe {
             let req = ProtoMsgBaseBuff::new(req);
             let resp = ProtoMsgBaseBuff::new(resp);
@@ -158,6 +192,7 @@ impl EngineStoreServerHelper {
         term: u64,
     ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
+        self.maybe_jemalloc_register_alloc();
         // TODO(proactive flush)
         unsafe {
             (self.fn_try_flush_data.into_inner())(
@@ -187,6 +222,7 @@ impl EngineStoreServerHelper {
     ) -> RawCppPtr {
         debug_assert!(self.fn_pre_handle_snapshot.is_some());
 
+        self.maybe_jemalloc_register_alloc();
         let snaps_view = into_sst_views(snaps);
         unsafe {
             let region = ProtoMsgBaseBuff::new(region);
@@ -203,6 +239,7 @@ impl EngineStoreServerHelper {
 
     pub fn apply_pre_handled_snapshot(&self, snap: RawCppPtr) {
         debug_assert!(self.fn_apply_pre_handled_snapshot.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe {
             (self.fn_apply_pre_handled_snapshot.into_inner())(self.inner, snap.ptr, snap.type_)
         }
@@ -210,6 +247,7 @@ impl EngineStoreServerHelper {
 
     pub fn abort_pre_handle_snapshot(&self, region_id: u64, peer_id: u64) {
         debug_assert!(self.fn_abort_pre_handle_snapshot.is_some());
+        self.maybe_jemalloc_register_alloc();
         unsafe { (self.fn_abort_pre_handle_snapshot.into_inner())(self.inner, region_id, peer_id) }
     }
 
@@ -277,6 +315,7 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_ingest_sst.is_some());
 
+        self.maybe_jemalloc_register_alloc();
         let snaps_view = into_sst_views(snaps);
         unsafe {
             (self.fn_handle_ingest_sst.into_inner())(
@@ -290,6 +329,7 @@ impl EngineStoreServerHelper {
     pub fn handle_destroy(&self, region_id: u64) {
         debug_assert!(self.fn_handle_destroy.is_some());
 
+        self.maybe_jemalloc_register_alloc();
         unsafe {
             (self.fn_handle_destroy.into_inner())(self.inner, region_id);
         }

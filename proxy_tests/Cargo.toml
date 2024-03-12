@@ -46,6 +46,7 @@ sse = ["tikv/sse"]
 portable = ["tikv/portable"]
 openssl-vendored = ["tikv/openssl-vendored"]
 enable-pagestorage = []
+external-jemalloc = ["proxy_server/external-jemalloc", "engine_store_ffi/external-jemalloc"]
 
 [dependencies]
 api_version = { workspace = true }
