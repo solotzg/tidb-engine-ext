@@ -10,7 +10,7 @@ extern "C" {
         newlen: u64,
     ) -> ::std::os::raw::c_int;
 
-    // Embeded jemalloc
+    // Embedded jemalloc
     pub fn _rjem_mallctl(
         name: *const ::std::os::raw::c_char,
         oldp: *mut ::std::os::raw::c_void,
@@ -20,29 +20,11 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 
-pub fn get_allocatep_on_thread_start() -> u64 {
+fn issue_mallctl(command: &str) -> u64{
     type PtrUnderlying = u64;
     let mut ptr: PtrUnderlying = 0;
     let mut size = std::mem::size_of::<PtrUnderlying>() as u64;
-    let c_str = std::ffi::CString::new("thread.allocatedp").unwrap();
-    let c_ptr: *const ::std::os::raw::c_char = c_str.as_ptr() as *const ::std::os::raw::c_char;
-    unsafe {
-        _rjem_mallctl(
-            c_ptr,
-            &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
-            &mut size as *mut u64,
-            std::ptr::null_mut(),
-            0,
-        );
-    }
-    return ptr;
-}
-
-pub fn get_deallocatep_on_thread_start() -> u64 {
-    type PtrUnderlying = u64;
-    let mut ptr: PtrUnderlying = 0;
-    let mut size = std::mem::size_of::<PtrUnderlying>() as u64;
-    let c_str = std::ffi::CString::new("thread.deallocatedp").unwrap();
+    let c_str = std::ffi::CString::new(command).unwrap();
     let c_ptr: *const ::std::os::raw::c_char = c_str.as_ptr() as *const ::std::os::raw::c_char;
     unsafe {
         #[cfg(any(test, feature = "testexport"))]
@@ -66,5 +48,13 @@ pub fn get_deallocatep_on_thread_start() -> u64 {
             );
         }
     }
-    return ptr;
+    ptr
+}
+
+pub fn get_allocatep_on_thread_start() -> u64 {
+    issue_mallctl("thread.allocatedp")
+}
+
+pub fn get_deallocatep_on_thread_start() -> u64 {
+    issue_mallctl("thread.deallocatedp")
 }
