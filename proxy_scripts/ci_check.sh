@@ -1,6 +1,8 @@
 set -uxeo pipefail
 cat /etc/issue
 cat /proc/version
+echo "LD_LIBRARY_PATH=", $LD_LIBRARY_PATH
+echo "PATH=", $PATH
 
 if [[ $M == "fmt" ]]; then
     pwd
@@ -39,6 +41,7 @@ elif [[ $M == "testold" ]]; then
 elif [[ $M == "testnew" ]]; then
     chmod +x ./proxy_scripts/make_env.sh
     ./proxy_scripts/make_env.sh
+    export /usr/local/lib/
     export ENGINE_LABEL_VALUE=tiflash
     export RUST_BACKTRACE=full
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
@@ -66,7 +69,7 @@ elif [[ $M == "testnew" ]]; then
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::fast_add_peer
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::replica_read -- --test-threads 1
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::ffi -- --test-threads 1
-    cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write --features="proxy_tests/enable-pagestorage"
+    LD_LIBRARY_PATH=/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write --features="proxy_tests/enable-pagestorage"
     # We don't support snapshot test for PS, since it don't support trait Snapshot.
 elif [[ $M == "debug" ]]; then
     # export RUSTC_WRAPPER=~/.cargo/bin/sccache
@@ -76,3 +79,4 @@ elif [[ $M == "release" ]]; then
     export ENGINE_LABEL_VALUE=tiflash
     make release
 fi
+   
