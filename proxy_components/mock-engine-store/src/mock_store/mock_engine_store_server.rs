@@ -1,7 +1,10 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::{cell::RefCell, pin::Pin, sync::atomic::Ordering};
-use std::sync::Mutex;
+use std::{
+    cell::RefCell,
+    pin::Pin,
+    sync::{atomic::Ordering, Mutex},
+};
 
 use engine_store_ffi::TiFlashEngine;
 
@@ -27,14 +30,10 @@ pub struct ThreadInfoJealloc {
 
 impl ThreadInfoJealloc {
     pub fn allocated(&self) -> u64 {
-        unsafe {
-            *(self.allocated_ptr as *const u64)
-        }
+        unsafe { *(self.allocated_ptr as *const u64) }
     }
     pub fn deallocated(&self) -> u64 {
-        unsafe {
-            *(self.deallocated_ptr as *const u64)
-        }
+        unsafe { *(self.deallocated_ptr as *const u64) }
     }
     pub fn remaining(&self) -> i64 {
         self.allocated() as i64 - self.deallocated() as i64
@@ -643,7 +642,12 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
 ) {
     let store = into_engine_store_server_wrap(arg1);
     let tn = std::str::from_utf8(name.to_slice()).unwrap().to_string();
-    match (*store.engine_store_server).thread_info_map.lock().expect("poisoned").entry(tn) {
+    match (*store.engine_store_server)
+        .thread_info_map
+        .lock()
+        .expect("poisoned")
+        .entry(tn)
+    {
         std::collections::hash_map::Entry::Occupied(mut o) => {
             if t == 0 {
                 o.get_mut().allocated_ptr = value;
@@ -655,15 +659,14 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
             if t == 0 {
                 v.insert(ThreadInfoJealloc {
                     allocated_ptr: value,
-                    deallocated_ptr: 0
+                    deallocated_ptr: 0,
                 });
             } else {
                 v.insert(ThreadInfoJealloc {
                     allocated_ptr: 0,
-                    deallocated_ptr: value
+                    deallocated_ptr: value,
                 });
             }
         }
-        
     }
 }

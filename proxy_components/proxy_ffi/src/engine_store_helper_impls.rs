@@ -1,6 +1,5 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
-use std::pin::Pin;
-use std::cell::RefCell;
+use std::{cell::RefCell, pin::Pin};
 
 use kvproto::{kvrpcpb, metapb, raft_cmdpb};
 
@@ -60,18 +59,21 @@ impl EngineStoreServerHelper {
                 unsafe {
                     let ptr_alloc: u64 = crate::jemalloc_utils::get_allocatep_on_thread_start();
                     let ptr_dealloc: u64 = crate::jemalloc_utils::get_deallocatep_on_thread_start();
-                    let thread_name = std::thread::current().name().unwrap_or("<proxy-unknown>").to_string();
+                    let thread_name = std::thread::current()
+                        .name()
+                        .unwrap_or("<proxy-unknown>")
+                        .to_string();
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
                         BaseBuffView::from(thread_name.as_bytes()),
                         0,
-                        ptr_alloc
+                        ptr_alloc,
                     );
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
                         BaseBuffView::from(thread_name.as_bytes()),
                         1,
-                        ptr_dealloc
+                        ptr_dealloc,
                     );
                 }
                 *(b.borrow_mut()) = true;
