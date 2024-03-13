@@ -651,7 +651,7 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
         std::collections::hash_map::Entry::Occupied(mut o) => {
             if t == interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr {
                 o.get_mut().allocated_ptr = value;
-            } else {
+            } else if t == interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr {
                 o.get_mut().deallocated_ptr = value;
             }
         }
@@ -661,7 +661,7 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
                     allocated_ptr: value,
                     deallocated_ptr: 0,
                 });
-            } else {
+            } else if t == interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr {
                 v.insert(ThreadInfoJealloc {
                     allocated_ptr: 0,
                     deallocated_ptr: value,

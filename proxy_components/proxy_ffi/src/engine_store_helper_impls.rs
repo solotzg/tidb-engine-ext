@@ -36,6 +36,9 @@ pub fn gen_engine_store_server_helper(
 
 thread_local! {
     pub static JEMALLOC_REGISTERED: RefCell<bool> = RefCell::new(false);
+    pub static JEMALLOC_TNAME: RefCell<String> = RefCell::new(Default::default());
+    pub static JEMALLOC_ALLOCP: RefCell<*mut u64> = RefCell::new(std::ptr::null_mut());
+    pub static JEMALLOC_DEALLOCP: RefCell<*mut u64> = RefCell::new(std::ptr::null_mut());
 }
 
 /// # Safety
@@ -81,9 +84,53 @@ impl EngineStoreServerHelper {
                         interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
                         ptr_dealloc,
                     );
+                    // Some threads are not everlasting, so we don't want TiFlash to directly access
+                    // the pointer.
+                    JEMALLOC_TNAME.with(|p| {
+                        *p.borrow_mut() = thread_name;
+                    });
+                    if ptr_alloc != 0 {
+                        JEMALLOC_ALLOCP.with(|p| {
+                            *p.borrow_mut() = ptr_alloc as *mut u64;
+                        });
+                    }
+                    if ptr_dealloc != 0 {
+                        JEMALLOC_DEALLOCP.with(|p| {
+                            *p.borrow_mut() = ptr_dealloc as *mut u64;
+                        });
+                    }
                 }
                 *(b.borrow_mut()) = true;
             }
+        });
+    }
+
+    pub fn directly_report_jemalloc_alloc(&self) {
+        JEMALLOC_TNAME.with(|thread_name| {
+            JEMALLOC_ALLOCP.with(|p| unsafe {
+                let p = *p.borrow_mut();
+                if p == std::ptr::null_mut() {
+                    return;
+                }
+                (self.fn_report_thread_allocate_info.into_inner())(
+                    self.inner,
+                    BaseBuffView::from(thread_name.borrow().as_bytes()),
+                    interfaces_ffi::ReportThreadAllocateInfoType::Alloc,
+                    *p,
+                );
+            });
+            JEMALLOC_DEALLOCP.with(|p| unsafe {
+                let p = *p.borrow_mut();
+                if p == std::ptr::null_mut() {
+                    return;
+                }
+                (self.fn_report_thread_allocate_info.into_inner())(
+                    self.inner,
+                    BaseBuffView::from(thread_name.borrow().as_bytes()),
+                    interfaces_ffi::ReportThreadAllocateInfoType::Dealloc,
+                    *p,
+                );
+            });
         });
     }
 
@@ -131,18 +178,21 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_write_raft_cmd.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe { (self.fn_handle_write_raft_cmd.into_inner())(self.inner, cmds.gen_view(), header) }
     }
 
     pub fn handle_get_engine_store_server_status(&self) -> EngineStoreServerStatus {
         debug_assert!(self.fn_handle_get_engine_store_server_status.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe { (self.fn_handle_get_engine_store_server_status.into_inner())(self.inner) }
     }
 
     pub fn handle_set_proxy(&self, proxy: *const RaftStoreProxyFFIHelper) {
         debug_assert!(self.fn_atomic_update_proxy.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe { (self.fn_atomic_update_proxy.into_inner())(self.inner, proxy as *mut _) }
     }
 
@@ -172,6 +222,7 @@ impl EngineStoreServerHelper {
     ) -> EngineStoreApplyRes {
         debug_assert!(self.fn_handle_admin_raft_cmd.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe {
             let req = ProtoMsgBaseBuff::new(req);
             let resp = ProtoMsgBaseBuff::new(resp);
@@ -201,6 +252,7 @@ impl EngineStoreServerHelper {
     ) -> bool {
         debug_assert!(self.fn_try_flush_data.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         // TODO(proactive flush)
         unsafe {
             (self.fn_try_flush_data.into_inner())(
@@ -324,6 +376,7 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_handle_ingest_sst.is_some());
 
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         let snaps_view = into_sst_views(snaps);
         unsafe {
             (self.fn_handle_ingest_sst.into_inner())(
@@ -338,6 +391,7 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_handle_destroy.is_some());
 
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe {
             (self.fn_handle_destroy.into_inner())(self.inner, region_id);
         }

@@ -82,3 +82,11 @@ pub fn get_allocatep_on_thread_start() -> u64 {
 pub fn get_deallocatep_on_thread_start() -> u64 {
     issue_mallctl("thread.deallocatedp")
 }
+
+pub fn get_allocate() -> u64 {
+    issue_mallctl("thread.allocated")
+}
+
+pub fn get_deallocate() -> u64 {
+    issue_mallctl("thread.deallocated")
+}

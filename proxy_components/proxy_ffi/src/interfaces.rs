@@ -564,6 +564,8 @@ pub mod root {
             Reset = 0,
             AllocPtr = 1,
             DeallocPtr = 2,
+            Alloc = 3,
+            Dealloc = 4,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -773,7 +775,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 13437100439851870476;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 1764984388775075973;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

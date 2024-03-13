@@ -315,6 +315,8 @@ enum class ReportThreadAllocateInfoType : uint64_t {
   Reset = 0,
   AllocPtr,
   DeallocPtr,
+  Alloc,
+  Dealloc,
 };
 
 struct EngineStoreServerHelper {
