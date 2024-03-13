@@ -627,6 +627,18 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
         info!("using proxy config"; "config" => ?proxy_config);
         crate::config::address_proxy_config(&mut config, &proxy_config);
         info!("after address config"; "config" => ?config);
+
+        // NOTE: Compat disagg arch upgraded from * to 8.0.
+        {
+            let raft_engine_path = config.raft_engine.config().dir + "/ps_engine";
+            let path = Path::new(&raft_engine_path);
+            if path.exists() {
+                info!("created ps_engine.raftlog for upgraded cluster");
+                let new_raft_engine_path = config.raft_engine.config().dir + "/ps_engine.raftlog";
+                File::create(new_raft_engine_path).unwrap();
+            }
+        }
+
         let cfg_controller = Self::init_config(config);
         let config = cfg_controller.get_current();
 
