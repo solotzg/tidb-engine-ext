@@ -32,6 +32,7 @@ openssl-vendored = [
   "openssl/vendored"
 ]
 
+jemalloc = ["proxy_ffi/jemalloc"]
 external-jemalloc = ["proxy_ffi/external-jemalloc"]
 
 [dependencies]

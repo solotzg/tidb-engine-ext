@@ -33,23 +33,30 @@ fn issue_mallctl(command: &str) -> u64 {
         // See unprefixed_malloc_on_supported_platforms in tikv-jemalloc-sys.
         #[cfg(any(test, feature = "testexport"))]
         {
-            // See NO_UNPREFIXED_MALLOC
-            #[cfg(any(target_os = "android", target_os = "dragonfly", target_os = "macos"))]
-            _rjem_mallctl(
-                c_ptr,
-                &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
-                &mut size as *mut u64,
-                std::ptr::null_mut(),
-                0,
-            );
-            #[cfg(not(any(target_os = "android", target_os = "dragonfly", target_os = "macos")))]
-            mallctl(
-                c_ptr,
-                &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
-                &mut size as *mut u64,
-                std::ptr::null_mut(),
-                0,
-            );
+            #[cfg(any(feature = "jemalloc"))]
+            {
+                // See NO_UNPREFIXED_MALLOC
+                #[cfg(any(target_os = "android", target_os = "dragonfly", target_os = "macos"))]
+                _rjem_mallctl(
+                    c_ptr,
+                    &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
+                    &mut size as *mut u64,
+                    std::ptr::null_mut(),
+                    0,
+                );
+                #[cfg(not(any(
+                    target_os = "android",
+                    target_os = "dragonfly",
+                    target_os = "macos"
+                )))]
+                mallctl(
+                    c_ptr,
+                    &mut ptr as *mut _ as *mut ::std::os::raw::c_void,
+                    &mut size as *mut u64,
+                    std::ptr::null_mut(),
+                    0,
+                );
+            }
         }
 
         #[cfg(not(any(test, feature = "testexport")))]

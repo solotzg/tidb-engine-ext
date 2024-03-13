@@ -7,7 +7,7 @@ publish = false
 
 [features]
 tcmalloc = ["tikv/tcmalloc"]
-jemalloc = ["tikv/jemalloc"]
+jemalloc = ["tikv/jemalloc", "engine_store_ffi/jemalloc"]
 mimalloc = ["tikv/mimalloc"]
 snmalloc = ["tikv/snmalloc"]
 portable = ["tikv/portable"]
