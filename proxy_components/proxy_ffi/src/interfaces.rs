@@ -558,6 +558,13 @@ pub mod root {
                 unsafe extern "C" fn(arg1: *const root::DB::EngineStoreServerWrap),
             >,
         }
+        #[repr(u64)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        pub enum ReportThreadAllocateInfoType {
+            Reset = 0,
+            AllocPtr = 1,
+            DeallocPtr = 2,
+        }
         #[repr(C)]
         #[derive(Debug)]
         pub struct EngineStoreServerHelper {
@@ -754,7 +761,7 @@ pub mod root {
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
                     name: root::DB::BaseBuffView,
-                    type_: u64,
+                    type_: root::DB::ReportThreadAllocateInfoType,
                     value: u64,
                 ),
             >,
@@ -766,7 +773,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 10285342393410618515;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 13437100439851870476;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

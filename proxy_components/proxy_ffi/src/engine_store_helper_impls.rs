@@ -66,13 +66,19 @@ impl EngineStoreServerHelper {
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
                         BaseBuffView::from(thread_name.as_bytes()),
-                        0,
+                        interfaces_ffi::ReportThreadAllocateInfoType::Reset,
                         ptr_alloc,
                     );
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
                         BaseBuffView::from(thread_name.as_bytes()),
-                        1,
+                        interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr,
+                        ptr_alloc,
+                    );
+                    (self.fn_report_thread_allocate_info.into_inner())(
+                        self.inner,
+                        BaseBuffView::from(thread_name.as_bytes()),
+                        interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
                         ptr_dealloc,
                     );
                 }

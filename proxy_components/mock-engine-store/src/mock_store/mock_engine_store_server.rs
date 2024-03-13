@@ -637,7 +637,7 @@ unsafe extern "C" fn ffi_get_lock_by_key(
 unsafe extern "C" fn ffi_report_thread_allocate_info(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
     name: interfaces_ffi::BaseBuffView,
-    t: u64,
+    t: interfaces_ffi::ReportThreadAllocateInfoType,
     value: u64,
 ) {
     let store = into_engine_store_server_wrap(arg1);
@@ -649,14 +649,14 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
         .entry(tn)
     {
         std::collections::hash_map::Entry::Occupied(mut o) => {
-            if t == 0 {
+            if t == interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr {
                 o.get_mut().allocated_ptr = value;
             } else {
                 o.get_mut().deallocated_ptr = value;
             }
         }
         std::collections::hash_map::Entry::Vacant(v) => {
-            if t == 0 {
+            if t == interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr {
                 v.insert(ThreadInfoJealloc {
                     allocated_ptr: value,
                     deallocated_ptr: 0,

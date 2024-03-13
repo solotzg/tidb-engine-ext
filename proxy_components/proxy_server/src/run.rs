@@ -635,7 +635,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             if path.exists() {
                 info!("created ps_engine.raftlog for upgraded cluster");
                 let new_raft_engine_path = config.raft_engine.config().dir + "/ps_engine.raftlog";
-                File::create(new_raft_engine_path).unwrap();
+                std::fs::File::create(new_raft_engine_path).unwrap();
             }
         }
 
