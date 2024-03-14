@@ -313,6 +313,7 @@ struct PageStorageInterfaces {
 
 enum class ReportThreadAllocateInfoType : uint64_t {
   Reset = 0,
+  Remove,
   AllocPtr,
   DeallocPtr,
 };

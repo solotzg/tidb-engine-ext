@@ -72,7 +72,7 @@ impl EngineStoreServerHelper {
                         thread_id,
                         BaseBuffView::from(thread_name.as_bytes()),
                         interfaces_ffi::ReportThreadAllocateInfoType::Reset,
-                        ptr_alloc,
+                        0,
                     );
                     // Since we don't have lifelong thread to monitor, temperarily disable this.
                     // (self.fn_report_thread_allocate_info.into_inner())(

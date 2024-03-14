@@ -562,8 +562,9 @@ pub mod root {
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub enum ReportThreadAllocateInfoType {
             Reset = 0,
-            AllocPtr = 1,
-            DeallocPtr = 2,
+            Remove = 1,
+            AllocPtr = 2,
+            DeallocPtr = 3,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -788,7 +789,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 17598435718842250051;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 9679186549381427051;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
