@@ -196,7 +196,6 @@ dev: format clippy
 ifeq ($(PROXY_FRAME_POINTER),1)
 build: ENABLE_FEATURES += pprof-fp
 endif
-build: ENABLE_FEATURES += external-jemalloc
 build:
 	PROXY_ENABLE_FEATURES="${ENABLE_FEATURES}" ./proxy_scripts/build.sh
 
