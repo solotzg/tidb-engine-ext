@@ -109,14 +109,14 @@ impl EngineStoreServerHelper {
         JEMALLOC_TNAME.with(|thread_name| unsafe {
             let a = JEMALLOC_ALLOCP.with(|p| {
                 let p = *p.borrow_mut();
-                if p == std::ptr::null_mut() {
+                if p.is_null() {
                     return 0;
                 }
                 *p
             });
             let d = JEMALLOC_DEALLOCP.with(|p| {
                 let p = *p.borrow_mut();
-                if p == std::ptr::null_mut() {
+                if p.is_null() {
                     return 0;
                 }
                 *p
