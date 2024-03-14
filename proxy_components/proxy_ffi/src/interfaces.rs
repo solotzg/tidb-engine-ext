@@ -564,8 +564,12 @@ pub mod root {
             Reset = 0,
             AllocPtr = 1,
             DeallocPtr = 2,
-            Alloc = 3,
-            Dealloc = 4,
+        }
+        #[repr(C)]
+        #[derive(Debug)]
+        pub struct ReportThreadAllocateInfoBatch {
+            pub alloc: u64,
+            pub dealloc: u64,
         }
         #[repr(C)]
         #[derive(Debug)]
@@ -767,6 +771,13 @@ pub mod root {
                     value: u64,
                 ),
             >,
+            pub fn_report_thread_allocate_batch: ::std::option::Option<
+                unsafe extern "C" fn(
+                    arg1: *mut root::DB::EngineStoreServerWrap,
+                    name: root::DB::BaseBuffView,
+                    data: root::DB::ReportThreadAllocateInfoBatch,
+                ),
+            >,
         }
         extern "C" {
             pub fn ffi_get_server_info_from_proxy(
@@ -775,7 +786,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 1764984388775075973;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 4690628711022033644;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

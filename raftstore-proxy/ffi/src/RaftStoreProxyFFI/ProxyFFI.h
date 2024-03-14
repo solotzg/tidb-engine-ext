@@ -315,8 +315,11 @@ enum class ReportThreadAllocateInfoType : uint64_t {
   Reset = 0,
   AllocPtr,
   DeallocPtr,
-  Alloc,
-  Dealloc,
+};
+
+struct ReportThreadAllocateInfoBatch {
+  uint64_t alloc;
+  uint64_t dealloc;
 };
 
 struct EngineStoreServerHelper {
@@ -385,6 +388,9 @@ struct EngineStoreServerHelper {
                                          BaseBuffView name,
                                          ReportThreadAllocateInfoType type,
                                          uint64_t value);
+  void (*fn_report_thread_allocate_batch)(EngineStoreServerWrap *,
+                                          BaseBuffView name,
+                                          ReportThreadAllocateInfoBatch data);
 };
 
 #ifdef __cplusplus

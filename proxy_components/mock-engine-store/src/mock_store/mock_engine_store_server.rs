@@ -393,6 +393,7 @@ pub fn gen_engine_store_server_helper(
         fn_kvstore_region_exists: Some(ffi_kvstore_region_exists),
         fn_clear_fap_snapshot: Some(ffi_clear_fap_snapshot),
         fn_report_thread_allocate_info: Some(ffi_report_thread_allocate_info),
+        fn_report_thread_allocate_batch: Some(ffi_report_thread_allocate_batch),
         ps: PageStorageInterfaces {
             fn_create_write_batch: Some(ffi_mockps_create_write_batch),
             fn_wb_put_page: Some(ffi_mockps_wb_put_page),
@@ -669,4 +670,11 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
             }
         }
     }
+}
+
+unsafe extern "C" fn ffi_report_thread_allocate_batch(
+    _: *mut interfaces_ffi::EngineStoreServerWrap,
+    _name: interfaces_ffi::BaseBuffView,
+    _data: interfaces_ffi::ReportThreadAllocateInfoBatch,
+) {
 }

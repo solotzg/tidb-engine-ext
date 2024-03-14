@@ -106,31 +106,29 @@ impl EngineStoreServerHelper {
     }
 
     pub fn directly_report_jemalloc_alloc(&self) {
-        JEMALLOC_TNAME.with(|thread_name| {
-            JEMALLOC_ALLOCP.with(|p| unsafe {
+        JEMALLOC_TNAME.with(|thread_name| unsafe {
+            let a = JEMALLOC_ALLOCP.with(|p| {
                 let p = *p.borrow_mut();
                 if p == std::ptr::null_mut() {
-                    return;
+                    return 0;
                 }
-                (self.fn_report_thread_allocate_info.into_inner())(
-                    self.inner,
-                    BaseBuffView::from(thread_name.borrow().as_bytes()),
-                    interfaces_ffi::ReportThreadAllocateInfoType::Alloc,
-                    *p,
-                );
+                *p
             });
-            JEMALLOC_DEALLOCP.with(|p| unsafe {
+            let d = JEMALLOC_DEALLOCP.with(|p| {
                 let p = *p.borrow_mut();
                 if p == std::ptr::null_mut() {
-                    return;
+                    return 0;
                 }
-                (self.fn_report_thread_allocate_info.into_inner())(
-                    self.inner,
-                    BaseBuffView::from(thread_name.borrow().as_bytes()),
-                    interfaces_ffi::ReportThreadAllocateInfoType::Dealloc,
-                    *p,
-                );
+                *p
             });
+            (self.fn_report_thread_allocate_batch.into_inner())(
+                self.inner,
+                BaseBuffView::from(thread_name.borrow().as_bytes()),
+                interfaces_ffi::ReportThreadAllocateInfoBatch {
+                    alloc: a,
+                    dealloc: d,
+                },
+            );
         });
     }
 
