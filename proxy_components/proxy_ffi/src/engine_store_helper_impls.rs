@@ -36,7 +36,7 @@ pub fn gen_engine_store_server_helper(
 
 thread_local! {
     pub static JEMALLOC_REGISTERED: RefCell<bool> = RefCell::new(false);
-    pub static JEMALLOC_TNAME: RefCell<String> = RefCell::new(Default::default());
+    pub static JEMALLOC_TNAME: RefCell<(String, u64)> = RefCell::new(Default::default());
     pub static JEMALLOC_ALLOCP: RefCell<*mut u64> = RefCell::new(std::ptr::null_mut());
     pub static JEMALLOC_DEALLOCP: RefCell<*mut u64> = RefCell::new(std::ptr::null_mut());
 }
@@ -66,28 +66,32 @@ impl EngineStoreServerHelper {
                         .name()
                         .unwrap_or("<proxy-unknown>")
                         .to_string();
+                    let thread_id: u64 = std::thread::current().id().as_u64().into();
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
+                        thread_id,
                         BaseBuffView::from(thread_name.as_bytes()),
                         interfaces_ffi::ReportThreadAllocateInfoType::Reset,
                         ptr_alloc,
                     );
-                    (self.fn_report_thread_allocate_info.into_inner())(
-                        self.inner,
-                        BaseBuffView::from(thread_name.as_bytes()),
-                        interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr,
-                        ptr_alloc,
-                    );
-                    (self.fn_report_thread_allocate_info.into_inner())(
-                        self.inner,
-                        BaseBuffView::from(thread_name.as_bytes()),
-                        interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
-                        ptr_dealloc,
-                    );
+                    // Since we don't have lifelong thread to monitor, temperarily disable this.
+                    // (self.fn_report_thread_allocate_info.into_inner())(
+                    //     self.inner,
+                    //     BaseBuffView::from(thread_name.as_bytes()),
+                    //     interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr,
+                    //     ptr_alloc,
+                    // );
+                    // (self.fn_report_thread_allocate_info.into_inner())(
+                    //     self.inner,
+                    //     BaseBuffView::from(thread_name.as_bytes()),
+                    //     interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
+                    //     ptr_dealloc,
+                    // );
+
                     // Some threads are not everlasting, so we don't want TiFlash to directly access
                     // the pointer.
                     JEMALLOC_TNAME.with(|p| {
-                        *p.borrow_mut() = thread_name;
+                        *p.borrow_mut() = (thread_name, thread_id);
                     });
                     if ptr_alloc != 0 {
                         JEMALLOC_ALLOCP.with(|p| {
@@ -106,7 +110,7 @@ impl EngineStoreServerHelper {
     }
 
     pub fn directly_report_jemalloc_alloc(&self) {
-        JEMALLOC_TNAME.with(|thread_name| unsafe {
+        JEMALLOC_TNAME.with(|thread_info| unsafe {
             let a = JEMALLOC_ALLOCP.with(|p| {
                 let p = *p.borrow_mut();
                 if p.is_null() {
@@ -123,7 +127,8 @@ impl EngineStoreServerHelper {
             });
             (self.fn_report_thread_allocate_batch.into_inner())(
                 self.inner,
-                BaseBuffView::from(thread_name.borrow().as_bytes()),
+                thread_info.borrow().1,
+                BaseBuffView::from(thread_info.borrow().0.as_bytes()),
                 interfaces_ffi::ReportThreadAllocateInfoBatch {
                     alloc: a,
                     dealloc: d,
@@ -281,6 +286,7 @@ impl EngineStoreServerHelper {
         debug_assert!(self.fn_pre_handle_snapshot.is_some());
 
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         let snaps_view = into_sst_views(snaps);
         unsafe {
             let region = ProtoMsgBaseBuff::new(region);
@@ -298,6 +304,7 @@ impl EngineStoreServerHelper {
     pub fn apply_pre_handled_snapshot(&self, snap: RawCppPtr) {
         debug_assert!(self.fn_apply_pre_handled_snapshot.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe {
             (self.fn_apply_pre_handled_snapshot.into_inner())(self.inner, snap.ptr, snap.type_)
         }
@@ -306,6 +313,7 @@ impl EngineStoreServerHelper {
     pub fn abort_pre_handle_snapshot(&self, region_id: u64, peer_id: u64) {
         debug_assert!(self.fn_abort_pre_handle_snapshot.is_some());
         self.maybe_jemalloc_register_alloc();
+        self.directly_report_jemalloc_alloc();
         unsafe { (self.fn_abort_pre_handle_snapshot.into_inner())(self.inner, region_id, peer_id) }
     }
 

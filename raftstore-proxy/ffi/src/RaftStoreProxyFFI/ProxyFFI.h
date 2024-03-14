@@ -385,11 +385,11 @@ struct EngineStoreServerHelper {
   void (*fn_clear_fap_snapshot)(EngineStoreServerWrap *, uint64_t region_id);
   bool (*fn_kvstore_region_exists)(EngineStoreServerWrap *, uint64_t region_id);
   void (*fn_report_thread_allocate_info)(EngineStoreServerWrap *,
-                                         BaseBuffView name,
+                                         uint64_t thread_id, BaseBuffView name,
                                          ReportThreadAllocateInfoType type,
                                          uint64_t value);
   void (*fn_report_thread_allocate_batch)(EngineStoreServerWrap *,
-                                          BaseBuffView name,
+                                          uint64_t thread_id, BaseBuffView name,
                                           ReportThreadAllocateInfoBatch data);
 };
 

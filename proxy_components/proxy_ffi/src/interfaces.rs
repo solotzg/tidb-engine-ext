@@ -766,6 +766,7 @@ pub mod root {
             pub fn_report_thread_allocate_info: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
+                    thread_id: u64,
                     name: root::DB::BaseBuffView,
                     type_: root::DB::ReportThreadAllocateInfoType,
                     value: u64,
@@ -774,6 +775,7 @@ pub mod root {
             pub fn_report_thread_allocate_batch: ::std::option::Option<
                 unsafe extern "C" fn(
                     arg1: *mut root::DB::EngineStoreServerWrap,
+                    thread_id: u64,
                     name: root::DB::BaseBuffView,
                     data: root::DB::ReportThreadAllocateInfoBatch,
                 ),
@@ -786,7 +788,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 4690628711022033644;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 17598435718842250051;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }

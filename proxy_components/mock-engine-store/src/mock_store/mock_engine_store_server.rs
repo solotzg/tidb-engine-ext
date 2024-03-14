@@ -637,6 +637,7 @@ unsafe extern "C" fn ffi_get_lock_by_key(
 
 unsafe extern "C" fn ffi_report_thread_allocate_info(
     arg1: *mut interfaces_ffi::EngineStoreServerWrap,
+    _: u64,
     name: interfaces_ffi::BaseBuffView,
     t: interfaces_ffi::ReportThreadAllocateInfoType,
     value: u64,
@@ -674,6 +675,7 @@ unsafe extern "C" fn ffi_report_thread_allocate_info(
 
 unsafe extern "C" fn ffi_report_thread_allocate_batch(
     _: *mut interfaces_ffi::EngineStoreServerWrap,
+    _: u64,
     _name: interfaces_ffi::BaseBuffView,
     _data: interfaces_ffi::ReportThreadAllocateInfoBatch,
 ) {
