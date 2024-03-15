@@ -62,10 +62,7 @@ impl EngineStoreServerHelper {
                 unsafe {
                     let ptr_alloc: u64 = crate::jemalloc_utils::get_allocatep_on_thread_start();
                     let ptr_dealloc: u64 = crate::jemalloc_utils::get_deallocatep_on_thread_start();
-                    let thread_name = std::thread::current()
-                        .name()
-                        .unwrap_or("<proxy-unknown>")
-                        .to_string();
+                    let thread_name = std::thread::current().name().unwrap_or("").to_string();
                     let thread_id: u64 = std::thread::current().id().as_u64().into();
                     (self.fn_report_thread_allocate_info.into_inner())(
                         self.inner,
@@ -74,19 +71,20 @@ impl EngineStoreServerHelper {
                         interfaces_ffi::ReportThreadAllocateInfoType::Reset,
                         0,
                     );
-                    // Since we don't have lifelong thread to monitor, temperarily disable this.
-                    // (self.fn_report_thread_allocate_info.into_inner())(
-                    //     self.inner,
-                    //     BaseBuffView::from(thread_name.as_bytes()),
-                    //     interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr,
-                    //     ptr_alloc,
-                    // );
-                    // (self.fn_report_thread_allocate_info.into_inner())(
-                    //     self.inner,
-                    //     BaseBuffView::from(thread_name.as_bytes()),
-                    //     interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
-                    //     ptr_dealloc,
-                    // );
+                    (self.fn_report_thread_allocate_info.into_inner())(
+                        self.inner,
+                        thread_id,
+                        BaseBuffView::from(thread_name.as_bytes()),
+                        interfaces_ffi::ReportThreadAllocateInfoType::AllocPtr,
+                        ptr_alloc,
+                    );
+                    (self.fn_report_thread_allocate_info.into_inner())(
+                        self.inner,
+                        thread_id,
+                        BaseBuffView::from(thread_name.as_bytes()),
+                        interfaces_ffi::ReportThreadAllocateInfoType::DeallocPtr,
+                        ptr_dealloc,
+                    );
 
                     // Some threads are not everlasting, so we don't want TiFlash to directly access
                     // the pointer.

@@ -6,7 +6,6 @@
 /// Other mods which define and impl structs should not end up with name
 /// `_impls`.
 
-
 #[allow(dead_code)]
 pub mod interfaces;
 // All ffi impls that not related to raft domain.
