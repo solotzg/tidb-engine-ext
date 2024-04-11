@@ -208,6 +208,8 @@ fn test_read_index_normal() {
     cluster.shutdown();
 }
 
+/// If a read index request is received while region state is Applying,
+/// it could be handled correctly.
 #[test]
 fn test_read_index_applying() {
     // Initialize cluster
@@ -229,7 +231,6 @@ fn test_read_index_applying() {
     {
         let prev_state = maybe_collect_states(&cluster.cluster_ext, r1, Some(vec![1]));
         let (compact_index, compact_term) = get_valid_compact_index_by(&prev_state, Some(vec![1]));
-        debug!("compact_index1111 {:?}", compact_index);
     }
     cluster.pd_client.must_none_pending_peer(p2.clone());
     // assert_eq!(cluster.pd_client.get_pending_peers().len(), 0);
@@ -254,7 +255,6 @@ fn test_read_index_applying() {
     {
         let prev_state = collect_all_states(&cluster.cluster_ext, r1);
         let (compact_index, compact_term) = get_valid_compact_index_by(&prev_state, Some(vec![1]));
-        debug!("compact_index {:?}", compact_index);
         let compact_log = test_raftstore::new_compact_log_request(compact_index, compact_term);
         let req = test_raftstore::new_admin_request(r1, region.get_region_epoch(), compact_log);
         let res = cluster
@@ -322,6 +322,8 @@ fn test_read_index_applying() {
     }
 
     cluster.shutdown();
+    fail::remove("on_pre_write_apply_state");
+    fail::remove("region_apply_snap");
 }
 
 #[test]
