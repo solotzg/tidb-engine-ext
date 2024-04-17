@@ -779,6 +779,7 @@ pub struct ReplicaReadLockChecker {
 
 impl ReplicaReadLockChecker {
     pub fn new(concurrency_manager: ConcurrencyManager) -> Self {
+        info!("!!!!!! ReplicaReadLockChecker::new");
         ReplicaReadLockChecker {
             concurrency_manager,
         }
@@ -797,6 +798,10 @@ impl ReadIndexObserver for ReplicaReadLockChecker {
         // Only check and return result if the current peer is a leader.
         // If it's not a leader, the read index request will be redirected to the leader
         // later.
+        info!(
+            "!!!!!! ReplicaReadLockChecker::on_step {:?} {:?}",
+            msg, role
+        );
         if msg.get_msg_type() != MessageType::MsgReadIndex || role != StateRole::Leader {
             return;
         }
@@ -808,6 +813,7 @@ impl ReadIndexObserver for ReplicaReadLockChecker {
             let start_ts = request.get_start_ts().into();
             self.concurrency_manager.update_max_ts(start_ts);
             for range in request.mut_key_ranges().iter_mut() {
+                info!("!!!!!! ReplicaReadLockChecker::range {:?}", range);
                 let key_bound = |key: Vec<u8>| {
                     if key.is_empty() {
                         None

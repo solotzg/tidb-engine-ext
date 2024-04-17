@@ -2547,12 +2547,15 @@ where
             return Ok(());
         }
 
+        debug!("!!!!!! handle 3");
+
         if msg.get_is_tombstone() {
             // we receive a message tells us to remove ourself.
             self.handle_gc_peer_msg(&msg);
             return Ok(());
         }
 
+        debug!("!!!!!! handle 4");
         if msg.has_merge_target() {
             fail_point!("on_has_merge_target", |_| Ok(()));
             if self.need_gc_merge(&msg)? {
@@ -2561,10 +2564,12 @@ where
             return Ok(());
         }
 
+        debug!("!!!!!! handle 5");
         if self.check_msg(&msg) {
             return Ok(());
         }
 
+        debug!("!!!!!! handle 6");
         if msg.has_extra_msg() {
             self.on_extra_message(msg);
             return Ok(());
@@ -2572,6 +2577,7 @@ where
 
         let is_snapshot = msg.get_message().has_snapshot();
 
+        debug!("!!!!!! handle 7");
         // TODO: spin off the I/O code (delete_snapshot)
         let regions_to_destroy = match self.check_snapshot(&msg)? {
             Either::Left(key) => {
@@ -2588,6 +2594,7 @@ where
             Either::Right(v) => v,
         };
 
+        debug!("!!!!!! handle 8");
         if util::is_vote_msg(msg.get_message()) || msg_type == MessageType::MsgTimeoutNow {
             if self.fsm.hibernate_state.group_state() != GroupState::Chaos {
                 self.fsm.reset_hibernate_state(GroupState::Chaos);
@@ -2600,10 +2607,12 @@ where
         let from_peer_id = msg.get_from_peer().get_id();
         self.fsm.peer.insert_peer_cache(msg.take_from_peer());
 
+        debug!("!!!!!! handle 8.1");
         let result = if msg_type == MessageType::MsgTransferLeader {
             self.on_transfer_leader_msg(msg.get_message(), peer_disk_usage);
             Ok(())
         } else {
+            debug!("!!!!!! handle 8.2");
             // This can be a message that sent when it's still a follower. Nevertheleast,
             // it's meaningless to continue to handle the request as callbacks are cleared.
             if msg.get_message().get_msg_type() == MessageType::MsgReadIndex
@@ -2611,14 +2620,22 @@ where
                 && (msg.get_message().get_from() == raft::INVALID_ID
                     || msg.get_message().get_from() == self.fsm.peer_id())
             {
+                debug!(
+                    "!!!!!! handle 8.2.2 {} {} {}",
+                    self.fsm.peer.is_leader(),
+                    msg.get_message().get_from(),
+                    msg.get_message().get_from()
+                );
                 self.ctx.raft_metrics.message_dropped.stale_msg.inc();
                 return Ok(());
             }
+            debug!("!!!!!! handle 8.3");
             self.fsm.peer.step(self.ctx, msg.take_message())
         };
 
         stepped.set(result.is_ok());
 
+        debug!("!!!!!! handle 9");
         if is_snapshot {
             if !self.fsm.peer.has_pending_snapshot() {
                 // This snapshot is rejected by raft-rs.
