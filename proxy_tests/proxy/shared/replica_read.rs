@@ -483,7 +483,6 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
     let region = cluster.get_region(b"");
     assert_eq!(region_id, 1);
     assert_eq!(region.get_id(), 1);
-    info!("!!!!! region {:?}", region);
     let leader = region.get_peers()[0].clone();
 
     fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
@@ -552,7 +551,6 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
         }
 
         let resp = block_on(result_rx).unwrap();
-        info!("!!!!!! XZZZDD {:?}", resp);
         (resp.get_responses()[0].get_read_index().clone(), start_ts)
     };
 

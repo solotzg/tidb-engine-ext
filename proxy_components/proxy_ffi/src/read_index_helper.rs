@@ -91,7 +91,6 @@ pub fn gen_read_index_raft_cmd_req(req: &mut ReadIndexRequest) -> RaftCmdRequest
         inner_req.set_cmd_type(CmdType::ReadIndex);
         inner_req.mut_read_index().set_start_ts(req.get_start_ts());
         if !req.get_ranges().is_empty() {
-            tikv_util::info!("!!!!!! not empty");
             let r = &mut req.mut_ranges()[0];
             let mut range = kvproto::kvrpcpb::KeyRange::default();
             range.set_start_key(r.take_start_key());
