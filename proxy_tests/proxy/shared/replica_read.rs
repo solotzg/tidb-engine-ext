@@ -381,23 +381,6 @@ fn test_raft_cmd_request_cant_advanve_max_ts() {
     cluster.run();
 
     let cm = cluster.sim.read().unwrap().get_concurrency_manager(1);
-    let keys: Vec<_> = vec![b"k", b"l"]
-        .into_iter()
-        .map(|k| Key::from_raw(k))
-        .collect();
-    let guards = block_on(cm.lock_keys(keys.iter()));
-    let lock = Lock::new(
-        LockType::Put,
-        b"k".to_vec(),
-        1.into(),
-        20000,
-        None,
-        1.into(),
-        1,
-        2.into(),
-        false,
-    );
-    guards[0].with_lock(|l| *l = Some(lock.clone()));
 
     let region = cluster.get_region(b"");
     let leader = region.get_peers()[0].clone();
@@ -471,6 +454,8 @@ fn test_raft_cmd_request_cant_advanve_max_ts() {
     // Actually not changed
     assert_eq!(cm.max_ts(), prev_cm_max_ts);
     assert_ne!(cm.max_ts(), start_ts);
+    cluster.shutdown();
+    fail::remove("on_pre_write_apply_state")
 }
 
 #[test]
@@ -518,6 +503,8 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
 
     let read_index = |ranges: &[(&[u8], &[u8])]| {
         let start_ts = block_on(cluster.pd_client.get_tso()).unwrap();
+
+        // https://github.com/pingcap/tiflash/blob/14a127820d0530e496af624bb5b69acd48caf747/dbms/src/Storages/KVStore/Read/ReadIndex.cpp#L39
         let mut ctx = Context::default();
         let learner = learner.clone();
         ctx.set_region_id(region_id);
@@ -583,6 +570,8 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
     let (resp, start_ts) = read_index(&[(b"a", b"z")]);
     assert!(!resp.has_locked());
     assert_eq!(cm.max_ts(), start_ts);
+    cluster.shutdown();
+    fail::remove("on_pre_write_apply_state")
 }
 
 #[test]
@@ -592,23 +581,6 @@ fn test_raft_message_can_advanve_max_ts() {
     cluster.run();
 
     let cm = cluster.sim.read().unwrap().get_concurrency_manager(1);
-    let keys: Vec<_> = vec![b"k", b"l"]
-        .into_iter()
-        .map(|k| Key::from_raw(k))
-        .collect();
-    let guards = block_on(cm.lock_keys(keys.iter()));
-    let lock = Lock::new(
-        LockType::Put,
-        b"k".to_vec(),
-        1.into(),
-        20000,
-        None,
-        1.into(),
-        1,
-        2.into(),
-        false,
-    );
-    guards[0].with_lock(|l| *l = Some(lock.clone()));
 
     let region = cluster.get_region(b"");
     let leader = region.get_peers()[0].clone();
@@ -619,7 +591,6 @@ fn test_raft_message_can_advanve_max_ts() {
     let channel = ChannelBuilder::new(env).connect(&addr);
     let client = TikvClient::new(channel);
 
-    let mut ctx = Context::default();
     let region_id = leader.get_id();
 
     let read_index = |ranges: &[(&[u8], &[u8])]| {
@@ -657,7 +628,6 @@ fn test_raft_message_can_advanve_max_ts() {
     };
 
     // wait a while until the node updates its own max ts
-
     let prev_cm_max_ts = cm.max_ts();
     let (resp, start_ts) = read_index(&[(b"l", b"yz")]);
     cluster.must_put(b"a", b"b");
@@ -666,4 +636,6 @@ fn test_raft_message_can_advanve_max_ts() {
     // Actually not changed
     assert_ne!(cm.max_ts(), prev_cm_max_ts);
     assert_eq!(cm.max_ts(), start_ts);
+    cluster.shutdown();
+    fail::remove("on_pre_write_apply_state")
 }
