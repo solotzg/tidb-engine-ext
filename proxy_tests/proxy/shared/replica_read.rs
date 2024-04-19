@@ -713,6 +713,10 @@ fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
         // read index -> calculate_min_commit_ts -> write lock
         fail::cfg("before_calculate_min_commit_ts", "pause").unwrap();
     }
+    if read_index_in_middle {
+        // calculate_min_commit_ts -> read index -> write lock
+        fail::cfg("after_calculate_min_commit_ts", "pause").unwrap();
+    }
     let mut prewrite_resp = {
         use kvproto::kvrpcpb::PrewriteRequest;
         let mut prewrite_req = PrewriteRequest::default();
@@ -732,16 +736,12 @@ fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
         let prewrite_resp = client.kv_prewrite_async(&prewrite_req).unwrap();
         prewrite_resp
     };
+    // Wait prewrite finish
     std::thread::sleep(Duration::from_millis(2000));
-    if read_index_in_middle {
-        // calculate_min_commit_ts -> read index -> write lock
-        fail::cfg("after_calculate_min_commit_ts", "pause").unwrap();
-    }
     let prev_cm_max_ts = cm.max_ts();
-    let (resp, start_ts) = read_index(&[(b"a", b"z")], 1112);
+    let (resp, start_ts) = read_index(&[(b"", b"")], 1112);
+    // Wait read index finish
     std::thread::sleep(Duration::from_millis(2000));
-    // assert!(!resp.has_locked());
-    // Actually not changed
     assert_ne!(cm.max_ts(), prev_cm_max_ts);
     assert_eq!(cm.max_ts().into_inner(), start_ts);
     fail::remove("before_calculate_min_commit_ts");
