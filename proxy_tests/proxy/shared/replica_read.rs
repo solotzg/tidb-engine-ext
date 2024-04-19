@@ -458,6 +458,7 @@ fn test_raft_cmd_request_cant_advanve_max_ts() {
     fail::remove("on_pre_write_apply_state")
 }
 
+// https://github.com/tikv/tikv/pull/8669/files
 #[test]
 fn test_raft_cmd_request_learner_advanve_max_ts() {
     use kvproto::kvrpcpb::{ReadIndexRequest, ReadIndexResponse};
