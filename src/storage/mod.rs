@@ -1543,6 +1543,7 @@ impl<E: Engine, L: LockManager, F: KvFormat> Storage<E, L, F> {
 
         match &cmd {
             Command::Prewrite(Prewrite { mutations, .. }) => {
+                info!("!!!!!! prewrite {:?}", mutations);
                 let keys = mutations.iter().map(|m| m.key().as_encoded());
                 Self::check_api_version(
                     self.api_version,

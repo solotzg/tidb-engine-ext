@@ -551,6 +551,7 @@ impl<'a> PrewriteMutation<'a> {
             lock.secondaries = secondary_keys.to_owned();
         }
 
+        fail_point!("before_calculate_min_commit_ts");
         let final_min_commit_ts = if lock.use_async_commit || try_one_pc {
             let res = async_commit_timestamps(
                 &self.key,
@@ -566,6 +567,7 @@ impl<'a> PrewriteMutation<'a> {
                 lock.use_async_commit = false;
                 lock.secondaries = Vec::new();
             }
+            info!("!!!!! final_min_commit_ts {:?}", res);
             res
         } else {
             Ok(TimeStamp::zero())
