@@ -1704,7 +1704,6 @@ where
                 "msg_size" => msg.get_message().compute_size(),
                 "to" => to_peer_id,
                 "disk_usage" => ?msg.get_disk_usage(),
-                "!!!!msg" => ?msg
             );
 
             for (term, index) in msg
