@@ -836,6 +836,7 @@ impl ReadIndexObserver for ReplicaReadLockChecker {
                     },
                 );
                 if let Err(txn_types::Error(box txn_types::ErrorInner::KeyIsLocked(lock))) = res {
+                    info!("!!!!!! ZZZZ has lock {:?}", lock);
                     rctx.locked = Some(lock);
                     REPLICA_READ_LOCK_CHECK_HISTOGRAM_VEC_STATIC
                         .locked

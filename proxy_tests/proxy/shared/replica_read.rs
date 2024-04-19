@@ -641,8 +641,7 @@ fn test_raft_message_can_advanve_max_ts() {
     fail::remove("on_pre_write_apply_state")
 }
 
-#[test]
-fn test_concurrent_update_maxts_and_commit() {
+fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
     use kvproto::{
         kvrpcpb::{Mutation, Op},
         raft_cmdpb::{ReadIndexRequest, ReadIndexResponse},
@@ -671,7 +670,7 @@ fn test_concurrent_update_maxts_and_commit() {
     ctx.set_peer(leader.clone());
     ctx.set_region_epoch(region.get_region_epoch().clone());
 
-    let read_index = |ranges: &[(&[u8], &[u8])], start_ts: u64| {
+    let mut read_index = |ranges: &[(&[u8], &[u8])], start_ts: u64| {
         let mut m = raft::eraftpb::Message::default();
         m.set_msg_type(MessageType::MsgReadIndex);
         let mut read_index_req = ReadIndexRequest::default();
@@ -688,15 +687,15 @@ fn test_concurrent_update_maxts_and_commit() {
             request: Some(read_index_req),
             locked: None,
         };
-        let mut e = raft::eraftpb::Entry::default();
+        let mut e: raft::prelude::Entry = raft::eraftpb::Entry::default();
         e.set_data(rctx.to_bytes().into());
         m.mut_entries().push(e);
         m.set_from(2);
 
         let mut raft_msg = kvproto::raft_serverpb::RaftMessage::default();
         raft_msg.set_region_id(region.get_id());
-        raft_msg.set_from_peer(follower);
-        raft_msg.set_to_peer(leader);
+        raft_msg.set_from_peer(follower.clone());
+        raft_msg.set_to_peer(leader.clone());
         raft_msg.set_region_epoch(region.get_region_epoch().clone());
         raft_msg.set_message(m);
         cluster.send_raft_msg(raft_msg).unwrap();
@@ -704,45 +703,106 @@ fn test_concurrent_update_maxts_and_commit() {
         (ReadIndexResponse::default(), start_ts)
     };
 
-    // let (k, v) = (b"k1".to_vec(), b"k2".to_vec());
-    // let mut mutation = Mutation::default();
-    // mutation.set_op(Op::Put);
-    // mutation.set_key(k.clone());
-    // mutation.set_value(v);
-    // must_kv_prewrite(&client, ctx.clone(), vec![mutation], k.clone(), 10);
-
-    // let block_duration = Duration::from_millis(300);
-    // let client_clone = client.clone();
-    // let ctx_clone = ctx.clone();
-    // let k_clone = k.clone();
-    // let handle = std::thread::spawn(move || {
-    //     std::thread::sleep(block_duration);
-    //     info!("!!!!!! ZZZZ must commit");
-    //     must_kv_commit(&client_clone, ctx_clone, vec![k_clone], 10, 30, 100);
-    // });
     let cli = {
         let env = Arc::new(Environment::new(1));
         let channel = ChannelBuilder::new(env).connect(&addr);
         TikvClient::new(channel)
     };
 
-    must_kv_prewrite_with(
-        &cli,
-        ctx.clone(),
-        vec![new_mutation(Op::Put, &b"key2"[..], &b"value1"[..])],
-        vec![],
-        b"key2".to_vec(),
-        10,
-        0,
-        true,
-        false,
-    );
+    if !read_index_in_middle {
+        // read index -> calculate_min_commit_ts -> write lock
+        fail::cfg("before_calculate_min_commit_ts", "pause").unwrap();
+    }
+    let mut prewrite_resp = {
+        use kvproto::kvrpcpb::PrewriteRequest;
+        let mut prewrite_req = PrewriteRequest::default();
+        prewrite_req.set_context(ctx.clone());
+        prewrite_req.set_mutations(
+            vec![new_mutation(Op::Put, &b"key2"[..], &b"value1"[..])]
+                .into_iter()
+                .collect(),
+        );
+        prewrite_req.primary_lock = b"key2".to_vec();
+        prewrite_req.start_version = 10;
+        prewrite_req.lock_ttl = 3000;
+        prewrite_req.for_update_ts = 0;
+        prewrite_req.min_commit_ts = prewrite_req.start_version + 1;
+        prewrite_req.use_async_commit = true;
+        prewrite_req.try_one_pc = false;
+        let prewrite_resp = client.kv_prewrite_async(&prewrite_req).unwrap();
+        prewrite_resp
+    };
+    std::thread::sleep(Duration::from_millis(2000));
+    if read_index_in_middle {
+        // calculate_min_commit_ts -> read index -> write lock
+        fail::cfg("after_calculate_min_commit_ts", "pause").unwrap();
+    }
+    let prev_cm_max_ts = cm.max_ts();
+    let (resp, start_ts) = read_index(&[(b"a", b"z")], 1112);
+    std::thread::sleep(Duration::from_millis(2000));
+    // assert!(!resp.has_locked());
+    // Actually not changed
+    assert_ne!(cm.max_ts(), prev_cm_max_ts);
+    assert_eq!(cm.max_ts().into_inner(), start_ts);
+    fail::remove("before_calculate_min_commit_ts");
+    fail::remove("after_calculate_min_commit_ts");
 
-    let (resp, start_ts) = read_index(&[(b"a", b"z")], 100);
+    let pre_resp = prewrite_resp.receive_sync();
+    info!("pre_resp is {:?}", pre_resp);
 
-    std::thread::sleep(std::time::Duration::from_millis(10000));
+    {
+        let mut leader_id = 0;
+        let peers = region.get_peers();
+        for p in peers {
+            if p.get_id() == leader.get_id() {
+                leader_id = p.get_id();
+                break;
+            }
+        }
+        info!("leader_id is {}", leader_id);
 
-    // must_kv_commit(&cli, ctx.clone(), vec![b"key2".to_vec()], 10, 30, 100);
-    must_kv_read_equal(&cli, ctx.clone(), b"key2".to_vec(), b"value1".to_vec(), 100);
-    // handle.join().unwrap();
+        let mut c = Context::default();
+        c.set_region_id(region.get_id());
+        c.set_region_epoch(region.get_region_epoch().clone());
+        c.set_peer(leader.clone());
+        c.set_replica_read(true);
+        let mut range = KeyRange::default();
+        let raw_key = b"key2";
+        let encoded_key = Key::from_raw(raw_key);
+        range.set_start_key(encoded_key.as_encoded().to_vec());
+        let snap_c = SnapContext {
+            pb_ctx: &c,
+            // start_ts: Some(1112.into()),
+            start_ts: None,
+            key_ranges: vec![range],
+            ..Default::default()
+        };
+
+        use engine_traits::KvEngine;
+        use tikv::storage::{kv::SnapContext, mvcc::MvccReader, Engine};
+        let mut engine = cluster.sim.rl().storages[&leader_id].clone();
+        let snapshot = engine.snapshot(snap_c).unwrap();
+        let mut reader = MvccReader::new(snapshot, None, true);
+        let lock = reader
+            .load_lock(&Key::from_raw(&b"key2"[..]))
+            .unwrap()
+            .unwrap();
+        info!("!!!!! ddddd {:?}", lock);
+        // assert_eq!(lock.ts, start_ts.into());
+        assert!(!lock.is_pessimistic_lock());
+        assert_eq!(lock.min_commit_ts.into_inner(), 1113);
+    }
+
+    // must_kv_read_equal(&cli, ctx.clone(), b"key2".to_vec(),
+    // b"value1".to_vec(), 1245);
+}
+
+#[test]
+fn test_concurrent_update_maxts_and_commit_middle() {
+    concurrent_update_maxts_and_commit(true);
+}
+
+#[test]
+fn test_concurrent_update_maxts_and_commit_before() {
+    concurrent_update_maxts_and_commit(false);
 }
