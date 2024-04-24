@@ -644,19 +644,24 @@ fn test_raft_message_can_advanve_max_ts() {
 fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
     use kvproto::{
         kvrpcpb::{Mutation, Op},
-        raft_cmdpb::{ReadIndexRequest, ReadIndexResponse},
+        kvrpcpb::{ReadIndexRequest, ReadIndexResponse},
     };
     use test_raftstore::{
         must_kv_commit, must_kv_prewrite, must_kv_prewrite_with, must_kv_read_equal, new_mutation,
     };
-    let mut cluster = new_server_cluster(0, 1);
-    cluster.run();
+    let mut cluster = new_server_cluster(0, 2);
+    cluster.pd_client.disable_default_operator();
+    let region_id = cluster.run_conf_change();
+    let region = cluster.get_region(b"");
+    assert_eq!(region_id, 1);
+    assert_eq!(region.get_id(), 1);
+    let leader = region.get_peers()[0].clone();
 
     let cm = cluster.sim.read().unwrap().get_concurrency_manager(1);
+    fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
+    let learner = new_learner_peer(2, 2);
+    cluster.pd_client.must_add_peer(1, learner.clone());
 
-    let region = cluster.get_region(b"");
-    let leader = region.get_peers()[0].clone();
-    let follower = new_learner_peer(2, 2);
     let addr = cluster.sim.rl().get_addr(leader.get_store_id()).to_owned();
 
     let env = Arc::new(Environment::new(1));
@@ -670,37 +675,42 @@ fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
     ctx.set_peer(leader.clone());
     ctx.set_region_epoch(region.get_region_epoch().clone());
 
-    let mut read_index = |ranges: &[(&[u8], &[u8])], start_ts: u64| {
-        let mut m = raft::eraftpb::Message::default();
-        m.set_msg_type(MessageType::MsgReadIndex);
-        let mut read_index_req = ReadIndexRequest::default();
-        read_index_req.set_start_ts(start_ts);
-        for &(start_key, end_key) in ranges {
-            let mut range = KeyRange::default();
-            range.set_start_key(start_key.to_vec());
-            range.set_end_key(end_key.to_vec());
-            read_index_req.mut_key_ranges().push(range);
+    let read_index = |ranges: &[(&[u8], &[u8])], start_ts: u64| {
+        // https://github.com/pingcap/tiflash/blob/14a127820d0530e496af624bb5b69acd48caf747/dbms/src/Storages/KVStore/Read/ReadIndex.cpp#L39
+        let mut ctx = Context::default();
+        let learner = learner.clone();
+        ctx.set_region_id(region_id);
+        ctx.set_region_epoch(region.get_region_epoch().clone());
+        ctx.set_peer(learner);
+        let mut read_index_request = ReadIndexRequest::default();
+        read_index_request.set_context(ctx);
+        read_index_request.set_start_ts(start_ts);
+        for (s, e) in ranges {
+            let mut r = KeyRange::new();
+            r.set_start_key(s.to_vec());
+            r.set_end_key(e.to_vec());
+            read_index_request.mut_ranges().push(r);
+        }
+        let mut cmd =
+            proxy_ffi::read_index_helper::gen_read_index_raft_cmd_req(&mut read_index_request);
+
+        let (result_tx, result_rx) = oneshot::channel();
+        let router = cluster.get_router(2).unwrap();
+        if let Err(e) = router.send_command(
+            cmd,
+            Callback::read(Box::new(move |resp| {
+                result_tx.send(resp.response).unwrap();
+            })),
+            RaftCmdExtraOpts {
+                deadline: None,
+                disk_full_opt: DiskFullOpt::AllowedOnAlmostFull,
+            },
+        ) {
+            panic!("router send msg failed, error: {}", e);
         }
 
-        let rctx = ReadIndexContext {
-            id: Uuid::new_v4(),
-            request: Some(read_index_req),
-            locked: None,
-        };
-        let mut e: raft::prelude::Entry = raft::eraftpb::Entry::default();
-        e.set_data(rctx.to_bytes().into());
-        m.mut_entries().push(e);
-        m.set_from(2);
-
-        let mut raft_msg = kvproto::raft_serverpb::RaftMessage::default();
-        raft_msg.set_region_id(region.get_id());
-        raft_msg.set_from_peer(follower.clone());
-        raft_msg.set_to_peer(leader.clone());
-        raft_msg.set_region_epoch(region.get_region_epoch().clone());
-        raft_msg.set_message(m);
-        cluster.send_raft_msg(raft_msg).unwrap();
-
-        (ReadIndexResponse::default(), start_ts)
+        let resp = block_on(result_rx).unwrap();
+        (resp.get_responses()[0].get_read_index().clone(), start_ts)
     };
 
     let cli = {
@@ -790,11 +800,13 @@ fn concurrent_update_maxts_and_commit(read_index_in_middle: bool) {
         info!("!!!!! ddddd {:?}", lock);
         // assert_eq!(lock.ts, start_ts.into());
         assert!(!lock.is_pessimistic_lock());
-        assert_eq!(lock.min_commit_ts.into_inner(), 1113);
+        if read_index_in_middle {
+            assert_eq!(resp.has_locked(), true);
+            assert_eq!(lock.min_commit_ts.into_inner(), 11);
+        } else {
+            assert_eq!(lock.min_commit_ts.into_inner(), 1113);
+        }
     }
-
-    // must_kv_read_equal(&cli, ctx.clone(), b"key2".to_vec(),
-    // b"value1".to_vec(), 1245);
 }
 
 #[test]
@@ -805,4 +817,12 @@ fn test_concurrent_update_maxts_and_commit_middle() {
 #[test]
 fn test_concurrent_update_maxts_and_commit_before() {
     concurrent_update_maxts_and_commit(false);
+}
+
+
+#[test]
+fn test_parse_raft_read_index_message() {
+    let s = "1660283F2EAC474F841FDFF38775DC57723D08C28090A7CEC4FB9D0612310A1B7480000000000000FF9A5F728000000000FFD4C1F90000000000FA12127480000000000000FF9B00000000000000F8";
+    let x = raftstore::store::ReadIndexContext::parse(&hex::decode(s).unwrap()).unwrap();
+    info!("{:?}", x.request);
 }
