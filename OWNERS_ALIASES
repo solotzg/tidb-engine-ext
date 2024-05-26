@@ -2,6 +2,6 @@
 aliases:
   sig-critical-approvers-config:
     - easonn7
-    - zhangjinpeng87
+    - yudongusa
   sig-approvers: # default repo approvers
     - CalvinNeo
