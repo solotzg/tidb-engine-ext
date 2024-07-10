@@ -22,7 +22,7 @@ use pprof::protos::Message;
 use regex::Regex;
 use tempfile::{NamedTempFile, TempDir};
 #[cfg(not(test))]
-use tikv_alloc::{activate_prof, deactivate_prof, dump_prof};
+use super::vendored_utils::{activate_prof, deactivate_prof, dump_prof};
 use tokio::sync::{Mutex, MutexGuard};
 
 #[cfg(test)]
