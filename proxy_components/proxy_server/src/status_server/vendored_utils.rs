@@ -6,11 +6,11 @@ use tikv_alloc::error::ProfResult;
 pub fn activate_prof() -> ProfResult<()> {
     {
         let mut value: bool = true;
-        let mut len = std::mem::size_of_val(&value) as u64;
+        let len = std::mem::size_of_val(&value) as u64;
         issue_mallctl_args(
             "prof.active",
-            &mut value as *mut _ as *mut _,
-            &mut len,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
             &mut value as *mut _ as *mut _,
             len,
         );
@@ -21,11 +21,11 @@ pub fn activate_prof() -> ProfResult<()> {
 pub fn deactivate_prof() -> ProfResult<()> {
     {
         let mut value: bool = false;
-        let mut len = std::mem::size_of_val(&value) as u64;
+        let len = std::mem::size_of_val(&value) as u64;
         issue_mallctl_args(
             "prof.active",
-            &mut value as *mut _ as *mut _,
-            &mut len,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
             &mut value as *mut _ as *mut _,
             len,
         );
