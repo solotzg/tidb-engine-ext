@@ -48,18 +48,34 @@ pub fn deactivate_prof() -> ProfResult<()> {
     Ok(())
 }
 
+extern crate libc;
+
 pub fn dump_prof(path: &str) -> tikv_alloc::error::ProfResult<()> {
     {
         let mut bytes = std::ffi::CString::new(path)?.into_bytes_with_nul();
         let mut ptr = bytes.as_mut_ptr() as *mut ::std::os::raw::c_char;
         let len = std::mem::size_of_val(&ptr) as u64;
-        issue_mallctl_args(
+        let r = issue_mallctl_args(
             "prof.dump",
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             &mut ptr as *mut _ as *mut _,
             len,
         );
+        if r != 0 {
+            unsafe {
+                let err = *libc::__errno_location();
+                let err_msg = libc::strerror(err);
+                let c_str = std::ffi::CStr::from_ptr(err_msg);
+                let str_slice = c_str.to_str().unwrap_or("Unknown error");
+                tikv_util::warn!(
+                    "dump_prof returns non-zero {} error_code: {} error_message: {}",
+                    r,
+                    err,
+                    str_slice
+                );
+            }
+        }
     }
     Ok(())
 }

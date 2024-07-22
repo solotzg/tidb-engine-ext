@@ -31,7 +31,7 @@ pub fn issue_mallctl_args(
     oldsize: *mut u64,
     newptr: *mut ::std::os::raw::c_void,
     newsize: u64,
-) {
+) -> ::std::os::raw::c_int {
     unsafe {
         let c_str = std::ffi::CString::new(command).unwrap();
         let c_ptr: *const ::std::os::raw::c_char = c_str.as_ptr() as *const ::std::os::raw::c_char;
@@ -42,13 +42,13 @@ pub fn issue_mallctl_args(
             {
                 // See NO_UNPREFIXED_MALLOC
                 #[cfg(any(target_os = "android", target_os = "dragonfly", target_os = "macos"))]
-                _rjem_mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
+                return _rjem_mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
                 #[cfg(not(any(
                     target_os = "android",
                     target_os = "dragonfly",
                     target_os = "macos"
                 )))]
-                mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
+                return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
             }
         }
 
@@ -57,12 +57,12 @@ pub fn issue_mallctl_args(
             #[cfg(feature = "external-jemalloc")]
             {
                 // Must linked to tiflash.
-                let _ = mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
+                return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
             }
             #[cfg(not(feature = "external-jemalloc"))]
             {
                 // Happens only with `raftstore-proxy-main`
-                let _ = mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
+                return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
             }
         }
     }
