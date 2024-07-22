@@ -69,7 +69,7 @@ pub fn adhoc_dump(path: &str) -> tikv_alloc::error::ProfResult<()> {
         let mut bytes = std::ffi::CString::new(path)?.into_bytes_with_nul();
         let mut ptr = bytes.as_mut_ptr() as *mut ::std::os::raw::c_char;
         let len = std::mem::size_of_val(&ptr) as u64;
-        let r = issue_mallctl_args(
+        issue_mallctl_args(
             "prof.dump",
             std::ptr::null_mut(),
             std::ptr::null_mut(),
