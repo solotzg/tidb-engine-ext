@@ -47,6 +47,7 @@ elif [[ $M == "testnew" ]]; then
     cargo check --package proxy_server --features="$ENABLE_FEATURES"
     # tests based on mock-engine-store, with compat for new proxy
     LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc_prof --features="jemalloc"
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::snapshot
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::config

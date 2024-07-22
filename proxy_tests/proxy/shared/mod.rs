@@ -7,6 +7,7 @@ mod fast_add_peer;
 mod ffi;
 mod ingest;
 mod jemalloc;
+mod jemalloc_prof;
 mod mock;
 mod normal;
 mod region;

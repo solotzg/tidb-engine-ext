@@ -20,6 +20,8 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 
+extern crate libc;
+
 #[allow(unused_variables)]
 #[allow(unused_mut)]
 #[allow(unused_unsafe)]
@@ -53,8 +55,13 @@ pub fn issue_mallctl_args(
         #[cfg(not(any(test, feature = "testexport")))]
         {
             // Must linked to tiflash.
-            #[cfg(feature = "external-jemalloc")]
             let r = mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
+            println!("issue_mallctl_args command {} r {}", command, r);
+            let err = *libc::__errno_location();
+            let err_msg = libc::strerror(err);
+            let c_str = std::ffi::CStr::from_ptr(err_msg);
+            let str_slice = c_str.to_str().unwrap_or("Unknown error");
+            println!("!!!!!!! issue_mallctl_args ee {} {} {} {}", command, r, err, str_slice);
         }
     }
 }
