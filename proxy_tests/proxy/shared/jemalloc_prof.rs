@@ -22,6 +22,7 @@ fn test_adhoc_dump_prof() {
 
     let f = NamedTempFile::new().unwrap();
     let path = f.path().to_str().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1000));
     proxy_server::status_server::vendored_utils::adhoc_dump(path).unwrap();
     let target_path = Path::new(path);
     assert_eq!(target_path.exists(), true);
