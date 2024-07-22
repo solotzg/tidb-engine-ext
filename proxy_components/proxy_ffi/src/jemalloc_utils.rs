@@ -64,7 +64,6 @@ pub fn issue_mallctl_args(
                 // Happens only with `raftstore-proxy-main`
                 let _ = mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
             }
-
         }
     }
 }

@@ -63,15 +63,6 @@ pub fn dump_prof(path: &str) -> tikv_alloc::error::ProfResult<()> {
 }
 
 pub fn adhoc_dump(path: &str) -> tikv_alloc::error::ProfResult<()> {
-    let prev_has_activate_prof = has_activate_prof();
-    if !prev_has_activate_prof{
-        activate_prof();
-    }
-    
-    let x = vec![1; 100000];
-    let y = vec![1; 100000];
-    let z = vec![1; 100000];
-    std::thread::sleep(std::time::Duration::from_millis(10000));
     {
         let mut bytes = std::ffi::CString::new(path)?.into_bytes_with_nul();
         let mut ptr = bytes.as_mut_ptr() as *mut ::std::os::raw::c_char;
@@ -83,9 +74,6 @@ pub fn adhoc_dump(path: &str) -> tikv_alloc::error::ProfResult<()> {
             &mut ptr as *mut _ as *mut _,
             len,
         );
-    }
-    if !prev_has_activate_prof{
-        deactivate_prof();
     }
     Ok(())
 }
