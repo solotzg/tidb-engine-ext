@@ -38,6 +38,7 @@ pub fn issue_mallctl_args(
         // See unprefixed_malloc_on_supported_platforms in tikv-jemalloc-sys.
         #[cfg(any(test, feature = "testexport"))]
         {
+            // Test part
             #[cfg(feature = "jemalloc")]
             {
                 // See NO_UNPREFIXED_MALLOC
@@ -55,6 +56,7 @@ pub fn issue_mallctl_args(
 
         #[cfg(not(any(test, feature = "testexport")))]
         {
+            // No test part
             #[cfg(feature = "external-jemalloc")]
             {
                 // Must linked to tiflash.
