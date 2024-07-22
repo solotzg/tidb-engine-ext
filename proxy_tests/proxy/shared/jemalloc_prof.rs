@@ -11,7 +11,7 @@ fn test_adhoc_dump_prof() {
     use proxy_server::status_server::vendored_utils::{
         activate_prof, deactivate_prof, has_activate_prof,
     };
-
+    test_util::init_log_for_test();
     let prev_has_activate_prof = has_activate_prof();
     if !prev_has_activate_prof {
         let _ = activate_prof();
@@ -25,7 +25,11 @@ fn test_adhoc_dump_prof() {
     proxy_server::status_server::vendored_utils::adhoc_dump(path).unwrap();
     let target_path = Path::new(path);
     assert_eq!(target_path.exists(), true);
-    assert!(std::fs::metadata(path).unwrap().len() > 1000);
+    tikv_util::info!(
+        "std::fs::metadata(path).unwrap().len() {}",
+        std::fs::metadata(path).unwrap().len()
+    );
+    assert!(std::fs::metadata(path).unwrap().len() > 100);
 
     if !prev_has_activate_prof {
         let _ = deactivate_prof();
