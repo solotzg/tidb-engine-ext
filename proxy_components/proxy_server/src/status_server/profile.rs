@@ -70,9 +70,7 @@ impl<'a, I, T> ProfileGuard<'a, I, T> {
             Ok(guard) => guard,
             _ => return Err("Already in Profiling".to_owned()),
         };
-        println!("!!!!! ZZZZZZZ");
         let item = on_start()?;
-        println!("!!!!! ZZZZZZZ 2");
         Ok(ProfileGuard {
             _guard,
             item: Some(item),
@@ -87,10 +85,8 @@ impl<'a, I, T> Future for ProfileGuard<'a, I, T> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.end.as_mut().poll(cx) {
             Poll::Ready(res) => {
-                println!("!!!!! RRRRRRR 1");
                 let item = self.item.take().unwrap();
                 let on_end = self.on_end.take().unwrap();
-                println!("!!!!! RRRRRRR 2");
                 let r = match (res, on_end(item)) {
                     (Ok(_), r) => r,
                     (Err(errmsg), _) => Err(errmsg),
@@ -120,29 +116,6 @@ where
         } else {
             read_file(path)
         }
-    };
-
-    ProfileGuard::new(on_start, on_end, end.boxed())?.await
-}
-
-/// Trigger a heap profie and return the content.
-#[allow(dead_code)]
-pub async fn start_adhoc_heap_profile<F>(end: F) -> Result<Vec<u8>, String>
-where
-    F: Future<Output = Result<(), String>> + Send + 'static,
-{
-    let on_start = || {
-        println!("!!!!! XXXXXX");
-        activate_prof().map_err(|e| format!("activate_prof: {}", e))
-    };
-
-    let on_end = move |_| {
-        deactivate_prof().map_err(|e| format!("deactivate_prof: {}", e))?;
-        let f = NamedTempFile::new().map_err(|e| format!("create tmp file fail: {}", e))?;
-        let path = f.path().to_str().unwrap();
-        println!("!!!!! YYYYYY {}", path);
-        dump_prof(path).map_err(|e| format!("dump_prof: {}", e))?;
-        jeprof_heap_profile(path)
     };
 
     ProfileGuard::new(on_start, on_end, end.boxed())?.await

@@ -12,6 +12,5 @@ fn test_adhoc_dump_prof() {
     proxy_server::status_server::vendored_utils::adhoc_dump(path).unwrap();
     let target_path = Path::new(path);
     assert_eq!(target_path.exists(), true);
-    std::thread::sleep(std::time::Duration::from_millis(100000));
-    panic!("AAAAA");
+    assert!(std::fs::metadata(path).unwrap().len() > 1000);
 }
