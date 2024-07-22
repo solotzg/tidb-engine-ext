@@ -371,7 +371,7 @@ pub fn setup_default_tikv_config(default: &mut TikvConfig) {
     // Do not add here, try use `address_proxy_config`.
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, OnlineConfig)]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Debug, OnlineConfig)]
 #[serde(default)]
 #[serde(rename_all = "kebab-case")]
 pub struct MemoryConfig {

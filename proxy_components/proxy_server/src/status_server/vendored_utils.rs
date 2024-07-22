@@ -5,7 +5,7 @@ use tikv_alloc::error::ProfResult;
 
 pub fn activate_prof() -> ProfResult<()> {
     {
-        tikv_util::debug("activate_prof");
+        tikv_util::debug!("activate_prof");
         let mut value: bool = true;
         let len = std::mem::size_of_val(&value) as u64;
         issue_mallctl_args(
@@ -34,7 +34,7 @@ pub fn has_activate_prof() -> bool {
 
 pub fn deactivate_prof() -> ProfResult<()> {
     {
-        tikv_util::debug("deactivate_prof");
+        tikv_util::debug!("deactivate_prof");
         let mut value: bool = false;
         let len = std::mem::size_of_val(&value) as u64;
         issue_mallctl_args(
