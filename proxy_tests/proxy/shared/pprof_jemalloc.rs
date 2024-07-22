@@ -7,7 +7,7 @@ use tempfile::NamedTempFile;
 use crate::utils::v1::*;
 
 // TODO Works locally, failed in CI
-// #[test]
+#[test]
 fn test_adhoc_dump_prof() {
     use proxy_server::status_server::vendored_utils::{
         activate_prof, deactivate_prof, has_activate_prof,
