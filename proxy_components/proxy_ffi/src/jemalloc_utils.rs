@@ -50,6 +50,7 @@ pub fn issue_mallctl_args(
                 )))]
                 return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
             }
+            return 0;
         }
 
         #[cfg(not(any(test, feature = "testexport")))]
