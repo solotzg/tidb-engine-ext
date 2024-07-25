@@ -61,7 +61,7 @@ engine_tiflash = { workspace = true, default-features = false }
 engine_traits = { workspace = true }
 error_code = { workspace = true }
 fail = "0.5"
-file_system = { workspace = true, default-features = false }
+file_system = { workspace = true }
 fs2 = "0.4"
 futures = "0.3"
 grpcio = { version = "0.10", default-features = false, features = ["openssl-vendored"] }
