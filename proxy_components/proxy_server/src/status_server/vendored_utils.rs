@@ -50,7 +50,7 @@ pub fn deactivate_prof() -> ProfResult<()> {
 
 extern crate libc;
 
-fn print_error_message(_s: &str) {
+fn print_error_message(s: &str, r: ::std::os::raw::c_int) {
     #[cfg(not(any(target_os = "android", target_os = "dragonfly", target_os = "macos")))]
     {
         unsafe {
@@ -82,7 +82,7 @@ pub fn dump_prof(path: &str) -> tikv_alloc::error::ProfResult<()> {
             len,
         );
         if r != 0 {
-            print_error_message("dump_prof");
+            print_error_message("dump_prof", r);
         }
     }
     Ok(())
@@ -101,7 +101,7 @@ pub fn adhoc_dump(path: &str) -> tikv_alloc::error::ProfResult<()> {
             len,
         );
         if r != 0 {
-            print_error_message("adhoc_dump");
+            print_error_message("adhoc_dump", r);
         }
     }
     Ok(())
