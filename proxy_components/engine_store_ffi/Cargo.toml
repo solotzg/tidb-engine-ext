@@ -48,7 +48,7 @@ openssl = { workspace = true } # TODO only for feature
 engine_rocks = { workspace = true }
 # Should be [dev-dependencies] but we need to control the features
 # https://github.com/rust-lang/cargo/issues/6915
-engine_test = { workspace = true }
+engine_test = { workspace = true, default-features = false }
 engine_tiflash = { workspace = true, default-features = false }
 engine_traits = { workspace = true }
 error_code = { workspace = true }
@@ -58,7 +58,7 @@ fs2 = "0.4"
 futures = "0.3"
 futures-util = { version = "0.3.1", default-features = false, features = ["io"] }
 getset = "0.1"
-grpcio-health = { version = "0.10", features = ["protobuf-codec"] }
+grpcio-health = { version = "0.10", default-features = false, features = ["protobuf-codec"] }
 into_other = { workspace = true }
 itertools = "0.10"
 keys = { workspace = true }
@@ -75,9 +75,9 @@ prometheus = { version = "0.13", features = ["nightly"] }
 prometheus-static-metric = "0.5"
 protobuf = { version = "2.8", features = ["bytes"] }
 proxy_ffi = { workspace = true, default-features = false }
-raft = { version = "0.7.0", features = ["protobuf-codec"] }
+raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft-proto = { version = "0.7.0", default-features = false }
-raftstore = { workspace = true }
+raftstore = { workspace = true, default-features = false }
 rand = "0.8.3"
 serde = "1.0"
 serde_derive = "1.0"
@@ -85,7 +85,7 @@ serde_with = "1.4"
 slog = { workspace = true }
 slog-global = { workspace = true }
 smallvec = "1.4"
-sst_importer = { workspace = true }
+sst_importer = { workspace = true, default-features = false }
 tempfile = "3.0"
 thiserror = "1.0"
 tikv_alloc = { workspace = true }
@@ -93,7 +93,7 @@ tikv_util = { workspace = true }
 time = "0.1"
 tokio = { version = "1.5", features = ["sync", "rt-multi-thread"] }
 tokio-timer = { git = "https://github.com/tikv/tokio", branch = "tokio-timer-hotfix" }
-tracker = { workspace = true}
+tracker = { workspace = true }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 yatp = { git = "https://github.com/tikv/yatp.git", branch = "master" }
 

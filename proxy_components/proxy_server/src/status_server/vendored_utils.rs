@@ -51,11 +51,7 @@ pub fn deactivate_prof() -> ProfResult<()> {
 extern crate libc;
 
 fn print_error_message(_s: &str) {
-    #[cfg(not(any(
-        target_os = "android",
-        target_os = "dragonfly",
-        target_os = "macos"
-    )))]
+    #[cfg(not(any(target_os = "android", target_os = "dragonfly", target_os = "macos")))]
     {
         unsafe {
             let err = *libc::__errno_location();
