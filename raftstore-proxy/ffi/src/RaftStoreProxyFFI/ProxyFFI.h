@@ -297,7 +297,7 @@ struct PageStorageInterfaces {
   void (*fn_wb_put_page)(RawVoidPtr, BaseBuffView, BaseBuffView);
   void (*fn_wb_del_page)(RawVoidPtr, BaseBuffView);
   uint64_t (*fn_get_wb_size)(RawVoidPtr);
-  uint64_t (*get_wb_count)(RawVoidPtr);
+  uint64_t (*fn_get_wb_count)(RawVoidPtr);
   uint8_t (*fn_is_wb_empty)(RawVoidPtr);
   void (*fn_handle_merge_wb)(RawVoidPtr, RawVoidPtr);
   void (*fn_handle_clear_wb)(RawVoidPtr);
