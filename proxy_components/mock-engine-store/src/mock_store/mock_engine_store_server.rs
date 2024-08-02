@@ -400,6 +400,7 @@ pub fn gen_engine_store_server_helper(
             fn_wb_put_page: Some(ffi_mockps_wb_put_page),
             fn_wb_del_page: Some(ffi_mockps_wb_del_page),
             fn_get_wb_size: Some(ffi_mockps_get_wb_size),
+            fn_get_wb_count: Some(ffi_mockps_get_wb_count),
             fn_is_wb_empty: Some(ffi_mockps_is_wb_empty),
             fn_handle_merge_wb: Some(ffi_mockps_handle_merge_wb),
             fn_handle_clear_wb: Some(ffi_mockps_handle_clear_wb),

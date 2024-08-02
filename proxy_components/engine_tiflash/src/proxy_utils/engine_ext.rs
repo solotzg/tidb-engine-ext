@@ -45,6 +45,10 @@ impl PageStorageExt {
         self.helper().get_wb_size(wb) as usize
     }
 
+    pub fn write_batch_count(&self, wb: RawVoidPtr) -> usize {
+        self.helper().get_wb_count(wb) != 0
+    }
+
     pub fn write_batch_is_empty(&self, wb: RawVoidPtr) -> bool {
         self.helper().is_wb_empty(wb) != 0
     }

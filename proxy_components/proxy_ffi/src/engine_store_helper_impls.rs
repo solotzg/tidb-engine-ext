@@ -531,6 +531,11 @@ impl EngineStoreServerHelper {
         unsafe { (self.ps.fn_get_wb_size.into_inner())(wb) }
     }
 
+    pub fn get_wb_count(&self, wb: RawVoidPtr) -> usize {
+        debug_assert!(self.ps.fn_get_wb_count.is_some());
+        unsafe { (self.ps.fn_get_wb_count.into_inner())(wb) }
+    }
+
     pub fn is_wb_empty(&self, wb: RawVoidPtr) -> u8 {
         debug_assert!(self.ps.fn_is_wb_empty.is_some());
         unsafe { (self.ps.fn_is_wb_empty.into_inner())(wb) }

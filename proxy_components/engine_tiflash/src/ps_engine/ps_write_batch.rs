@@ -54,9 +54,7 @@ impl ElementaryWriteBatch for PSElementWriteBatch {
     }
 
     fn count(&self) -> usize {
-        // FIXME
-        // TODO
-        0
+        self.ps_ext.write_batch_count(self.ps_wb.ptr)
     }
 
     fn is_empty(&self) -> bool {

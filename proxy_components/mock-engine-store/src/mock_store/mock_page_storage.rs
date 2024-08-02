@@ -115,6 +115,11 @@ pub unsafe extern "C" fn ffi_mockps_get_wb_size(wb: RawVoidPtr) -> u64 {
     wb.data.len() as u64
 }
 
+pub unsafe extern "C" fn ffi_mockps_get_wb_count(wb: RawVoidPtr) -> u64 {
+    let wb = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
+    wb.data.len() as u64
+}
+
 pub unsafe extern "C" fn ffi_mockps_is_wb_empty(wb: RawVoidPtr) -> u8 {
     let wb = <&mut MockPSWriteBatch as From<RawVoidPtr>>::from(wb);
     u8::from(wb.data.is_empty())

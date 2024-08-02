@@ -519,6 +519,8 @@ pub mod root {
             >,
             pub fn_get_wb_size:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr) -> u64>,
+            pub get_wb_count:
+                ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr) -> u64>,
             pub fn_is_wb_empty:
                 ::std::option::Option<unsafe extern "C" fn(arg1: root::DB::RawVoidPtr) -> u8>,
             pub fn_handle_merge_wb: ::std::option::Option<
@@ -789,7 +791,7 @@ pub mod root {
                 arg3: root::DB::RawVoidPtr,
             ) -> u32;
         }
-        pub const RAFT_STORE_PROXY_VERSION: u64 = 9679186549381427051;
+        pub const RAFT_STORE_PROXY_VERSION: u64 = 714870053267928739;
         pub const RAFT_STORE_PROXY_MAGIC_NUMBER: u32 = 324508639;
     }
 }
