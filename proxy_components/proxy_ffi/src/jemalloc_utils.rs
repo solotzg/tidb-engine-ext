@@ -63,28 +63,15 @@ pub fn issue_mallctl_args(
             #[cfg(not(feature = "external-jemalloc"))]
             {
                 // Happens only with `raftstore-proxy-main`
-                #[cfg(not(any(test, feature = "testexport")))]
+                #[cfg(not(any(
+                    target_os = "android",
+                    target_os = "dragonfly",
+                    target_os = "macos"
+                )))]
                 {
-                    // No test part
-                    #[cfg(feature = "external-jemalloc")]
-                    {
-                        // Must linked to tiflash.
-                        return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
-                    }
-                    #[cfg(not(feature = "external-jemalloc"))]
-                    {
-                        // Happens only with `raftstore-proxy-main`
-                        #[cfg(not(any(
-                            target_os = "android",
-                            target_os = "dragonfly",
-                            target_os = "macos"
-                        )))]
-                        {
-                            return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
-                        }
-                        0
-                    }
+                    return mallctl(c_ptr, oldptr, oldsize, newptr, newsize);
                 }
+                0
             }
         }
     }
