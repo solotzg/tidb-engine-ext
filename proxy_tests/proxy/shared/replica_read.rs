@@ -518,7 +518,7 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
             r.set_end_key(e.to_vec());
             read_index_request.mut_ranges().push(r);
         }
-        let mut cmd =
+        let cmd =
             proxy_ffi::read_index_helper::gen_read_index_raft_cmd_req(&mut read_index_request);
 
         let (result_tx, result_rx) = oneshot::channel();

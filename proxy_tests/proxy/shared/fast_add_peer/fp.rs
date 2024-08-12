@@ -853,6 +853,7 @@ fn test_fall_back_to_slow_path() {
     fail::cfg("fap_core_no_fast_path", "panic").unwrap();
 
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
+    // FAP will fail for "can't find entry for index 9 of region 1".
     check_key(&cluster, b"k2", b"v2", Some(true), None, Some(vec![1, 2]));
     must_wait_until_cond_node(
         &cluster.cluster_ext,
