@@ -946,6 +946,9 @@ fn test_single_replica_migrate() {
 }
 
 // Test MsgSnapshot before MsgAppend
+/// According to https://github.com/tikv/raft-rs/blob/2aefbf627f243dd261b7585ef1250d32efd9dfe7/src/raft.rs#L842,
+/// if log is truncated in Leader, a MsgSnapshot may be sent directly before a MsgAppend.
+/// If such MsgSnapshot is received when a FAP snapshot IS BUILDING, then it will be dropped.
 #[test]
 fn test_msgsnapshot_before_msgappend() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
@@ -964,16 +967,13 @@ fn test_msgsnapshot_before_msgappend() {
     check_key(&cluster, b"k1", b"v1", Some(true), None, Some(vec![1]));
     cluster.must_put(b"k2", b"v2");
 
-    // cluster.add_send_filter(CloneFilterFactory(
-    //     RegionPacketFilter::new(1, 2)
-    //         .msg_type(MessageType::MsgAppend)
-    //         .direction(Direction::Recv),
-    // ));
+    fail::cfg("fap_core_no_fallback", "panic").unwrap();
     fail::cfg("fap_mock_force_wait_for_data", "return(1)").unwrap();
     pd_client.must_add_peer(1, new_learner_peer(2, 2));
 
     std::thread::sleep(Duration::from_secs(1));
 
+    // Trigger direct MsgSnapshot.
     let region = cluster.get_region("k1".as_bytes());
     let prev_state = maybe_collect_states(&cluster.cluster_ext, 1, Some(vec![1]));
     let (compact_index, compact_term) = get_valid_compact_index(&prev_state);
@@ -1000,6 +1000,7 @@ fn test_msgsnapshot_before_msgappend() {
         assert!(t < 11);
     }
 
+    // MsgSnapshot will be rejected before.
     fail::remove("fap_mock_force_wait_for_data");
     cluster.clear_send_filters();
 
@@ -1038,5 +1039,6 @@ fn test_msgsnapshot_before_msgappend() {
 
     fail::remove("on_can_apply_snapshot");
     fail::remove("on_pre_write_apply_state");
+    fail::remove("fap_core_no_fallback");
     cluster.shutdown();
 }
