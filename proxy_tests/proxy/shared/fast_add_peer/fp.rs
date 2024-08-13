@@ -947,8 +947,9 @@ fn test_single_replica_migrate() {
 
 // Test MsgSnapshot before MsgAppend
 /// According to https://github.com/tikv/raft-rs/blob/2aefbf627f243dd261b7585ef1250d32efd9dfe7/src/raft.rs#L842,
-/// if log is truncated in Leader, a MsgSnapshot may be sent directly before a MsgAppend.
-/// If such MsgSnapshot is received when a FAP snapshot IS BUILDING, then it will be dropped.
+/// if log is truncated in Leader, a MsgSnapshot may be sent directly before a
+/// MsgAppend. If such MsgSnapshot is received when a FAP snapshot IS BUILDING,
+/// then it will be dropped.
 #[test]
 fn test_msgsnapshot_before_msgappend() {
     let (mut cluster, pd_client) = new_mock_cluster_snap(0, 2);
