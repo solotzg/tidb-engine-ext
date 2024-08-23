@@ -7,7 +7,7 @@ use engine_store_ffi::ffi::{
     ProtoMsgBaseBuff,
 };
 
-use crate::{shared::ffi, utils::v1::*};
+use crate::utils::v1::*;
 
 #[derive(Default)]
 struct GcMonitor {
@@ -210,6 +210,8 @@ fn test_read_index_normal() {
 
 /// If a read index request is received while region state is Applying,
 /// it could be handled correctly.
+/// NOTE even if we can handle Applying properly here, the read index will be
+/// reject in `resolveLocksAndWriteRegion` in TiFlash.
 #[test]
 fn test_read_index_applying() {
     // Initialize cluster
@@ -230,7 +232,7 @@ fn test_read_index_applying() {
     cluster.must_put(b"k0", b"v");
     {
         let prev_state = maybe_collect_states(&cluster.cluster_ext, r1, Some(vec![1]));
-        let (compact_index, compact_term) = get_valid_compact_index_by(&prev_state, Some(vec![1]));
+        let _ = get_valid_compact_index_by(&prev_state, Some(vec![1]));
     }
     cluster.pd_client.must_none_pending_peer(p2.clone());
     // assert_eq!(cluster.pd_client.get_pending_peers().len(), 0);
@@ -360,22 +362,21 @@ fn test_util() {
 use kvproto::{
     kvrpcpb::{Context, DiskFullOpt, KeyRange},
     raft_cmdpb::{CmdType, RaftCmdRequest, RaftRequestHeader, Request as RaftRequest},
-    raft_serverpb::RaftMessage,
 };
 use raftstore::{
     router::RaftStoreRouter,
     store::{msg::Callback, RaftCmdExtraOpts, ReadIndexContext},
 };
 use tokio::sync::oneshot;
-use txn_types::{Key, Lock, LockType, TimeStamp};
+use txn_types::{Key, Lock, LockType};
 use uuid::Uuid;
 
-use crate::utils::v1_server::{new_server_cluster, ChannelBuilder, Environment, TikvClient};
+use crate::utils::v1_server::new_server_cluster;
 
 // https://github.com/tikv/tikv/issues/16823
 #[test]
 fn test_raft_cmd_request_cant_advanve_max_ts() {
-    use kvproto::kvrpcpb::{ReadIndexRequest, ReadIndexResponse};
+    use kvproto::kvrpcpb::ReadIndexRequest;
 
     let mut cluster = new_server_cluster(0, 1);
     cluster.run();
@@ -384,10 +385,6 @@ fn test_raft_cmd_request_cant_advanve_max_ts() {
 
     let region = cluster.get_region(b"");
     let leader = region.get_peers()[0].clone();
-    let addr = cluster.sim.rl().get_addr(leader.get_store_id()).to_owned();
-
-    let env = Arc::new(Environment::new(1));
-    let channel = ChannelBuilder::new(env).connect(&addr);
 
     let mut ctx = Context::default();
     let region_id = leader.get_id();
@@ -468,7 +465,6 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
     let region = cluster.get_region(b"");
     assert_eq!(region_id, 1);
     assert_eq!(region.get_id(), 1);
-    let leader = region.get_peers()[0].clone();
 
     fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
     let learner = new_learner_peer(2, 2);
@@ -493,11 +489,6 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
     );
     guards[0].with_lock(|l| *l = Some(lock.clone()));
 
-    let addr = cluster.sim.rl().get_addr(learner.get_store_id()).to_owned();
-
-    let env = Arc::new(Environment::new(1));
-    let channel = ChannelBuilder::new(env).connect(&addr);
-
     // cluster.must_put(b"k", b"v");
 
     let read_index = |ranges: &[(&[u8], &[u8])]| {
@@ -518,7 +509,7 @@ fn test_raft_cmd_request_learner_advanve_max_ts() {
             r.set_end_key(e.to_vec());
             read_index_request.mut_ranges().push(r);
         }
-        let mut cmd =
+        let cmd =
             proxy_ffi::read_index_helper::gen_read_index_raft_cmd_req(&mut read_index_request);
 
         let (result_tx, result_rx) = oneshot::channel();
@@ -584,12 +575,6 @@ fn test_raft_message_can_advanve_max_ts() {
     let region = cluster.get_region(b"");
     let leader = region.get_peers()[0].clone();
     let follower = new_learner_peer(2, 2);
-    let addr = cluster.sim.rl().get_addr(leader.get_store_id()).to_owned();
-
-    let env = Arc::new(Environment::new(1));
-    let channel = ChannelBuilder::new(env).connect(&addr);
-
-    let region_id = leader.get_id();
 
     let read_index = |ranges: &[(&[u8], &[u8])]| {
         let mut m = raft::eraftpb::Message::default();
@@ -627,7 +612,7 @@ fn test_raft_message_can_advanve_max_ts() {
 
     // wait a while until the node updates its own max ts
     let prev_cm_max_ts = cm.max_ts();
-    let (resp, start_ts) = read_index(&[(b"l", b"yz")]);
+    let (_, start_ts) = read_index(&[(b"l", b"yz")]);
     cluster.must_put(b"a", b"b");
     std::thread::sleep(Duration::from_millis(2000));
     // assert!(!resp.has_locked());
@@ -636,4 +621,103 @@ fn test_raft_message_can_advanve_max_ts() {
     assert_eq!(cm.max_ts(), start_ts);
     cluster.shutdown();
     fail::remove("on_pre_write_apply_state")
+}
+
+#[test]
+fn test_read_index_diff_epoch() {
+    // Initialize cluster
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+    configure_for_lease_read(&mut cluster, Some(50), Some(10_000));
+    cluster.cfg.raft_store.raft_heartbeat_ticks = 1;
+    cluster.cfg.raft_store.raft_log_compact_sync_interval = ReadableDuration::millis(500);
+    pd_client.disable_default_operator();
+    disable_auto_gen_compact_log(&mut cluster);
+    // Otherwise will panic with `assert_eq!(apply_state, last_applied_state)`.
+    fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
+    // Set region and peers
+    let r1 = cluster.run_conf_change();
+    let p1 = new_peer(1, 1);
+    let p2 = new_learner_peer(2, 2);
+
+    cluster.pd_client.must_add_peer(r1, p2.clone());
+    cluster.must_put(b"k0", b"v");
+
+    let region = cluster.get_region(b"k0");
+    assert_eq!(cluster.leader_of_region(region.get_id()).unwrap(), p1);
+
+    check_key(&cluster, b"k0", b"v", Some(true), None, Some(vec![1, 2]));
+
+    for i in 1..5 {
+        cluster.must_put(format!("k{}0", i).as_bytes(), b"v");
+    }
+
+    check_key(&cluster, b"k40", b"v", Some(true), None, Some(vec![1, 2]));
+
+    cluster.must_split(&region, b"k20");
+
+    cluster.must_put(b"k11", b"v");
+    cluster.must_put(b"k31", b"v");
+    check_key(&cluster, b"k11", b"v", Some(true), None, Some(vec![1, 2]));
+    check_key(&cluster, b"k31", b"v", Some(true), None, Some(vec![1, 2]));
+
+    let waker = Waker::new();
+
+    let new_region = cluster.get_region(b"31");
+    let new_region_peer = new_region
+        .get_peers()
+        .iter()
+        .filter(|x| x.get_store_id() == 2)
+        .last()
+        .unwrap();
+
+    for (id, peer, f) in &[(2, p2, true), (2, new_region_peer.clone(), true)] {
+        iter_ffi_helpers(
+            &cluster,
+            Some(vec![*id]),
+            &mut |_, ffi_helper: &mut FFIHelperSet| {
+                assert_eq!(
+                    general_get_region_local_state(
+                        &ffi_helper.engine_store_server.engines.as_ref().unwrap().kv,
+                        r1
+                    )
+                    .unwrap()
+                    .get_state(),
+                    PeerState::Normal
+                );
+                let mut request = kvproto::kvrpcpb::ReadIndexRequest::default();
+
+                {
+                    let context = request.mut_context();
+                    context.set_region_id(region.get_id());
+                    context.set_peer(peer.clone());
+                    context.set_region_epoch(region.get_region_epoch().clone());
+                    request.set_start_ts(666);
+
+                    let mut range = kvproto::kvrpcpb::KeyRange::default();
+                    range.set_start_key(region.get_start_key().to_vec());
+                    range.set_end_key(region.get_end_key().to_vec());
+                    request.mut_ranges().push(range);
+
+                    debug!("make read index request {:?}", &request);
+                }
+                let w = if *f { Some(&waker) } else { None };
+                let resp = blocked_read_index(&request, &*ffi_helper.proxy_helper, w).unwrap();
+                assert_eq!(resp.get_read_index(), 0);
+                debug!("resp detail {:?}", resp);
+                // Epoch Not Match error
+                assert!(resp.has_region_error());
+            },
+        );
+    }
+
+    drop(waker);
+
+    {
+        assert!(!GC_MONITOR.is_empty());
+        assert!(GC_MONITOR.valid_clean());
+    }
+
+    cluster.shutdown();
+    fail::remove("on_pre_write_apply_state");
+    fail::remove("region_apply_snap");
 }
