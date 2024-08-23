@@ -103,7 +103,7 @@ impl<'a, I, T> Future for ProfileGuard<'a, I, T> {
 pub async fn start_one_heap_profile<F>(
     end: F,
     use_jeprof: bool,
-    output_text: bool,
+    output_format: String,
 ) -> Result<Vec<u8>, String>
 where
     F: Future<Output = Result<(), String>> + Send + 'static,
@@ -117,7 +117,7 @@ where
         dump_prof(path).map_err(|e| format!("dump_prof: {}", e))?;
         if use_jeprof {
             // Use jeprof to transform heap file into svg/raw/collapsed...
-            jeprof_heap_profile(path, output_text)
+            jeprof_heap_profile(path, output_format)
         } else {
             // Juse return the heap file.
             read_file(path)
@@ -237,7 +237,7 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-pub fn jeprof_heap_profile(path: &str, output_text: bool) -> Result<Vec<u8>, String> {
+pub fn jeprof_heap_profile(path: &str, output_format: String) -> Result<Vec<u8>, String> {
     let bin = std::env::current_exe().map_err(|e| format!("get current exe path fail: {}", e))?;
     let bin_str = &bin.as_os_str().to_string_lossy();
     info!(
@@ -246,23 +246,13 @@ pub fn jeprof_heap_profile(path: &str, output_text: bool) -> Result<Vec<u8>, Str
         bin_str,
         std::path::Path::new(path).exists()
     );
-    let mut jeprof = if output_text {
-        Command::new("perl")
-            .args(["/dev/stdin", "--show_bytes", bin_str, path, "--collapsed"])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn jeprof fail: {}", e))
-    } else {
-        Command::new("perl")
-            .args(["/dev/stdin", "--show_bytes", bin_str, path, "--svg"])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn jeprof fail: {}", e))
-    }?;
+    let mut jeprof = Command::new("perl")
+        .args(["/dev/stdin", "--show_bytes", bin_str, path, &output_format])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn jeprof fail: {}", e))?;
     jeprof
         .stdin
         .take()

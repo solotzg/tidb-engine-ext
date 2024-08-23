@@ -240,11 +240,19 @@ where
         let query_pairs: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
 
         let use_jeprof = query_pairs.get("jeprof").map(|x| x.as_ref()) == Some("true");
-        let output_text = query_pairs.get("text").map(|x| x.as_ref()) == Some("true");
+        let output_format = match query_pairs.get("text").map(|x| x.as_ref()) {
+            None => "--svg",
+            Some("svg") => "--svg",
+            Some("text") => "--text",
+            Some("raw") => "--raw",
+            Some("collapsed") => "--collapsed",
+            _ => "--svg",
+        }
+        .to_string();
 
         let result = if let Some(name) = query_pairs.get("name") {
             if use_jeprof {
-                jeprof_heap_profile(name, output_text)
+                jeprof_heap_profile(name, output_format)
             } else {
                 read_file(name)
             }
@@ -263,7 +271,7 @@ where
             let end = Compat01As03::new(timer)
                 .map_err(|_| TIMER_CANCELED.to_owned())
                 .into_future();
-            start_one_heap_profile(end, use_jeprof, output_text).await
+            start_one_heap_profile(end, use_jeprof, output_format).await
         };
 
         match result {
