@@ -4,6 +4,7 @@ pub mod profile;
 pub mod vendored_utils;
 
 use std::{
+    env::args,
     error::Error as StdError,
     marker::PhantomData,
     net::SocketAddr,
@@ -15,7 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use std::env::args;
 use async_stream::stream;
 use collections::HashMap;
 use engine_store_ffi::ffi::interfaces_ffi::{EngineStoreServerHelper, HttpRequestStatus};
@@ -792,9 +792,7 @@ where
                                 Self::dump_cpu_prof_to_resp(req).await
                             }
                             (Method::GET, "/debug/pprof/cmdline") => Self::get_cmdline(req),
-                            (Method::GET, "/debug/pprof/symbol") => {
-                                Self::get_symbol_count(req)
-                            }
+                            (Method::GET, "/debug/pprof/symbol") => Self::get_symbol_count(req),
                             (Method::POST, "/debug/pprof/symbol") => Self::get_symbol(req).await,
                             (Method::GET, "/debug/fail_point") => {
                                 info!("debug fail point API start");
@@ -815,7 +813,10 @@ where
                                 Self::handle_http_request(req, engine_store_server_helper).await
                             }
 
-                            _ => Ok(make_response(StatusCode::NOT_FOUND, format!("path not found, {:?}", req))),
+                            _ => Ok(make_response(
+                                StatusCode::NOT_FOUND,
+                                format!("path not found, {:?}", req),
+                            )),
                         }
                     }
                 }))
