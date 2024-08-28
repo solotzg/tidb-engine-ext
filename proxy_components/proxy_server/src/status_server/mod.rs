@@ -206,6 +206,20 @@ where
             None => 60,
         };
 
+        let enable_period = match query_pairs.get("period") {
+            Some(val) => match val.parse() {
+                Ok(val) => val,
+                Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
+            },
+            None => 0,
+        };
+
+        if enable_period == 0 {
+            let msg = "set prof.active = true";
+            set_prof_active(true);
+            return Ok(make_response(StatusCode::OK, msg));
+        }
+
         let interval = Duration::from_secs(interval);
         let period = GLOBAL_TIMER_HANDLE
             .interval(Instant::now() + interval, interval)
@@ -226,11 +240,24 @@ where
     }
 
     fn deactivate_heap_prof(_req: Request<Body>) -> hyper::Result<Response<Body>> {
+        let disable_period = match query_pairs.get("period") {
+            Some(val) => match val.parse() {
+                Ok(val) => val,
+                Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
+            },
+            None => 1,
+        };
+
         let body = if deactivate_heap_profile() {
             "deactivate heap profile success"
         } else {
             "no heap profile is running"
         };
+
+        if disable_period == 1 {
+            set_prof_active(false);
+        }
+
         Ok(make_response(StatusCode::OK, body))
     }
 

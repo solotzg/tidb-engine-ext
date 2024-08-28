@@ -127,6 +127,19 @@ where
     ProfileGuard::new(on_start, on_end, end.boxed())?.await
 }
 
+pub fn set_prof_active(val: bool) -> Result<(), String> {
+    let activate = has_activate_prof();
+    if activate == val {
+        return Ok(());
+    }
+    if val {
+        activate_prof().map_err(|e| format!("activate_prof: {}", e))?;
+    } else {
+        deactivate_prof().map_err(|e| format!("deactivate_prof: {}", e))?;
+    }
+    Ok(())
+}
+
 /// Activate heap profile and call `callback` if successfully.
 /// `deactivate_heap_profile` can only be called after it's notified from
 /// `callback`.
