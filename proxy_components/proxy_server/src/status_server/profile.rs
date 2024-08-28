@@ -27,6 +27,7 @@ use tokio::sync::{Mutex, MutexGuard};
 pub use self::test_utils::TEST_PROFILE_MUTEX;
 #[cfg(test)]
 use self::test_utils::{activate_prof, deactivate_prof, dump_prof};
+use super::vendored_utils::has_activate_prof;
 #[cfg(not(test))]
 use super::vendored_utils::{activate_prof, deactivate_prof, dump_prof};
 

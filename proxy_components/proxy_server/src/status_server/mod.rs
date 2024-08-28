@@ -64,6 +64,8 @@ use tokio::{
 };
 use tokio_openssl::SslStream;
 
+use crate::status_server::profile::set_prof_active;
+
 static TIMER_CANCELED: &str = "tokio timer canceled";
 
 #[cfg(feature = "failpoints")]
@@ -206,7 +208,7 @@ where
             None => 60,
         };
 
-        let enable_period = match query_pairs.get("period") {
+        let enable_period: u64 = match query_pairs.get("period") {
             Some(val) => match val.parse() {
                 Ok(val) => val,
                 Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
@@ -216,7 +218,7 @@ where
 
         if enable_period == 0 {
             let msg = "set prof.active = true";
-            set_prof_active(true);
+            let _ = set_prof_active(true);
             return Ok(make_response(StatusCode::OK, msg));
         }
 
@@ -239,13 +241,16 @@ where
         }
     }
 
-    fn deactivate_heap_prof(_req: Request<Body>) -> hyper::Result<Response<Body>> {
-        let disable_period = match query_pairs.get("period") {
+    fn deactivate_heap_prof(req: Request<Body>) -> hyper::Result<Response<Body>> {
+        let query = req.uri().query().unwrap_or("");
+        let query_pairs: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
+
+        let disable_period: u64 = match query_pairs.get("period") {
             Some(val) => match val.parse() {
                 Ok(val) => val,
                 Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
             },
-            None => 1,
+            None => 0,
         };
 
         let body = if deactivate_heap_profile() {
@@ -254,8 +259,11 @@ where
             "no heap profile is running"
         };
 
+        // If we only disable period dump.
         if disable_period == 1 {
-            set_prof_active(false);
+            let _ = set_prof_active(true);
+        } else {
+            let _ = set_prof_active(false);
         }
 
         Ok(make_response(StatusCode::OK, body))
