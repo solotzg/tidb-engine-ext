@@ -160,25 +160,32 @@ where
         .map_err(|e| format!("create temp directory: {}", e))?;
     let dir_path = dir.path().to_str().unwrap().to_owned();
 
+    let has_active = has_activate_prof();
+
     let on_start = move || {
         let mut activate = PROFILE_ACTIVE.lock().unwrap();
         assert!(activate.is_none());
         activate_prof().map_err(|e| format!("activate_prof: {}", e))?;
         *activate = Some((tx, dir));
         callback();
-        info!("periodical heap profiling is started");
+        info!("periodical heap profiling is started"; "has_active" => has_active);
         Ok(())
     };
 
     let on_end = |_| {
         deactivate_heap_profile();
-        deactivate_prof().map_err(|e| format!("deactivate_prof: {}", e))
+        if !has_active {
+            // If profiling is already activated before, do not disable then.
+            deactivate_prof().map_err(|e| format!("deactivate_prof: {}", e))
+        } else {
+            Ok(())
+        }
     };
 
     let end = async move {
         select! {
             _ = rx.fuse() => {
-                info!("periodical heap profiling is canceled");
+                info!("periodical heap profiling is canceled"; "active" => has_activate_prof());
                 Ok(())
             },
             res = dump_heap_profile_periodically(dump_period, dir_path).fuse() => {
