@@ -208,20 +208,6 @@ where
             None => 60,
         };
 
-        let enable_period: u64 = match query_pairs.get("period") {
-            Some(val) => match val.parse() {
-                Ok(val) => val,
-                Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
-            },
-            None => 0,
-        };
-
-        if enable_period == 0 {
-            let msg = "set prof.active = true";
-            let _ = set_prof_active(true);
-            return Ok(make_response(StatusCode::OK, msg));
-        }
-
         let interval = Duration::from_secs(interval);
         let period = GLOBAL_TIMER_HANDLE
             .interval(Instant::now() + interval, interval)
@@ -241,32 +227,20 @@ where
         }
     }
 
-    fn deactivate_heap_prof(req: Request<Body>) -> hyper::Result<Response<Body>> {
-        let query = req.uri().query().unwrap_or("");
-        let query_pairs: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
-
-        let disable_period: u64 = match query_pairs.get("period") {
-            Some(val) => match val.parse() {
-                Ok(val) => val,
-                Err(err) => return Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
-            },
-            None => 0,
-        };
-
+    fn deactivate_heap_prof(_req: Request<Body>) -> hyper::Result<Response<Body>> {
         let body = if deactivate_heap_profile() {
             "deactivate heap profile success"
         } else {
             "no heap profile is running"
         };
-
-        // If we only disable period dump.
-        if disable_period == 1 {
-            let _ = set_prof_active(true);
-        } else {
-            let _ = set_prof_active(false);
-        }
-
         Ok(make_response(StatusCode::OK, body))
+    }
+
+    fn set_profile_active(_req: Request<Body>, val: bool) -> hyper::Result<Response<Body>> {
+        match set_prof_active(val) {
+            Ok(()) => Ok(make_response(StatusCode::OK, body)),
+            Err(e) => Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
+        }
     }
 
     #[allow(dead_code)]
@@ -806,6 +780,12 @@ where
                                 dump(cfg_controller.get_current().server.simplify_metrics).into(),
                             )),
                             (Method::GET, "/status") => Ok(Response::default()),
+                            (Method::GET, "/debug/pprof/set_prof_active") => {
+                                Self::set_profile_active(req, true)
+                            }
+                            (Method::GET, "/debug/pprof/set_prof_inactive") => {
+                                Self::set_profile_active(req, false)
+                            }
                             (Method::GET, "/debug/pprof/heap_list") => Self::list_heap_prof(req),
                             (Method::GET, "/debug/pprof/heap_activate") => {
                                 Self::activate_heap_prof(req, store_path).await
