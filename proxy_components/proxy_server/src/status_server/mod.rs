@@ -238,8 +238,8 @@ where
 
     fn set_profile_active(_req: Request<Body>, val: bool) -> hyper::Result<Response<Body>> {
         match set_prof_active(val) {
-            Ok(()) => Ok(make_response(StatusCode::OK, body)),
-            Err(e) => Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
+            Ok(()) => Ok(make_response(StatusCode::OK, "set prof.active succeed")),
+            Err(err) => Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
         }
     }
 
