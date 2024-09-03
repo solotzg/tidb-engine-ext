@@ -42,7 +42,6 @@ use error_code::ErrorCodeExt;
 use file_system::{get_io_rate_limiter, BytesFetcher, MetricsManager as IOMetricsManager};
 use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
-use grpcio_health::HealthService;
 use health_controller::HealthController;
 use kvproto::{
     debugpb::create_debug, diagnosticspb::create_diagnostics, import_sstpb::create_import_sst,
@@ -274,6 +273,7 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
 }
 
 #[inline]
+#[allow(clippy::extra_unused_type_parameters)]
 fn run_impl_only_for_decryption<CER: ConfiguredRaftEngine, F: KvFormat>(
     config: TikvConfig,
     proxy_config: ProxyConfig,
@@ -1134,7 +1134,6 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             )
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
         let raft_store = Arc::new(VersionTrack::new(self.core.config.raft_store.clone()));
-        let health_service = HealthService::default();
         let mut default_store = kvproto::metapb::Store::default();
 
         if !self.proxy_config.server.engine_store_version.is_empty() {
@@ -1540,6 +1539,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
                     .unwrap()
                     .join(Path::new(file_system::SPACE_PLACEHOLDER_FILE));
 
+                #[allow(clippy::needless_borrows_for_generic_args)]
                 let placeholder_size: u64 =
                     file_system::get_file_size(&placeholer_file_path).unwrap_or(0);
 
