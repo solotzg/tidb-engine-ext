@@ -64,6 +64,7 @@ proxy_server = { workspace = true }
 # proxy_test_raftstore_v2 = { workspace = true }
 raft = { version = "0.7.0", default-features = false, features = ["protobuf-codec"] }
 raft_log_engine = { workspace = true }
+health_controller = { workspace = true }
 raftstore = { workspace = true, default-features = false }
 raftstore-v2 = { workspace = true, default-features = false }
 rand = "0.8"

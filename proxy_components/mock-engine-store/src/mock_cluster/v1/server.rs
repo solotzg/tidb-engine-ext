@@ -1,4 +1,5 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
+#![allow(clippy::arc_with_non_send_sync)]
 
 use std::{
     path::Path,
@@ -19,6 +20,7 @@ use engine_traits::{Engines, MiscExt, SnapshotContext};
 use futures::executor::block_on;
 use grpcio::{ChannelBuilder, EnvBuilder, Environment, Error as GrpcError, Service};
 use grpcio_health::HealthService;
+use health_controller::HealthController;
 use kvproto::{
     deadlock::create_deadlock,
     debugpb::DebugClient,
@@ -70,7 +72,7 @@ use tikv::{
 };
 use tikv_util::{
     box_err,
-    config::VersionTrack,
+    config::{ReadableSize, VersionTrack},
     quota_limiter::QuotaLimiter,
     sys::thread::ThreadBuildWrapper,
     thd_name,
@@ -298,8 +300,15 @@ impl ServerCluster {
         );
 
         // Create coprocessor.
+        let enable_region_stats_mgr_cb: Arc<dyn Fn() -> bool + Send + Sync> =
+            if cfg.region_cache_memory_limit != ReadableSize(0) {
+                Arc::new(|| true)
+            } else {
+                Arc::new(|| false)
+            };
         let mut coprocessor_host = CoprocessorHost::new(router.clone(), cfg.coprocessor.clone());
-        let region_info_accessor = RegionInfoAccessor::new(&mut coprocessor_host);
+        let region_info_accessor =
+            RegionInfoAccessor::new(&mut coprocessor_host, enable_region_stats_mgr_cb);
 
         let raft_router = ServerRaftStoreRouter::new(router.clone(), local_reader);
         let sim_router = SimulateTransport::new(raft_router.clone());
@@ -489,6 +498,7 @@ impl ServerCluster {
             )
             .unwrap();
         let health_service = HealthService::default();
+        let health_controller = HealthController::new();
         let mut node = Node::new(
             system,
             &server_cfg.value().clone(),
@@ -497,7 +507,7 @@ impl ServerCluster {
             Arc::clone(&self.pd_client),
             state,
             bg_worker.clone(),
-            Some(health_service.clone()),
+            health_controller.clone(),
             None,
         );
         node.try_bootstrap_store(engines.clone())?;
@@ -518,7 +528,7 @@ impl ServerCluster {
                 self.env.clone(),
                 None,
                 debug_thread_pool.clone(),
-                health_service.clone(),
+                health_controller.clone(),
                 None,
             )
             .unwrap();

@@ -42,7 +42,7 @@ use error_code::ErrorCodeExt;
 use file_system::{get_io_rate_limiter, BytesFetcher, MetricsManager as IOMetricsManager};
 use futures::executor::block_on;
 use grpcio::{EnvBuilder, Environment};
-use grpcio_health::HealthService;
+use health_controller::HealthController;
 use kvproto::{
     debugpb::create_debug, diagnosticspb::create_diagnostics, import_sstpb::create_import_sst,
 };
@@ -98,7 +98,7 @@ use tikv::{
 };
 use tikv_util::{
     check_environment_variables,
-    config::{ensure_dir_exist, ReadableDuration, VersionTrack},
+    config::{ensure_dir_exist, ReadableDuration, ReadableSize, VersionTrack},
     error,
     quota_limiter::{QuotaLimitConfigManager, QuotaLimiter},
     sys::{disk, register_memory_usage_high_water, thread::ThreadBuildWrapper, SysQuota},
@@ -273,6 +273,7 @@ pub fn run_impl<CER: ConfiguredRaftEngine, F: KvFormat>(
 }
 
 #[inline]
+#[allow(clippy::extra_unused_type_parameters)]
 fn run_impl_only_for_decryption<CER: ConfiguredRaftEngine, F: KvFormat>(
     config: TikvConfig,
     proxy_config: ProxyConfig,
@@ -677,7 +678,22 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             router.clone(),
             config.coprocessor.clone(),
         ));
-        let region_info_accessor = RegionInfoAccessor::new(coprocessor_host.as_mut().unwrap());
+
+        // Region stats manager collects region heartbeat for use by in-memory engine.
+        let region_stats_manager_enabled_cb: Arc<dyn Fn() -> bool + Send + Sync> =
+            if cfg!(feature = "memory-engine") {
+                let cfg_controller_clone = cfg_controller.clone();
+                Arc::new(move || {
+                    cfg_controller_clone.get_current().region_cache_memory_limit != ReadableSize(0)
+                })
+            } else {
+                Arc::new(|| false)
+            };
+
+        let region_info_accessor = RegionInfoAccessor::new(
+            coprocessor_host.as_mut().unwrap(),
+            region_stats_manager_enabled_cb,
+        );
 
         // Initialize concurrency manager
         let latest_ts = block_on(pd_client.get_tso()).expect("failed to get timestamp from PD");
@@ -1118,7 +1134,6 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             )
             .unwrap_or_else(|e| fatal!("failed to validate raftstore config {}", e));
         let raft_store = Arc::new(VersionTrack::new(self.core.config.raft_store.clone()));
-        let health_service = HealthService::default();
         let mut default_store = kvproto::metapb::Store::default();
 
         if !self.proxy_config.server.engine_store_version.is_empty() {
@@ -1140,6 +1155,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             panic!("engine address is empty");
         }
 
+        let health_controller = HealthController::new();
         let mut node = Node::new(
             self.system.take().unwrap(),
             &server_config.value().clone(),
@@ -1148,7 +1164,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             self.pd_client.clone(),
             state,
             self.core.background_worker.clone(),
-            Some(health_service.clone()),
+            health_controller.clone(),
             Some(default_store),
         );
         node.try_bootstrap_store(engines.engines.clone())
@@ -1225,7 +1241,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             self.env.clone(),
             unified_read_pool,
             debug_thread_pool,
-            health_service,
+            health_controller,
             self.resource_manager.clone(),
         )
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
@@ -1448,7 +1464,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
         let mut engine_metrics = EngineMetricsManager::<RocksEngine, ER>::new(
             self.tablet_registry.clone().unwrap(),
             self.kv_statistics.clone(),
-            self.core.config.rocksdb.titan.enabled,
+            self.core.config.rocksdb.titan.enabled.map_or(false, |v| v),
             self.engines.as_ref().unwrap().engines.raft.clone(),
             self.raft_statistics.clone(),
         );
@@ -1523,6 +1539,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
                     .unwrap()
                     .join(Path::new(file_system::SPACE_PLACEHOLDER_FILE));
 
+                #[allow(clippy::needless_borrows_for_generic_args)]
                 let placeholder_size: u64 =
                     file_system::get_file_size(&placeholer_file_path).unwrap_or(0);
 
