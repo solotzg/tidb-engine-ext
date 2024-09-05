@@ -498,6 +498,20 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
                 && msg.region_id == 1,
             |_| unreachable!()
         );
+        let record_all_messages = (|| {
+            fail::fail_point!("proxy_record_all_messages", |t| {
+                let t = t.unwrap().parse::<u64>().unwrap();
+                t
+            });
+            0
+        })();
+        #[cfg(any(test, feature = "testexport"))]
+        if record_all_messages == 1 {
+            info!("!!!!! msgmgmgmmg {:?}", msg);
+            if msg.get_is_tombstone() {
+                self.debug_struct.gc_message_count.as_ref().fetch_add(1, Ordering::SeqCst);
+            }
+        }
         !self.maybe_fast_path_tick(msg)
     }
 }

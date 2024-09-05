@@ -161,6 +161,7 @@ pub struct ServerCluster {
     concurrency_managers: HashMap<u64, ConcurrencyManager>,
     env: Arc<Environment>,
     pub causal_ts_providers: HashMap<u64, Arc<CausalTsProviderImpl>>,
+    debug_struct: DebugStruct,
 }
 
 impl ServerCluster {
@@ -205,6 +206,7 @@ impl ServerCluster {
             env,
             txn_extra_schedulers: HashMap::default(),
             causal_ts_providers: HashMap::default(),
+            debug_struct: DebugStruct::default(),
         }
     }
 
@@ -668,6 +670,9 @@ impl ServerCluster {
 }
 
 impl Simulator<TiFlashEngine> for ServerCluster {
+    fn get_debug_struct(&self) -> DebugStruct {
+        self.debug_struct.clone()
+    }
     fn run_node(
         &mut self,
         node_id: u64,

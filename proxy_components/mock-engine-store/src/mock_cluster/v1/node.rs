@@ -195,6 +195,7 @@ pub struct NodeCluster {
     #[allow(clippy::type_complexity)]
     post_create_coprocessor_host: Option<Box<dyn Fn(u64, &mut CoprocessorHost<TiFlashEngine>)>>,
     pub importer: Option<Arc<SstImporter<TiFlashEngine>>>,
+    debug_struct: DebugStruct,
 }
 
 impl std::panic::UnwindSafe for NodeCluster {}
@@ -211,6 +212,7 @@ impl NodeCluster {
             concurrency_managers: HashMap::default(),
             post_create_coprocessor_host: None,
             importer: None,
+            debug_struct: DebugStruct::default(),
         }
     }
 }
@@ -260,6 +262,10 @@ impl NodeCluster {
 }
 
 impl Simulator<TiFlashEngine> for NodeCluster {
+    fn get_debug_struct(&self) -> DebugStruct {
+        self.debug_struct.clone()
+    }
+
     fn run_node(
         &mut self,
         node_id: u64,
@@ -356,7 +362,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             simulate_trans.clone(),
             snap_mgr.clone(),
             packed_envs,
-            DebugStruct::default(),
+            self.debug_struct.clone(),
             key_mgr_cloned,
         );
         tiflash_ob.register_to(&mut coprocessor_host);

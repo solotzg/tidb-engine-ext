@@ -2208,6 +2208,7 @@ where
     }
 
     pub fn check_stale_state<T>(&mut self, ctx: &mut PollContext<EK, ER, T>) -> StaleState {
+        info!("!!!!!! check_stale_state 0 {:?}", self.leader_missing_time);
         if self.is_leader() {
             // Leaders always have valid state.
             //
@@ -2222,6 +2223,7 @@ where
         // If we are checking this it means we suspect the leader might be missing.
         // Mark down the time when we are called, so we can check later if it's been
         // longer than it should be.
+        info!("!!!!!! check_stale_state 1 {:?}", self.leader_missing_time);
         match self.leader_missing_time {
             None => {
                 self.leader_missing_time = Instant::now().into();

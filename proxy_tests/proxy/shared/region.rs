@@ -1,3 +1,5 @@
+use fail::fail_point;
+
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 use crate::utils::v1::*;
 
@@ -141,4 +143,45 @@ fn test_get_region_local_state() {
     }
 
     cluster.shutdown();
+}
+
+
+#[test]
+fn test_stale_peer() {
+    let (mut cluster, pd_client) = new_mock_cluster(0, 2);
+
+    cluster.cfg.raft_store.max_leader_missing_duration = ReadableDuration::secs(6);
+
+    pd_client.disable_default_operator();
+    disable_auto_gen_compact_log(&mut cluster);
+    // Otherwise will panic with `assert_eq!(apply_state, last_applied_state)`.
+    fail::cfg("on_pre_write_apply_state", "return(true)").unwrap();
+    // Set region and peers
+    let r1 = cluster.run_conf_change();
+
+    let p2 = new_learner_peer(2, 2);
+    pd_client.must_add_peer(r1, p2.clone());
+    cluster.must_put(b"k0", b"v");
+    check_key(&cluster, b"k0", b"v", Some(true), None, Some(vec![1, 2]));
+
+
+    cluster.add_send_filter(CloneFilterFactory(
+        RegionPacketFilter::new(1, 2).direction(Direction::Both),
+    ));
+
+    cluster.must_put(b"k1", b"v");
+    cluster.must_put(b"k2", b"v");
+    check_key(&cluster, b"k2", b"v", Some(true), None, Some(vec![1]));
+    check_key(&cluster, b"k2", b"v", Some(false), None, Some(vec![2]));
+
+    pd_client.must_remove_peer(1, p2.clone());
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    fail::cfg("proxy_record_all_messages", "return(1)");
+    cluster.clear_send_filters();
+
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    check_key(&cluster, b"k2", b"v", Some(false), None, Some(vec![2]));
+    std::thread::sleep(std::time::Duration::from_millis(6000));
+    assert_ne!(cluster.get_debug_struct().gc_message_count.as_ref().load(Ordering::SeqCst), 0);
 }

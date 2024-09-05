@@ -6589,10 +6589,12 @@ where
     }
 
     fn on_check_peer_stale_state_tick(&mut self) {
+        info!("!!!!!! on_check_peer_stale_state_tick 1 {:?}", self.ctx.cfg.max_leader_missing_duration);
         if self.fsm.peer.pending_remove {
             return;
         }
 
+        info!("!!!!!! on_check_peer_stale_state_tick 2");
         self.register_check_peer_stale_state_tick();
 
         if self.fsm.peer.is_handling_snapshot() || self.fsm.peer.has_pending_snapshot() {
@@ -6615,6 +6617,7 @@ where
             }
         }
 
+        info!("!!!!!! on_check_peer_stale_state_tick 4");
         if let Some(ForceLeaderState::ForceLeader { time, .. }) = self.fsm.peer.force_leader {
             // Clean up the force leader state after a timeout, since the PD recovery
             // process may have been aborted for some reasons.
@@ -6650,6 +6653,7 @@ where
             }
         }
 
+        info!("!!!!!! on_check_peer_stale_state_tick 5");
         // If this peer detects the leader is missing for a long long time,
         // it should consider itself as a stale peer which is removed from
         // the original cluster.
@@ -6668,6 +6672,7 @@ where
         // already.
         let state = self.fsm.peer.check_stale_state(self.ctx);
         fail_point!("peer_check_stale_state", state != StaleState::Valid, |_| {});
+        info!("!!!!!! on_check_peer_stale_state_tick 6 {:?}", state);
         match state {
             StaleState::Valid => (),
             StaleState::LeaderMissing | StaleState::MaybeLeaderMissing => {

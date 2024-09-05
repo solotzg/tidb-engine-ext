@@ -48,6 +48,7 @@ use test_raftstore::{
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
     new_transfer_leader_cmd, sleep_ms,
 };
+use engine_store_ffi::core::DebugStruct;
 use tikv::server::Result as ServerResult;
 use tikv_util::{
     debug, error, safe_panic,
@@ -70,6 +71,7 @@ use super::{
 // E,g, for node 1, the node id and store id are both 1.
 
 pub trait Simulator<EK: KvEngine> {
+    fn get_debug_struct(&self) -> DebugStruct;
     // Pass 0 to let pd allocate a node id if db is empty.
     // If node id > 0, the node must be created in db already,
     // and the node id must be the same as given argument.
@@ -183,6 +185,9 @@ impl<T: Simulator<TiFlashEngine>> std::panic::UnwindSafe for Cluster<T> {}
 
 // Copied or modified from test_raftstore
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
+    pub fn get_debug_struct(&self) -> DebugStruct {
+        self.sim.as_ref().read().expect("").get_debug_struct()
+    }
     pub fn new(
         id: u64,
         count: usize,
