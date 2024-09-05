@@ -1,6 +1,5 @@
-use fail::fail_point;
-
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
+use fail::fail_point;
 use crate::utils::v1::*;
 
 #[test]
