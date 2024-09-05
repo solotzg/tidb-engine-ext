@@ -507,9 +507,11 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         })();
         #[cfg(any(test, feature = "testexport"))]
         if record_all_messages == 1 {
-            info!("!!!!! msgmgmgmmg {:?}", msg);
             if msg.get_is_tombstone() {
-                self.debug_struct.gc_message_count.as_ref().fetch_add(1, Ordering::SeqCst);
+                self.debug_struct
+                    .gc_message_count
+                    .as_ref()
+                    .fetch_add(1, Ordering::SeqCst);
             }
         }
         !self.maybe_fast_path_tick(msg)

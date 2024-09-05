@@ -10,6 +10,7 @@ use std::{
 
 use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
+use engine_store_ffi::core::DebugStruct;
 use engine_traits::SnapshotContext;
 // mock cluster
 use engine_traits::{Engines, KvEngine, CF_DEFAULT};
@@ -48,7 +49,6 @@ use test_raftstore::{
     new_region_leader_cmd, new_request, new_status_request, new_store, new_tikv_config,
     new_transfer_leader_cmd, sleep_ms,
 };
-use engine_store_ffi::core::DebugStruct;
 use tikv::server::Result as ServerResult;
 use tikv_util::{
     debug, error, safe_panic,

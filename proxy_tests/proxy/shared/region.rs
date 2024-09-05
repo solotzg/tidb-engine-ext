@@ -145,7 +145,6 @@ fn test_get_region_local_state() {
     cluster.shutdown();
 }
 
-
 #[test]
 fn test_stale_peer() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
@@ -163,7 +162,6 @@ fn test_stale_peer() {
     pd_client.must_add_peer(r1, p2.clone());
     cluster.must_put(b"k0", b"v");
     check_key(&cluster, b"k0", b"v", Some(true), None, Some(vec![1, 2]));
-
 
     cluster.add_send_filter(CloneFilterFactory(
         RegionPacketFilter::new(1, 2).direction(Direction::Both),
@@ -183,5 +181,12 @@ fn test_stale_peer() {
     std::thread::sleep(std::time::Duration::from_millis(1500));
     check_key(&cluster, b"k2", b"v", Some(false), None, Some(vec![2]));
     std::thread::sleep(std::time::Duration::from_millis(6000));
-    assert_ne!(cluster.get_debug_struct().gc_message_count.as_ref().load(Ordering::SeqCst), 0);
+    assert_ne!(
+        cluster
+            .get_debug_struct()
+            .gc_message_count
+            .as_ref()
+            .load(Ordering::SeqCst),
+        0
+    );
 }

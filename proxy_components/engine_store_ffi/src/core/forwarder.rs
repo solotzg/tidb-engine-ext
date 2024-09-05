@@ -1,7 +1,8 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
-use encryption::DataKeyManager;
 use std::sync::atomic::AtomicU64;
+
+use encryption::DataKeyManager;
 
 use crate::core::common::*;
 
