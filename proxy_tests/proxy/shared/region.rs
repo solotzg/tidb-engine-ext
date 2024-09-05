@@ -145,11 +145,14 @@ fn test_get_region_local_state() {
     cluster.shutdown();
 }
 
+/// When a learner peer is removed by conf change, it will not wait until the conf change.
+/// However, leader could stop sending raft messages to the peer at an earlier stage,
+/// the peer is eventually removed by stale peer checking.
 #[test]
 fn test_stale_peer() {
     let (mut cluster, pd_client) = new_mock_cluster(0, 2);
 
-    cluster.cfg.raft_store.max_leader_missing_duration = ReadableDuration::secs(6);
+    cluster.cfg.raft_store.max_leader_missing_duration = ReadableDuration::secs(4);
 
     pd_client.disable_default_operator();
     disable_auto_gen_compact_log(&mut cluster);
@@ -173,14 +176,17 @@ fn test_stale_peer() {
     check_key(&cluster, b"k2", b"v", Some(false), None, Some(vec![2]));
 
     pd_client.must_remove_peer(1, p2.clone());
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
     fail::cfg("proxy_record_all_messages", "return(1)");
     cluster.clear_send_filters();
 
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
     check_key(&cluster, b"k2", b"v", Some(false), None, Some(vec![2]));
-    std::thread::sleep(std::time::Duration::from_millis(6000));
+    std::thread::sleep(std::time::Duration::from_millis(3000));
+    // Must received a gc peer message.
+    /// "receives gc message, trying to remove"
+    /// "raft message is stale, tell to gc"
     assert_ne!(
         cluster
             .get_debug_struct()
@@ -189,4 +195,5 @@ fn test_stale_peer() {
             .load(Ordering::SeqCst),
         0
     );
+    fail::remove("proxy_record_all_messages")
 }
