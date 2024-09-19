@@ -440,7 +440,14 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
             "apply_state" => ?apply_state,
         );
         let serverless_extra = ServerlessExtra::new(&res);
-        match self.build_and_send_snapshot(region_id, new_peer_id, msg, apply_state, new_region, serverless_extra) {
+        match self.build_and_send_snapshot(
+            region_id,
+            new_peer_id,
+            msg,
+            apply_state,
+            new_region,
+            serverless_extra,
+        ) {
             Ok(s) => {
                 match s {
                     FastAddPeerStatus::Ok => {
