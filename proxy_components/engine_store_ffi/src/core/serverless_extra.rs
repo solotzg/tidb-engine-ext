@@ -1,18 +1,13 @@
 // Copyright 2024 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::convert::TryInto;
-
-use crate::{
-    core::common::*,
-    ffi::interfaces_ffi::{FastAddPeerRes, FastAddPeerStatus},
-};
+use crate::ffi::interfaces_ffi::FastAddPeerRes;
 
 #[derive(Default)]
 pub struct ServerlessExtra {
-    shard_ver: u64,
-    inner_key: Vec<u8>,
-    enc_key: Vec<u8>,
-    txn_file_ref: Vec<u8>,
+    _shard_ver: u64,
+    _inner_key: Vec<u8>,
+    _enc_key: Vec<u8>,
+    _txn_file_ref: Vec<u8>,
 }
 
 impl ServerlessExtra {
