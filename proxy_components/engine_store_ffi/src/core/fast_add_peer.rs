@@ -525,7 +525,7 @@ impl<T: Transport + 'static, ER: RaftEngine> ProxyForwarder<T, ER> {
         msg: &RaftMessage,
         apply_state: RaftApplyState,
         new_region: kvproto::metapb::Region,
-        serverless_extra: ServerlessExtra,
+        _serverless_extra: ServerlessExtra,
     ) -> RaftStoreResult<FastAddPeerStatus> {
         let cached_manager = self.get_cached_manager();
         let inner_msg = msg.get_message();

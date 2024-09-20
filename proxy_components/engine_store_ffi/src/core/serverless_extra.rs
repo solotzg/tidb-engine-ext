@@ -11,7 +11,7 @@ pub struct ServerlessExtra {
 }
 
 impl ServerlessExtra {
-    pub fn new(res: &FastAddPeerRes) -> Self {
+    pub fn new(_res: &FastAddPeerRes) -> Self {
         Default::default()
     }
 }
