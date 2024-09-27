@@ -10,6 +10,7 @@ use std::{
 
 use collections::{HashMap, HashSet};
 use encryption::DataKeyManager;
+use engine_store_ffi::core::DebugStruct;
 use engine_traits::SnapshotContext;
 // mock cluster
 use engine_traits::{Engines, KvEngine, CF_DEFAULT};
@@ -70,6 +71,7 @@ use super::{
 // E,g, for node 1, the node id and store id are both 1.
 
 pub trait Simulator<EK: KvEngine> {
+    fn get_debug_struct(&self) -> DebugStruct;
     // Pass 0 to let pd allocate a node id if db is empty.
     // If node id > 0, the node must be created in db already,
     // and the node id must be the same as given argument.
@@ -183,6 +185,9 @@ impl<T: Simulator<TiFlashEngine>> std::panic::UnwindSafe for Cluster<T> {}
 
 // Copied or modified from test_raftstore
 impl<T: Simulator<TiFlashEngine>> Cluster<T> {
+    pub fn get_debug_struct(&self) -> DebugStruct {
+        self.sim.as_ref().read().expect("").get_debug_struct()
+    }
     pub fn new(
         id: u64,
         count: usize,

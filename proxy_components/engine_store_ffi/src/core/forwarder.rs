@@ -1,5 +1,7 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use std::sync::atomic::AtomicU64;
+
 use encryption::DataKeyManager;
 
 use crate::core::common::*;
@@ -43,8 +45,10 @@ pub struct PackedEnvs {
     pub snap_handle_pool_size: usize,
 }
 
-#[derive(Debug, Default)]
-pub struct DebugStruct {}
+#[derive(Debug, Default, Clone)]
+pub struct DebugStruct {
+    pub gc_message_count: Arc<AtomicU64>,
+}
 
 impl DebugStruct {}
 
