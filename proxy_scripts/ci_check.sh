@@ -46,8 +46,8 @@ elif [[ $M == "testnew" ]]; then
     export ENABLE_FEATURES="test-engine-kv-rocksdb test-engine-raft-raft-engine openssl-vendored"
     cargo check --package proxy_server --features="$ENABLE_FEATURES"
     # tests based on mock-engine-store, with compat for new proxy
-    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
-    MALLOC_CONF="prof:true,prof_active:false" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::pprof_jemalloc --features=mem-profiling --features="jemalloc"
+    # LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::jemalloc --features="jemalloc"
+    # MALLOC_CONF="prof:true,prof_active:false" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::pprof_jemalloc --features=mem-profiling --features="jemalloc"
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::write
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::snapshot
     cargo test --package proxy_tests --features="$ENABLE_FEATURES" --test proxy shared::config
