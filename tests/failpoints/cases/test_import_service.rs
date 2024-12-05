@@ -7,7 +7,6 @@ use std::{
 
 use file_system::calc_crc32;
 use futures::{executor::block_on, stream, SinkExt};
-use grpcio::{Result, WriteFlags};
 use grpcio::{ChannelBuilder, Environment, Result, WriteFlags};
 use kvproto::{disk_usage::DiskUsage, import_sstpb::*, tikvpb_grpc::TikvClient};
 use tempfile::{Builder, TempDir};
