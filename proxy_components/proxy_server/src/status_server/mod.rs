@@ -63,6 +63,7 @@ use tokio::{
     sync::oneshot::{self, Receiver, Sender},
 };
 use tokio_openssl::SslStream;
+use vendored_utils::jeprof_purge_arena;
 
 use crate::status_server::profile::set_prof_active;
 
@@ -241,6 +242,11 @@ where
             Ok(()) => Ok(make_response(StatusCode::OK, "set prof.active succeed")),
             Err(err) => Ok(make_response(StatusCode::BAD_REQUEST, err.to_string())),
         }
+    }
+
+    async fn arena_purge(_: Request<Body>) -> hyper::Result<Response<Body>> {
+        jeprof_purge_arena();
+        Ok(make_response(StatusCode::OK, "purge OK"))
     }
 
     #[allow(dead_code)]
@@ -795,6 +801,9 @@ where
                             }
                             (Method::GET, "/debug/pprof/heap") => {
                                 Self::dump_heap_prof_to_resp(req).await
+                            }
+                            (Method::GET, "/debug/pprof/arena_purge") => {
+                                Self::arena_purge(req).await
                             }
                             (Method::GET, "/config") => {
                                 Self::get_config(req, &cfg_controller, engine_store_server_helper)

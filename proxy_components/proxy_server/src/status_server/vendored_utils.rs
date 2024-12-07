@@ -1,6 +1,6 @@
 // Copyright 2024 TiKV Project Authors. Licensed under Apache-2.0.
 
-use proxy_ffi::jemalloc_utils::issue_mallctl_args;
+use proxy_ffi::jemalloc_utils::{issue_mallctl, issue_mallctl_args};
 use tikv_alloc::error::ProfResult;
 
 pub fn activate_prof() -> ProfResult<()> {
@@ -106,4 +106,22 @@ pub fn adhoc_dump(path: &str) -> tikv_alloc::error::ProfResult<()> {
         }
     }
     Ok(())
+}
+
+pub fn jeprof_purge_arena() {
+    let narenas = issue_mallctl("arenas.narenas");
+    info!("jeprof_purge_arena purge {} arenas", narenas);
+    for i in 0..narenas {
+        let a_string = format!("arena.{}.purge", i);
+        let r = issue_mallctl_args(
+            &a_string,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+        );
+        if r != 0 {
+            info!("jeprof_purge_arena purge {} return {}", a_string, r);
+        }
+    }
 }
