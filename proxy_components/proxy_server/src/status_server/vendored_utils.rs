@@ -124,4 +124,5 @@ pub fn jeprof_purge_arena() {
             info!("jeprof_purge_arena purge {} return {}", a_string, r);
         }
     }
+        info!("jeprof_purge_arena purge {} arenas done", narenas);
 }
