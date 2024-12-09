@@ -1,6 +1,6 @@
 // Copyright 2024 TiKV Project Authors. Licensed under Apache-2.0.
 
-use proxy_ffi::jemalloc_utils::{issue_mallctl, issue_mallctl_args};
+use proxy_ffi::jemalloc_utils::{get_malloc_stats, issue_mallctl, issue_mallctl_args};
 use tikv_alloc::error::ProfResult;
 
 pub fn activate_prof() -> ProfResult<()> {
@@ -125,4 +125,8 @@ pub fn jeprof_purge_arena() {
         }
     }
     info!("jeprof_purge_arena purge {} arenas done", narenas);
+}
+
+pub fn jeprof_memory_status() -> String {
+    return get_malloc_stats();
 }

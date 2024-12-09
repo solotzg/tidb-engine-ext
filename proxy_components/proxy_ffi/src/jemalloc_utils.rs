@@ -1,4 +1,5 @@
 // Copyright 2024 TiKV Project Authors. Licensed under Apache-2.0.
+use std::sync::Mutex;
 
 extern "C" {
     // External jemalloc
@@ -18,6 +19,12 @@ extern "C" {
         newp: *mut ::std::os::raw::c_void,
         newlen: u64,
     ) -> ::std::os::raw::c_int;
+
+    pub fn malloc_stats_print(
+        write_cb: Option<unsafe extern "C" fn(*mut c_void, *const i8)>,
+        cbopaque: *mut c_void,
+        opts: *const i8,
+    );
 }
 
 #[allow(unused_variables)]
@@ -108,4 +115,93 @@ pub fn get_allocate() -> u64 {
 
 pub fn get_deallocate() -> u64 {
     issue_mallctl("thread.deallocated")
+}
+
+use std::{
+    ffi::{c_char, c_void, CStr},
+    ptr,
+};
+struct CaptureContext {
+    buffer: Mutex<String>,
+}
+
+extern "C" fn write_to_string(ctx: *mut c_void, message: *const c_char) {
+    if ctx.is_null() || message.is_null() {
+        return;
+    }
+
+    let context = unsafe { &*(ctx as *mut CaptureContext) };
+
+    let c_str = unsafe { CStr::from_ptr(message) };
+    if let Ok(str_slice) = c_str.to_str() {
+        let mut buffer = context.buffer.lock().unwrap();
+        buffer.push_str(str_slice);
+    }
+}
+
+pub fn get_malloc_stats() -> String {
+    let context = CaptureContext {
+        buffer: Mutex::new(String::new()),
+    };
+
+    unsafe {
+        // See unprefixed_malloc_on_supported_platforms in tikv-jemalloc-sys.
+        #[cfg(any(test, feature = "testexport"))]
+        {
+            // Test part
+            #[cfg(feature = "jemalloc")]
+            {
+                // See NO_UNPREFIXED_MALLOC
+                #[cfg(any(target_os = "android", target_os = "dragonfly", target_os = "macos"))]
+                _rjem_malloc_stats_print(
+                    Some(write_to_string),
+                    &context as *const _ as *mut c_void,
+                    ptr::null(),
+                );
+                #[cfg(not(any(
+                    target_os = "android",
+                    target_os = "dragonfly",
+                    target_os = "macos"
+                )))]
+                malloc_stats_print(
+                    Some(write_to_string),
+                    &context as *const _ as *mut c_void,
+                    ptr::null(),
+                );
+            }
+        }
+
+        #[cfg(not(any(test, feature = "testexport")))]
+        {
+            // No test part
+            #[cfg(feature = "external-jemalloc")]
+            {
+                // Must linked to tiflash.
+                malloc_stats_print(
+                    Some(write_to_string),
+                    &context as *const _ as *mut c_void,
+                    ptr::null(),
+                );
+            }
+            #[cfg(not(feature = "external-jemalloc"))]
+            {
+                // Happens only with `raftstore-proxy-main`
+                #[cfg(not(any(
+                    target_os = "android",
+                    target_os = "dragonfly",
+                    target_os = "macos"
+                )))]
+                {
+                    malloc_stats_print(
+                        Some(write_to_string),
+                        &context as *const _ as *mut c_void,
+                        ptr::null(),
+                    );
+                }
+            }
+        }
+    }
+
+    let buffer = context.buffer.lock().unwrap();
+    buffer.clone()
 }
