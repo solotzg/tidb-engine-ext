@@ -121,7 +121,7 @@ pub fn jeprof_purge_arena() {
             0,
         );
         if r != 0 {
-            info!("jeprof_purge_arena purge {} return {}", a_string, r);
+            warn!("jeprof_purge_arena purge {} return {}", a_string, r);
         }
     }
 }
