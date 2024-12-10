@@ -119,12 +119,12 @@ pub fn get_deallocate() -> u64 {
 
 use std::{
     ffi::{c_char, c_void, CStr},
-    ptr,
 };
 struct CaptureContext {
     buffer: Mutex<String>,
 }
 
+#[allow(dead_code)]
 extern "C" fn write_to_string(ctx: *mut c_void, message: *const c_char) {
     if ctx.is_null() || message.is_null() {
         return;
@@ -139,6 +139,9 @@ extern "C" fn write_to_string(ctx: *mut c_void, message: *const c_char) {
     }
 }
 
+#[allow(unused_variables)]
+#[allow(unused_mut)]
+#[allow(unused_unsafe)]
 pub fn get_malloc_stats() -> String {
     let context = CaptureContext {
         buffer: Mutex::new(String::new()),
@@ -156,7 +159,7 @@ pub fn get_malloc_stats() -> String {
                 _rjem_malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    ptr::null(),
+                    std::ptr::null(),
                 );
                 #[cfg(not(any(
                     target_os = "android",
@@ -166,7 +169,7 @@ pub fn get_malloc_stats() -> String {
                 malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    ptr::null(),
+                    std::ptr::null(),
                 );
             }
         }
@@ -180,7 +183,7 @@ pub fn get_malloc_stats() -> String {
                 malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    ptr::null(),
+                    std::ptr::null(),
                 );
             }
             #[cfg(not(feature = "external-jemalloc"))]
@@ -195,7 +198,7 @@ pub fn get_malloc_stats() -> String {
                     malloc_stats_print(
                         Some(write_to_string),
                         &context as *const _ as *mut c_void,
-                        ptr::null(),
+                        std::ptr::null(),
                     );
                 }
             }
