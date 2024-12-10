@@ -128,5 +128,5 @@ pub fn jeprof_purge_arena() {
 }
 
 pub fn jeprof_memory_status() -> String {
-    return get_malloc_stats();
+    get_malloc_stats()
 }
