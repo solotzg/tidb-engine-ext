@@ -145,6 +145,10 @@ pub fn get_malloc_stats() -> String {
         buffer: Mutex::new(String::new()),
     };
 
+    // Use Json format.
+    let c_str = std::ffi::CString::new("J").unwrap();
+    let ops_str = c_str.as_ptr() as *const std::os::raw::c_char;
+
     unsafe {
         // See unprefixed_malloc_on_supported_platforms in tikv-jemalloc-sys.
         #[cfg(any(test, feature = "testexport"))]
@@ -157,7 +161,7 @@ pub fn get_malloc_stats() -> String {
                 _rjem_malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    std::ptr::null(),
+                    ops_str,
                 );
                 #[cfg(not(any(
                     target_os = "android",
@@ -167,7 +171,7 @@ pub fn get_malloc_stats() -> String {
                 malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    std::ptr::null(),
+                    ops_str,
                 );
             }
         }
@@ -181,7 +185,7 @@ pub fn get_malloc_stats() -> String {
                 malloc_stats_print(
                     Some(write_to_string),
                     &context as *const _ as *mut c_void,
-                    std::ptr::null(),
+                    ops_str,
                 );
             }
             #[cfg(not(feature = "external-jemalloc"))]
@@ -196,7 +200,7 @@ pub fn get_malloc_stats() -> String {
                     malloc_stats_print(
                         Some(write_to_string),
                         &context as *const _ as *mut c_void,
-                        std::ptr::null(),
+                        ops_str,
                     );
                 }
             }
