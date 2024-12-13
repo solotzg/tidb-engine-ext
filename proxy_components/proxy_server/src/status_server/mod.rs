@@ -269,7 +269,7 @@ where
         }
         .to_string();
 
-        let result = dump_one_heap_profile(true, output_format);
+        let result = dump_one_heap_profile(false, output_format);
 
         match result {
             Ok(body) => {
