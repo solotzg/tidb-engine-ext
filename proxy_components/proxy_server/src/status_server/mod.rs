@@ -42,8 +42,8 @@ use openssl::{
 };
 use pin_project::pin_project;
 use profile::{
-    activate_heap_profile, deactivate_heap_profile, dump_one_heap_profile, jeprof_heap_profile,
-    list_heap_profiles, read_file, start_one_cpu_profile, start_one_heap_profile,
+    activate_heap_profile, deactivate_heap_profile, dump_one_heap_profile,
+    list_heap_profiles, start_one_cpu_profile,
 };
 use raftstore::store::{transport::CasualRouter, CasualMessage};
 use regex::Regex;
@@ -259,6 +259,7 @@ where
         let query = req.uri().query().unwrap_or("");
         let query_pairs: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
 
+        let use_jeprof = query_pairs.get("jeprof").map(|x| x.as_ref()) == Some("true");
         let output_format = match query_pairs.get("text").map(|x| x.as_ref()) {
             None => "--svg",
             Some("svg") => "--svg",
@@ -269,7 +270,7 @@ where
         }
         .to_string();
 
-        let result = dump_one_heap_profile(false, output_format);
+        let result = dump_one_heap_profile(use_jeprof, output_format);
 
         match result {
             Ok(body) => {
