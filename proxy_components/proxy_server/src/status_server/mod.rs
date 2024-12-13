@@ -279,7 +279,11 @@ where
                     .header("X-Content-Type-Options", "nosniff")
                     .header("Content-Disposition", "attachment; filename=\"profile\"")
                     .header("Content-Length", body.len());
-                response = response.header("Content-Type", mime::IMAGE_SVG.to_string());
+                response = if use_jeprof && output_format == "--svg" {
+                    response.header("Content-Type", mime::IMAGE_SVG.to_string())
+                } else {
+                    response.header("Content-Type", mime::APPLICATION_OCTET_STREAM.to_string())
+                };
                 Ok(response.body(body.into()).unwrap())
             }
             Err(e) => {
