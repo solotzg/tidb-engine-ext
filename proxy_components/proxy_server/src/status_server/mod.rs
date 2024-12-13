@@ -42,8 +42,8 @@ use openssl::{
 };
 use pin_project::pin_project;
 use profile::{
-    activate_heap_profile, deactivate_heap_profile, jeprof_heap_profile, list_heap_profiles,
-    read_file, start_one_cpu_profile, start_one_heap_profile,
+    activate_heap_profile, deactivate_heap_profile, dump_one_heap_profile, jeprof_heap_profile,
+    list_heap_profiles, read_file, start_one_cpu_profile, start_one_heap_profile,
 };
 use raftstore::store::{transport::CasualRouter, CasualMessage};
 use regex::Regex;
@@ -259,7 +259,6 @@ where
         let query = req.uri().query().unwrap_or("");
         let query_pairs: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
 
-        let use_jeprof = query_pairs.get("jeprof").map(|x| x.as_ref()) == Some("true");
         let output_format = match query_pairs.get("text").map(|x| x.as_ref()) {
             None => "--svg",
             Some("svg") => "--svg",
@@ -270,29 +269,7 @@ where
         }
         .to_string();
 
-        let result = if let Some(name) = query_pairs.get("name") {
-            if use_jeprof {
-                jeprof_heap_profile(name, output_format)
-            } else {
-                read_file(name)
-            }
-        } else {
-            let mut seconds = 10;
-            if let Some(s) = query_pairs.get("seconds") {
-                match s.parse() {
-                    Ok(val) => seconds = val,
-                    Err(_) => {
-                        let errmsg = "request should have seconds argument".to_owned();
-                        return Ok(make_response(StatusCode::BAD_REQUEST, errmsg));
-                    }
-                }
-            }
-            let timer = GLOBAL_TIMER_HANDLE.delay(Instant::now() + Duration::from_secs(seconds));
-            let end = Compat01As03::new(timer)
-                .map_err(|_| TIMER_CANCELED.to_owned())
-                .into_future();
-            start_one_heap_profile(end, use_jeprof, output_format).await
-        };
+        let result = dump_one_heap_profile(true, output_format);
 
         match result {
             Ok(body) => {
@@ -301,11 +278,7 @@ where
                     .header("X-Content-Type-Options", "nosniff")
                     .header("Content-Disposition", "attachment; filename=\"profile\"")
                     .header("Content-Length", body.len());
-                response = if use_jeprof {
-                    response.header("Content-Type", mime::IMAGE_SVG.to_string())
-                } else {
-                    response.header("Content-Type", mime::APPLICATION_OCTET_STREAM.to_string())
-                };
+                response = response.header("Content-Type", mime::IMAGE_SVG.to_string());
                 Ok(response.body(body.into()).unwrap())
             }
             Err(e) => {
