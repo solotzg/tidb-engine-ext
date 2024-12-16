@@ -661,7 +661,9 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
         // NOTE: Compat disagg arch upgraded from * to 8.0.
         {
             let engine_dir = config.raft_engine.config().dir.clone();
-            let infered_dir = config.infer_raft_engine_path(None).unwrap_or(engine_dir.clone());
+            let infered_dir = config
+                .infer_raft_engine_path(None)
+                .unwrap_or(engine_dir.clone());
             info!("raft_engine_dir"; "origin" => engine_dir, "infered" => infered_dir.clone());
             let raft_engine_path = infered_dir.clone() + "/ps_engine";
             let path = Path::new(&raft_engine_path);
