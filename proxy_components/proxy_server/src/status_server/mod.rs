@@ -42,8 +42,8 @@ use openssl::{
 };
 use pin_project::pin_project;
 use profile::{
-    activate_heap_profile, deactivate_heap_profile, dump_one_heap_profile,
-    list_heap_profiles, start_one_cpu_profile,
+    activate_heap_profile, deactivate_heap_profile, dump_one_heap_profile, list_heap_profiles,
+    start_one_cpu_profile,
 };
 use raftstore::store::{transport::CasualRouter, CasualMessage};
 use regex::Regex;
@@ -270,7 +270,7 @@ where
         }
         .to_string();
 
-        let result = dump_one_heap_profile(use_jeprof, output_format);
+        let result = dump_one_heap_profile(use_jeprof, output_format.clone());
 
         match result {
             Ok(body) => {
