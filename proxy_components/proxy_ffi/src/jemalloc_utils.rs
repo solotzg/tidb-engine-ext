@@ -21,9 +21,9 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 
     pub fn malloc_stats_print(
-        write_cb: Option<unsafe extern "C" fn(*mut c_void, *const i8)>,
+        write_cb: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
         cbopaque: *mut c_void,
-        opts: *const i8,
+        opts: *const c_char,
     );
 }
 
