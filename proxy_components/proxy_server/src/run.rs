@@ -84,7 +84,7 @@ use tikv::{
         gc_worker::GcWorker,
         raftkv::ReplicaReadLockChecker,
         resolve,
-        service::{DebugService, DiagnosticsService},
+        service::{DebugService, DiagnosticsService, RaftGrpcMessageObserver},
         tablet_snap::NoSnapshotCache,
         ttl::TtlChecker,
         KvEngineFactoryBuilder, MultiRaftServer, RaftKv, Server, CPU_CORES_QUOTA_GAUGE,
@@ -106,7 +106,10 @@ use tikv_util::{
     config::{ensure_dir_exist, ReadableDuration, VersionTrack},
     error,
     quota_limiter::{QuotaLimitConfigManager, QuotaLimiter},
-    sys::{disk, register_memory_usage_high_water, thread::ThreadBuildWrapper, SysQuota},
+    sys::{
+        disk, memory_usage_reaches_high_water, register_memory_usage_high_water,
+        thread::ThreadBuildWrapper, SysQuota,
+    },
     thread_group::GroupProperties,
     time::{Instant, Monitor},
     worker::{Builder as WorkerBuilder, LazyWorker, Scheduler},
@@ -569,6 +572,52 @@ impl<CER: ConfiguredRaftEngine, F: KvFormat> TiKvServer<CER, F> {
         ));
 
         (engines, engines_info)
+    }
+}
+
+#[derive(Clone)]
+pub struct TiFlashGrpcMessageObserver {
+    reject_messages_on_memory_ratio: f64,
+}
+
+impl TiFlashGrpcMessageObserver {
+    pub fn new(reject_messages_on_memory_ratio: f64) -> Self {
+        Self {
+            reject_messages_on_memory_ratio,
+        }
+    }
+}
+
+impl RaftGrpcMessageObserver for TiFlashGrpcMessageObserver {
+    fn should_reject_append(&self) -> Option<bool> {
+        if self.reject_messages_on_memory_ratio < f64::EPSILON {
+            return Some(false);
+        }
+
+        let mut usage = 0;
+        Some(memory_usage_reaches_high_water(&mut usage))
+    }
+
+    fn should_reject_snapshot(&self) -> Option<bool> {
+        info!(
+            "!!!!!!! should_reject_snapshot {}",
+            self.reject_messages_on_memory_ratio
+        );
+
+        if self.reject_messages_on_memory_ratio < f64::EPSILON {
+            return Some(false);
+        }
+
+        let mut usage = 0;
+
+        let x = memory_usage_reaches_high_water(&mut usage);
+
+        info!(
+            "!!!!!!! should_reject_snapshot memory_usage_reaches_high_water {}",
+            x
+        );
+
+        Some(x)
     }
 }
 
@@ -1275,6 +1324,9 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             debug_thread_pool,
             health_controller,
             self.resource_manager.clone(),
+            Arc::new(TiFlashGrpcMessageObserver::new(
+                self.core.config.server.reject_messages_on_memory_ratio,
+            )),
         )
         .unwrap_or_else(|e| fatal!("failed to create server: {}", e));
 
