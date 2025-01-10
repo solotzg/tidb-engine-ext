@@ -599,25 +599,12 @@ impl RaftGrpcMessageObserver for TiFlashGrpcMessageObserver {
     }
 
     fn should_reject_snapshot(&self) -> Option<bool> {
-        info!(
-            "!!!!!!! should_reject_snapshot {}",
-            self.reject_messages_on_memory_ratio
-        );
-
         if self.reject_messages_on_memory_ratio < f64::EPSILON {
             return Some(false);
         }
 
         let mut usage = 0;
-
-        let x = memory_usage_reaches_high_water(&mut usage);
-
-        info!(
-            "!!!!!!! should_reject_snapshot memory_usage_reaches_high_water {}",
-            x
-        );
-
-        Some(x)
+        Some(memory_usage_reaches_high_water(&mut usage))
     }
 }
 
