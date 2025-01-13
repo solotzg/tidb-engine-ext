@@ -43,6 +43,7 @@ use raftstore::{
     },
     Result,
 };
+use raftstore::store::DiskCheckRunner;
 use resource_metering::{CollectorRegHandle, ResourceTagFactory};
 use security::SecurityManager;
 use service::service_manager::GrpcServiceManager;
@@ -634,6 +635,7 @@ impl ServerCluster {
             concurrency_manager.clone(),
             collector_reg_handle,
             None,
+            DiskCheckRunner::dummy(),
             GrpcServiceManager::dummy(),
             safe_point,
         )?;
