@@ -33,6 +33,7 @@ use engine_store_ffi::{
     },
     TiFlashEngine,
 };
+use raftstore::store::DiskCheckRunner;
 use engine_tiflash::PSLogEngine;
 use engine_traits::{
     Engines, KvEngine, MiscExt, RaftEngine, SingletonFactory, TabletContext, TabletRegistry,
@@ -1035,6 +1036,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
                 ttl_scheduler,
                 flow_controller,
                 storage.get_scheduler(),
+                storage.get_concurrency_manager(),
             )),
         );
 
@@ -1367,6 +1369,8 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
         );
 
         let safe_point = Arc::new(AtomicU64::new(0));
+        let disk_check_runner = DiskCheckRunner::new(self.core.store_path.clone());
+
         node.start(
             engines.engines.clone(),
             server.transport(),
@@ -1380,6 +1384,7 @@ impl<ER: RaftEngine, F: KvFormat> TiKvServer<ER, F> {
             self.concurrency_manager.clone(),
             collector_reg_handle,
             None,
+            disk_check_runner,
             self.grpc_service_mgr.clone(),
             safe_point,
         )

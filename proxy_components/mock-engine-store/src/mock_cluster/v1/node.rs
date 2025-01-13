@@ -32,6 +32,7 @@ use raftstore::{
     },
     Result,
 };
+use raftstore::store::DiskCheckRunner;
 use resource_metering::CollectorRegHandle;
 use service::service_manager::GrpcServiceManager;
 use tempfile::TempDir;
@@ -405,6 +406,7 @@ impl Simulator<TiFlashEngine> for NodeCluster {
             cm,
             CollectorRegHandle::new_for_test(),
             None,
+            DiskCheckRunner::dummy(),
             GrpcServiceManager::dummy(),
             safe_point,
         )?;
